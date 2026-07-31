@@ -553,7 +553,54 @@ const VFSync = (function () {
   }
 
   /* ============================================================
-     8. Bill numbers — issued by the database, never locally
+     8. People
+     ============================================================
+     Thin wrappers over the functions in supabase/06_users.sql. Every
+     one of them re-checks is_owner() server side, so a browser that
+     calls them without the right role is refused by the database
+     rather than by the interface. */
+
+  async function rpc(fn, args) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify(args || {}),
+    });
+    if (r.status === 401 && await refresh()) return rpc(fn, args);
+    if (!r.ok) throw await httpError(r, fn);
+    const text = await r.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  const listPeople      = ()             => rpc('list_people');
+
+  /* A new branch. Written straight through rather than queued: every
+     indent, packed line and margin row carries a foreign key to shops,
+     so the shop has to exist on the server before anything referencing
+     it can be pushed. RLS lets only an owner do this. */
+  async function addShop(shop) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/shops?on_conflict=id', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ id: shop.id, client_id: CFG.clientId,
+                              name: shop.name, prefix: shop.prefix }]),
+    });
+    if (r.status === 401 && await refresh()) return addShop(shop);
+    if (!r.ok) throw await httpError(r, 'shops');
+    return true;
+  }
+  const setPersonRole   = (id, role)     => rpc('set_person_role',   { p_user: id, p_role: role });
+  const setPersonActive = (id, active)   => rpc('set_person_active', { p_user: id, p_active: active });
+  const cancelInvite    = (id)           => rpc('cancel_invite',     { p_invite: id });
+  const invitePerson    = (o) => rpc('invite_person', {
+    p_role: o.role, p_full_name: o.name || '',
+    p_phone: o.phone || null, p_email: o.email || null,
+    p_client_id: o.clientId || null, p_shop_id: o.shopId || null,
+  });
+
+  /* ============================================================
+     9. Bill numbers — issued by the database, never locally
      ============================================================ */
 
   async function nextBillNo(shopId, date) {
@@ -574,6 +621,8 @@ const VFSync = (function () {
   return {
     enabled, signIn, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
+    listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
+    addShop,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },

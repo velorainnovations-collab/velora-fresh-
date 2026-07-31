@@ -58,10 +58,15 @@ function check(label, got, want) {
   await p.waitForTimeout(1200);
   check('gate closed',            await p.locator('#gate').isVisible(), false);
   check('role taken from server', await p.evaluate(() => ROLE), 'owner');
-  check('role dropdown locked',   await p.locator('#roleSel').isDisabled(), true);
+  // the dropdown is hidden once signed in — the database decides the
+  // role, so offering a choice would be a lie
+  check('role dropdown hidden',   await p.locator('#roleSel').isVisible(), false);
+  check('signed-in identity shown', await p.locator('#whoami').isVisible(), true);
+  check('identity names the role',
+        /Owner/.test(await p.locator('#whoami').textContent()), true);
   check('sign out offered',       await p.locator('#signOutBtn').isVisible(), true);
   check('owner sees Margin master',
-        (await p.locator('#nav button').allTextContents()).includes('Margin master'), true);
+        (await p.locator('#side button').allTextContents()).some(t => /Margin master/.test(t)), true);
   await p.screenshot({ path: dir + 'login-owner.png' });
   await ctx.close();
 
@@ -72,10 +77,13 @@ function check(label, got, want) {
   await p.click('#gateBtn');
   await p.waitForTimeout(1200);
   check('role is the shop id', await p.evaluate(() => ROLE), 'KLP');
-  const tabs = await p.locator('#nav button').allTextContents();
-  check('shop cannot see Rates',         tabs.includes('Rates'), false);
-  check('shop cannot see Margin master', tabs.includes('Margin master'), false);
-  check('shop sees its own indent',      tabs.includes('My indent'), true);
+  const tabs = await p.locator('#side button').allTextContents();
+  const has = re => tabs.some(t => re.test(t));
+  check('shop cannot see Market rates',  has(/Market rates/), false);
+  check('shop cannot see Margin master', has(/Margin master/), false);
+  check('shop cannot see Users',         has(/Users/), false);
+  check('shop sees its own indent',      has(/My indent/), true);
+  check('shop sees its own bills',       has(/Bills/), true);
   await p.screenshot({ path: dir + 'login-shop.png' });
   await ctx.close();
 

@@ -15,6 +15,18 @@ const USERS = {
 
 const received = [];          // every write the app sent
 
+// what list_people() returns; mutated by the rpc handlers below
+const PEOPLE = [
+  { kind: 'user', id: 'aaaa0000-0000-0000-0000-00000000000a', phone: null,
+    full_name: 'Velora Owner', role: 'owner', client_id: null, shop_id: null, active: true },
+  { kind: 'user', id: 'bbbb0000-0000-0000-0000-00000000000b', phone: '9000000002',
+    full_name: 'Day Manager', role: 'admin', client_id: null, shop_id: null, active: true },
+  { kind: 'user', id: 'dddd0000-0000-0000-0000-00000000000d', phone: '9000000004',
+    full_name: 'Kilpauk Mgr', role: 'shop', client_id: 'KPN', shop_id: 'KLP', active: true },
+  { kind: 'invite', id: 'inv-1', phone: '9111111111',
+    full_name: 'Waiting Friend', role: 'admin', client_id: null, shop_id: null, active: false },
+];
+
 const srv = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => body += c);
@@ -34,6 +46,36 @@ const srv = http.createServer((req, res) => {
       const u = USERS[email];
       if (!u || u.pw !== password) return send(400, { error_description: 'Invalid login credentials' });
       return send(200, { access_token: 'tok-' + u.uid, refresh_token: 'r', token_type: 'bearer' });
+    }
+
+    if (url.pathname.startsWith('/rest/v1/rpc/')) {
+      const fn = url.pathname.slice('/rest/v1/rpc/'.length);
+      const args = body ? JSON.parse(body) : {};
+      received.push({ table: 'rpc:' + fn, method: 'POST', rows: args });
+      if (fn === 'list_people') return send(200, PEOPLE);
+      if (fn === 'invite_person') {
+        PEOPLE.push({ kind: 'invite', id: 'inv-' + PEOPLE.length,
+                      phone: args.p_phone, full_name: args.p_full_name,
+                      role: args.p_role, client_id: args.p_client_id,
+                      shop_id: args.p_shop_id, active: false });
+        return send(200, 'inv-new');
+      }
+      if (fn === 'set_person_active') {
+        const u = PEOPLE.find(x => x.id === args.p_user);
+        if (u) u.active = args.p_active;
+        return send(200, null);
+      }
+      if (fn === 'set_person_role') {
+        const u = PEOPLE.find(x => x.id === args.p_user);
+        if (u) u.role = args.p_role;
+        return send(200, null);
+      }
+      if (fn === 'cancel_invite') {
+        const i = PEOPLE.findIndex(x => x.id === args.p_invite);
+        if (i > -1) PEOPLE.splice(i, 1);
+        return send(200, null);
+      }
+      return send(200, null);
     }
 
     if (url.pathname === '/rest/v1/app_users') {

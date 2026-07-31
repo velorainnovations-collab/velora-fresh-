@@ -42,7 +42,9 @@ header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px
 .brand small{display:block;font-size:9.5px;font-weight:500;color:var(--ink-4);
   letter-spacing:.09em;text-transform:uppercase;margin-top:1px}
 .spacer{margin-left:auto}
-header select,header input[type=date]{width:auto;background:var(--surface-2)}
+header select,header input[type=date]{width:auto;max-width:100%;min-width:0;background:var(--surface-2)}
+#whoami{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);min-width:0}
+#whoami b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 
 /* ---------- nav ---------- */
 /* ---------- sidebar ---------- */
@@ -57,10 +59,11 @@ header select,header input[type=date]{width:auto;background:var(--surface-2)}
   padding:11px 16px;font:inherit;font-size:14px;font-weight:600;color:var(--ink-2);
   cursor:pointer;text-align:left;font-family:inherit;transition:background .12s,color .12s}
 .grp>button:hover{background:var(--surface-2);color:var(--ink)}
-.grp>button .ic{width:19px;text-align:center;font-size:14px;color:var(--ink-4);flex:none}
+.grp>button .ic{width:17px;height:17px;color:var(--ink-4);flex:none}
 .grp>button .cv{margin-left:auto;font-size:10px;color:var(--ink-4);transition:transform .18s}
 .grp.open>button{color:var(--brand)}
 .grp.open>button .ic{color:var(--brand)}
+.grp>button:hover .ic{color:var(--ink-2)}
 .grp.open>button .cv{transform:rotate(90deg)}
 .grp.solo>button.on{color:var(--brand);background:var(--brand-soft)}
 
@@ -76,7 +79,9 @@ header select,header input[type=date]{width:auto;background:var(--surface-2)}
 #scrim{position:fixed;inset:52px 0 0 0;background:rgba(18,16,14,.4);z-index:17;display:none}
 
 /* ---------- page ---------- */
-main{padding:22px 24px 72px;margin-left:236px;max-width:1240px}
+/* Fill whatever is left of the window. A max-width here left a wide
+   screen half empty, and the tables are the point of every screen. */
+main{padding:22px 24px 72px;margin-left:236px}
 h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
 .sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
 
@@ -213,6 +218,14 @@ table.ibl tbody tr:hover td{background:none}
 .syncdot.bad i{background:#96241f}
 .syncdot.off i{background:#9b948a}
 
+/* ---------- tablet ---------- */
+@media (max-width:1080px) and (min-width:721px){
+  #side{width:196px}
+  main{margin-left:196px;padding:20px 18px 64px}
+  .grp>button{padding:10px 13px;font-size:13.5px}
+  .kids button{padding-left:40px;font-size:13px}
+}
+
 /* ---------- mobile ---------- */
 @media (max-width:720px){
   header{padding:8px 13px;gap:9px;row-gap:7px}
@@ -251,10 +264,11 @@ table.ibl tbody tr:hover td{background:none}
   <button id="burger" type="button" onclick="toggleSide()" aria-label="Menu">&#9776;</button>
   <div class="brand"><span class="mk" aria-hidden="true">VF</span><span>Velora Fresh<small>Velora Innovations Pvt Ltd</small></span></div>
   <select id="roleSel" style="width:auto" onchange="setRole(this.value)"></select>
+  <span id="whoami" class="hidden"></span>
   <input type="date" id="dateSel" style="width:auto" onchange="setDate(this.value)">
   <span class="spacer"></span>
   <label id="anyBox" class="hidden" style="font-size:12.5px;color:#6b6b66;display:flex;align-items:center;gap:5px;cursor:pointer">
-    <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore indent timings
+    <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore the 6–9 pm indent window
   </label>
   <span id="syncState" class="syncdot hidden"><i></i><span></span></span>
   <button id="signOutBtn" class="btn sm hidden" type="button" onclick="doSignOut()">Sign out</button>
@@ -1230,7 +1244,54 @@ const VFSync = (function () {
   }
 
   /* ============================================================
-     8. Bill numbers — issued by the database, never locally
+     8. People
+     ============================================================
+     Thin wrappers over the functions in supabase/06_users.sql. Every
+     one of them re-checks is_owner() server side, so a browser that
+     calls them without the right role is refused by the database
+     rather than by the interface. */
+
+  async function rpc(fn, args) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify(args || {}),
+    });
+    if (r.status === 401 && await refresh()) return rpc(fn, args);
+    if (!r.ok) throw await httpError(r, fn);
+    const text = await r.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  const listPeople      = ()             => rpc('list_people');
+
+  /* A new branch. Written straight through rather than queued: every
+     indent, packed line and margin row carries a foreign key to shops,
+     so the shop has to exist on the server before anything referencing
+     it can be pushed. RLS lets only an owner do this. */
+  async function addShop(shop) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/shops?on_conflict=id', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ id: shop.id, client_id: CFG.clientId,
+                              name: shop.name, prefix: shop.prefix }]),
+    });
+    if (r.status === 401 && await refresh()) return addShop(shop);
+    if (!r.ok) throw await httpError(r, 'shops');
+    return true;
+  }
+  const setPersonRole   = (id, role)     => rpc('set_person_role',   { p_user: id, p_role: role });
+  const setPersonActive = (id, active)   => rpc('set_person_active', { p_user: id, p_active: active });
+  const cancelInvite    = (id)           => rpc('cancel_invite',     { p_invite: id });
+  const invitePerson    = (o) => rpc('invite_person', {
+    p_role: o.role, p_full_name: o.name || '',
+    p_phone: o.phone || null, p_email: o.email || null,
+    p_client_id: o.clientId || null, p_shop_id: o.shopId || null,
+  });
+
+  /* ============================================================
+     9. Bill numbers — issued by the database, never locally
      ============================================================ */
 
   async function nextBillNo(shopId, date) {
@@ -1251,6 +1312,8 @@ const VFSync = (function () {
   return {
     enabled, signIn, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
+    listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
+    addShop,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },
@@ -1317,7 +1380,16 @@ async function afterSignIn(){
   /* The role now comes from the database, so the dropdown would be a
      lie — it cannot change what the server will allow. */
   const rs = document.getElementById('roleSel');
-  if(rs) rs.disabled = true;
+  if(rs) rs.classList.add('hidden');
+  const who = document.getElementById('whoami');
+  if(who){
+    const label = {owner:'Owner', admin:'Manager', ho:'Head office'}[me.role]
+                || ((shopById(me.shop_id) || {}).name || me.shop_id);
+    const tone  = me.role === 'owner' ? 'p-green' : me.role === 'admin' ? 'p-blue' : 'p-grey';
+    who.innerHTML = '<b>' + esc(me.full_name || 'Signed in') + '</b>'
+                  + '<span class="pill ' + tone + '">' + esc(label) + '</span>';
+    who.classList.remove('hidden');
+  }
   render();
   VFSync.push();
 }
@@ -1436,44 +1508,63 @@ function go(t){ TAB = t; toggleSide(false); render(); }
    `id` values are unchanged, so every existing view and the tests
    still address the same screens.                                  */
 
+const ICONS = {
+  board: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  indent: 'M4 5h16M4 10h16M4 15h10M4 20h10',
+  purchase: 'M3 6h18l-2 9H5zM5 6L4 3H2M9 20a1 1 0 1 0 2 0 1 1 0 1 0-2 0M16 20a1 1 0 1 0 2 0 1 1 0 1 0-2 0',
+  delivery: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM6 19a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M16 19a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0',
+  sales: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
+  contacts: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21c0-4 3.5-6 8-6s8 2 8 6',
+  product: 'M12 2l9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10',
+  master: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-3-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+};
+
+function icon(name){
+  return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+       + 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+       + '<path d="' + (ICONS[name] || ICONS.board) + '"/></svg>';
+}
+
 const MENU = {
   owner: [
-    {t:'Day board',  ic:'\u25A6', id:'board'},
-    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
-    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+    {t:'Day board',  ic:'board', id:'board'},
+    {t:'Indents',    ic:'indent', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'purchase', kids:[{id:'orders', t:'Vendor orders'},
                                          {id:'rates',  t:'Market rates'}]},
-    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+    {t:'Delivery',   ic:'delivery', kids:[{id:'pack', t:'Packing'},
                                          {id:'ship', t:'Out for delivery'}]},
-    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
-    {t:'Receipt',    ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
-    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Receipt',    ic:'receipt', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Contacts',   ic:'contacts', kids:[{id:'vendors', t:'Vendors'},
                                          {id:'shops',   t:'Shops'}]},
-    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
-    {t:'Master',     ic:'\u2699', kids:[{id:'master', t:'Margin master'}]},
+    {t:'Product',    ic:'product', kids:[{id:'products', t:'Product list'}]},
+    {t:'Master',     ic:'master', kids:[{id:'master', t:'Margin master'},
+                                         {id:'people', t:'Users'}]},
   ],
   admin: [
-    {t:'Day board',  ic:'\u25A6', id:'board'},
-    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
-    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+    {t:'Day board',  ic:'board', id:'board'},
+    {t:'Indents',    ic:'indent', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'purchase', kids:[{id:'orders', t:'Vendor orders'},
                                          {id:'rates',  t:'Market rates'}]},
-    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+    {t:'Delivery',   ic:'delivery', kids:[{id:'pack', t:'Packing'},
                                          {id:'ship', t:'Out for delivery'}]},
-    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
-    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Contacts',   ic:'contacts', kids:[{id:'vendors', t:'Vendors'},
                                          {id:'shops',   t:'Shops'}]},
-    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+    {t:'Product',    ic:'product', kids:[{id:'products', t:'Product list'}]},
   ],
   ho: [
-    {t:'Indents',  ic:'\u25A4', kids:[{id:'indents', t:'Indents'}]},
-    {t:'Sales',    ic:'\u2691', kids:[{id:'inv',  t:'Invoice'}]},
-    {t:'Receipt',  ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
-    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+    {t:'Indents',  ic:'indent', kids:[{id:'indents', t:'Indents'}]},
+    {t:'Sales',    ic:'sales', kids:[{id:'inv',  t:'Invoice'}]},
+    {t:'Receipt',  ic:'receipt', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Product',  ic:'product', kids:[{id:'products', t:'Product list'}]},
   ],
   shop: [
-    {t:'Indents',  ic:'\u25A4', kids:[{id:'myindent', t:'My indent'}]},
-    {t:'Delivery', ic:'\u25A7', kids:[{id:'mydel', t:'Deliveries'}]},
-    {t:'Sales',    ic:'\u2691', kids:[{id:'mybills', t:'Bills'}]},
-    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+    {t:'Indents',  ic:'indent', kids:[{id:'myindent', t:'My indent'}]},
+    {t:'Delivery', ic:'delivery', kids:[{id:'mydel', t:'Deliveries'}]},
+    {t:'Sales',    ic:'sales', kids:[{id:'mybills', t:'Bills'}]},
+    {t:'Product',  ic:'product', kids:[{id:'products', t:'Product list'}]},
   ],
 };
 
@@ -1554,23 +1645,266 @@ function focusProdQ(){
 }
 
 /* ============================================================
+   Users  —  who can sign in, and as what
+   ============================================================
+   Owner only. Every function called here re-checks is_owner() inside
+   the database, so this screen is a convenience, not the guard.
+
+   Nobody is created here: making a login needs the service_role key,
+   which must never reach a browser. The owner records an invite; the
+   person signs up themselves and a trigger applies the invited role.
+   ============================================================ */
+
+let PEOPLE = null;          /* null = not fetched yet */
+let PEOPLE_ERR = '';
+let PEOPLE_BUSY = false;
+
+const ROLE_LABEL = {
+  owner: 'Owner — full control, money and bank details',
+  admin: 'Manager — runs the day, no money',
+  ho:    'Head office — client side, read-only on money',
+  shop:  'Shop — its own indent, deliveries and bills',
+};
+
+function loadPeople(){
+  if(typeof VFSync === 'undefined' || !VFSync.enabled() || !VFSync.signedIn()){
+    PEOPLE = []; PEOPLE_ERR = 'Sign in to manage users.'; render(); return;
+  }
+  PEOPLE_BUSY = true;
+  VFSync.listPeople().then(rows=>{
+    PEOPLE = rows || []; PEOPLE_ERR = '';
+  }).catch(e=>{
+    PEOPLE = []; PEOPLE_ERR = e.message || 'Could not load users';
+  }).then(()=>{ PEOPLE_BUSY = false; render(); });
+}
+
+function vPeople(){
+  if(ROLE !== 'owner')
+    return '<h2>Users</h2><div class="card"><div class="empty">Only an owner may manage users.</div></div>';
+
+  if(PEOPLE === null){ loadPeople(); return '<h2>Users</h2><div class="card"><div class="empty">Loading…</div></div>'; }
+
+  const users   = PEOPLE.filter(p=>p.kind === 'user');
+  const invites = PEOPLE.filter(p=>p.kind === 'invite');
+
+  let rows = '';
+  users.forEach(u=>{
+    const me = ME && u.id === ME.id;
+    const where = u.role === 'shop' ? (shopById(u.shop_id) || {}).name || u.shop_id
+                : u.role === 'ho'   ? esc(CLIENT) : 'Velora';
+    rows += '<tr'+(u.active?'':' style="opacity:.5"')+'>'
+      + '<td>'+esc(u.full_name || '&mdash;')+(me?' <span class="pill p-green">you</span>':'')+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+esc(u.phone || '&mdash;')+'</td>'
+      + '<td>'+roleSelect(u, me)+'</td>'
+      + '<td style="color:var(--ink-3)">'+where+'</td>'
+      + '<td class="c">'+(u.active?'<span class="pill p-green">Active</span>'
+                                  :'<span class="pill p-grey">Off</span>')+'</td>'
+      + '<td class="r">'+(me ? '<span class="muted" style="font-size:12px;color:var(--ink-4)">&mdash;</span>'
+          : '<button class="btn sm" onclick="togglePerson(\''+u.id+'\','+(!u.active)+')">'
+            + (u.active?'Deactivate':'Reactivate')+'</button>')+'</td></tr>';
+  });
+
+  let inv = '';
+  invites.forEach(i=>{
+    inv += '<tr><td>'+esc(i.full_name || '&mdash;')+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+esc(i.phone || '&mdash;')+'</td>'
+      + '<td><span class="pill p-blue">'+esc(i.role)+'</span></td>'
+      + '<td style="color:var(--ink-3)">'+(i.shop_id ? esc(i.shop_id) : (i.client_id ? esc(i.client_id) : 'Velora'))+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="dropInvite(\''+i.id+'\')">Cancel</button></td></tr>';
+  });
+
+  let shopOpts = '';
+  SHOPS.forEach(sh=> shopOpts += '<option value="'+sh.id+'">'+esc(sh.name)+'</option>');
+
+  return '<h2>Users</h2>'
+   + '<p class="sub">Who can sign in, and what they may see. '
+   + users.length+' user'+(users.length===1?'':'s')
+   + (invites.length ? ' &middot; '+invites.length+' waiting to sign up' : '')+'.</p>'
+   + (PEOPLE_ERR ? '<div class="note">'+esc(PEOPLE_ERR)+'</div>' : '')
+
+   /* ---- add ---- */
+   + '<div class="card"><h3>Add a person</h3><div style="padding:14px 16px">'
+   + '<div class="bar" style="margin:0">'
+   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Name</label>'
+   + '<input type="text" id="npName" placeholder="Full name"></div>'
+   + '<div style="flex:1 1 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Phone</label>'
+   + '<input type="text" id="npPhone" placeholder="98400 00000"></div>'
+   + '<div style="flex:1 1 190px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Email <span style="font-weight:400;color:var(--ink-4)">(owner / manager)</span></label>'
+   + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
+   + '<div style="flex:1 1 160px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Role</label>'
+   + '<select id="npRole" onchange="npRoleChanged()">'
+   + '<option value="admin">Manager</option>'
+   + '<option value="shop">Shop</option>'
+   + '<option value="ho">Head office</option>'
+   + '<option value="owner">Owner</option></select></div>'
+   + '<div style="flex:1 1 150px" id="npShopWrap" class="hidden">'
+   + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Which shop</label>'
+   + '<select id="npShop">'+shopOpts+'</select></div>'
+   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addPerson()"'
+   + (PEOPLE_BUSY?' disabled':'')+'>Add</button></div>'
+   + '</div>'
+   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
+   + 'They will not exist until they sign up themselves with this phone or email. '
+   + 'Shop staff sign in by phone; owners and managers by email and password.</p>'
+   + '</div></div>'
+
+   /* ---- people ---- */
+   + '<div class="card"><h3>People</h3><div class="twrap"><table><thead><tr>'
+   + '<th>Name</th><th>Phone</th><th>Role</th><th>For</th><th class="c">Status</th><th></th>'
+   + '</tr></thead><tbody>'
+   + (rows || '<tr><td colspan="6"><div class="empty">Nobody yet.</div></td></tr>')
+   + '</tbody></table></div></div>'
+
+   /* ---- invites ---- */
+   + (invites.length
+      ? '<div class="card"><h3>Waiting to sign up</h3><div class="twrap"><table><thead><tr>'
+        + '<th>Name</th><th>Phone</th><th>Role</th><th>For</th><th></th>'
+        + '</tr></thead><tbody>'+inv+'</tbody></table></div></div>'
+      : '')
+
+   + '<div class="note" style="margin-top:4px">'
+   + '<b>Owner</b> is the strongest role &mdash; it is the only one that can record payments, '
+   + 'change margins, or see vendor bank details. Give <b>Manager</b> unless someone genuinely '
+   + 'needs the money side. Nobody is ever deleted, only switched off, so past indents stay '
+   + 'attached to whoever entered them.</div>';
+}
+
+function roleSelect(u, isMe){
+  if(isMe) return '<span class="pill p-green">Owner</span>';
+  let h = '<select onchange="changeRole(\''+u.id+'\',this.value)" style="width:auto;font-size:13px">';
+  ['owner','admin','ho','shop'].forEach(r=>{
+    /* a shop user cannot be re-tagged here: the row would need a shop id */
+    if(r === 'shop' && u.role !== 'shop') return;
+    if(u.role === 'shop' && r !== 'shop') return;
+    h += '<option value="'+r+'"'+(u.role===r?' selected':'')+' title="'+esc(ROLE_LABEL[r])+'">'
+       + {owner:'Owner',admin:'Manager',ho:'Head office',shop:'Shop'}[r]+'</option>';
+  });
+  return h + '</select>';
+}
+
+function npRoleChanged(){
+  const r = document.getElementById('npRole').value;
+  document.getElementById('npShopWrap').className = (r === 'shop') ? '' : 'hidden';
+}
+
+function addPerson(){
+  const name  = document.getElementById('npName').value.trim();
+  const phone = document.getElementById('npPhone').value.replace(/\s+/g,'');
+  const email = document.getElementById('npEmail').value.trim();
+  const role  = document.getElementById('npRole').value;
+  const shop  = document.getElementById('npShop').value;
+
+  if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
+  if(role === 'shop' && !phone){ alert('Shop staff sign in by phone, so a phone number is required.'); return; }
+
+  PEOPLE_BUSY = true; render();
+  VFSync.invitePerson({
+    role: role, name: name, phone: phone || null, email: email || null,
+    clientId: (role === 'shop' || role === 'ho') ? VF_CONFIG.clientId : null,
+    shopId:   (role === 'shop') ? shop : null,
+  }).then(()=>{
+    PEOPLE = null;          /* force a refetch */
+    loadPeople();
+  }).catch(e=>{
+    PEOPLE_BUSY = false;
+    alert('Could not add: ' + (e.message || e));
+    render();
+  });
+}
+
+function changeRole(id, role){
+  VFSync.setPersonRole(id, role)
+    .then(()=>{ PEOPLE = null; loadPeople(); })
+    .catch(e=>{ alert(e.message || e); PEOPLE = null; loadPeople(); });
+}
+
+function togglePerson(id, active){
+  VFSync.setPersonActive(id, active)
+    .then(()=>{ PEOPLE = null; loadPeople(); })
+    .catch(e=>{ alert(e.message || e); PEOPLE = null; loadPeople(); });
+}
+
+function dropInvite(id){
+  if(!confirm('Cancel this invite?')) return;
+  VFSync.cancelInvite(id)
+    .then(()=>{ PEOPLE = null; loadPeople(); })
+    .catch(e=>{ alert(e.message || e); PEOPLE = null; loadPeople(); });
+}
+
+/* ============================================================
    Shops  —  the client's branches
    ============================================================ */
 function vShops(){
+  const owner = (ROLE === 'owner');
   let rows = '';
-  SHOPS.forEach(s=>{
-    const comm = commOf(s.id);
-    rows += '<tr><td class="mono" style="width:70px">'+esc(s.id)+'</td>'
-      + '<td>'+esc(s.name)+'</td>'
-      + '<td class="mono" style="color:var(--ink-3)">'+esc(s.prefix)+'</td>'
-      + (ROLE==='owner' ? '<td class="c mono" style="width:120px">'+num(comm,2)+'%</td>' : '')
+  SHOPS.forEach(sh=>{
+    const comm = commOf(sh.id);
+    rows += '<tr><td class="mono" style="width:74px">'+esc(sh.id)+'</td>'
+      + '<td>'+esc(sh.name)+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+esc(sh.prefix)+'</td>'
+      + (owner ? '<td class="c mono" style="width:110px">'+num(comm,2)+'%</td>' : '')
       + '</tr>';
   });
+
+  let add = '';
+  if(owner){
+    add = '<div class="card"><h3>Add a shop</h3><div style="padding:14px 16px">'
+      + '<div class="bar" style="margin:0">'
+      + '<div style="flex:0 0 110px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Code</label>'
+      + '<input type="text" id="nsCode" maxlength="4" placeholder="MBK" style="text-transform:uppercase"></div>'
+      + '<div style="flex:1 1 200px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Shop name</label>'
+      + '<input type="text" id="nsName" placeholder="Mambakkam"></div>'
+      + '<div style="flex:0 0 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Commission %</label>'
+      + '<input type="number" id="nsComm" step="any" min="0" value="4"></div>'
+      + '<div style="align-self:flex-end"><button class="btn pri" onclick="addShop()">Add shop</button></div>'
+      + '</div>'
+      + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
+      + 'The code goes on every bill for this shop &mdash; 2 to 4 letters, and it cannot be '
+      + 'changed later without reissuing bill numbers. The bill prefix becomes VF/&lt;code&gt;.</p>'
+      + '</div></div>';
+  }
+
   return '<h2>Shops</h2><p class="sub">'+esc(CLIENT)+' &middot; '+SHOPS.length+' branches.</p>'
-   + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Shop</th>'
-   + '<th>Bill prefix</th>'+(ROLE==='owner'?'<th class="c">Commission</th>':'')
-   + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+   + add
+   + '<div class="card"><h3>Branches</h3><div class="twrap"><table><thead><tr><th>Code</th><th>Shop</th>'
+   + '<th>Bill prefix</th>'+(owner?'<th class="c">Commission</th>':'')
+   + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+   + (owner ? '<div class="note">A shop added here exists for everyone as soon as it syncs. '
+            + 'Give its manager a login under <b>Master &rarr; Users</b>, choosing the '
+            + 'Shop role and this branch &mdash; they will then see only their own indent, '
+            + 'deliveries and bills.</div>' : '');
 }
+
+function addShop(){
+  if(ROLE !== 'owner'){ alert('Only an owner may add a shop.'); return; }
+  const code = document.getElementById('nsCode').value.trim().toUpperCase();
+  const name = document.getElementById('nsName').value.trim();
+  const comm = parseFloat(document.getElementById('nsComm').value);
+
+  if(!/^[A-Z]{2,4}$/.test(code)){ alert('The code must be 2 to 4 letters, A to Z.'); return; }
+  if(!name){ alert('Enter the shop name.'); return; }
+  if(SHOPS.filter(s=>s.id===code).length){ alert(code+' already exists.'); return; }
+  if(isNaN(comm) || comm < 0){ alert('Enter a commission percentage.'); return; }
+
+  const shop = {id:code, name:name, prefix:'VF/'+code, comm:comm};
+  SHOPS.push(shop);
+  DB.master.comm[code] = comm;
+  save();
+
+  /* The shop must reach the shops table before anything can reference
+     it — margin_comm and every indent carry a foreign key to it. */
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.addShop(shop).then(()=>{ VFSync.push(); render(); })
+      .catch(e=>{
+        SHOPS.pop(); delete DB.master.comm[code]; save();
+        alert('Could not add the shop: ' + (e.message || e));
+        render();
+      });
+  }else{
+    render();
+  }
+}
+
 
 
 function drawSide(){
@@ -1584,13 +1918,13 @@ function drawSide(){
     const holds = (g.kids||[]).some(k=>k.id===TAB);
     if(g.id){
       h += '<div class="grp solo"><button class="'+(TAB===g.id?'on':'')+'" onclick="go(\''+g.id+'\')">'
-         + '<span class="ic">'+g.ic+'</span>'+g.t+'</button></div>';
+         + icon(g.ic)+g.t+'</button></div>';
       return;
     }
     const open = (OPENGRP===g.t) || holds;
     h += '<div class="grp'+(open?' open':'')+'">'
        + '<button onclick="toggleGrp(\''+g.t.replace(/'/g,"\\'")+'\')">'
-       + '<span class="ic">'+g.ic+'</span>'+g.t+'<span class="cv">&#9654;</span></button>'
+       + icon(g.ic)+g.t+'<span class="cv">&#9654;</span></button>'
        + '<div class="kids">'
        + g.kids.map(k=>'<button class="'+(TAB===k.id?'on':'')+'" onclick="go(\''+k.id+'\')">'
                        + k.t+'</button>').join('')
@@ -1633,7 +1967,8 @@ function render(){
   const fn = {
     board:vBoard, indents:vIndents, rates:vRates, pack:vPack, ship:vShip, inv:vInvoices,
     orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent,
-    mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops
+    mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops,
+    people:vPeople
   }[TAB];
   m.innerHTML = fn ? fn() : '';
   if(afterRender){ const f = afterRender; afterRender = null; f(); }
