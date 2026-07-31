@@ -324,6 +324,22 @@ const VFSync = (function () {
     return j;
   }
 
+  /* Creating the account. Safe to leave open: an account with no
+     invite gets no app_users row, and every policy then resolves to
+     false — it can sign in and see nothing at all. The invite, not the
+     signup, is what grants access. */
+  async function signUp(email, password) {
+    const r = await fetch(CFG.url + '/auth/v1/signup', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ email: email, password: password }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Could not create the account');
+    // a session comes back only when email confirmation is switched off
+    if (j.access_token) { auth = j; writeJSON(AKEY, auth); return { signedIn: true }; }
+    return { signedIn: false, needsConfirmation: true };
+  }
+
   async function refresh() {
     if (!auth || !auth.refresh_token) return false;
     const r = await fetch(CFG.url + '/auth/v1/token?grant_type=refresh_token', {
@@ -684,7 +700,7 @@ const VFSync = (function () {
   }
 
   return {
-    enabled, signIn, signOut, signedIn, refresh, pull, push, record,
+    enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,

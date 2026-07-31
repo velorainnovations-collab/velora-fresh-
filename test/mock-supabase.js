@@ -46,6 +46,21 @@ const srv = http.createServer((req, res) => {
     };
     if (req.method === 'OPTIONS') return send(200, {});
 
+    if (url.pathname === '/auth/v1/signup') {
+      const { email, password } = JSON.parse(body || '{}');
+      if (USERS[email]) return send(400, { msg: 'User already registered' });
+      if (!password || password.length < 8) return send(400, { msg: 'Password too short' });
+      const uid = 'new0' + Object.keys(USERS).length + '000-0000-0000-0000-00000000000e';
+      // invited addresses get a row; anything else authenticates and sees nothing
+      const invited = email === 'invited@velora.example';
+      USERS[email] = { pw: password, uid: uid,
+                       row: invited ? { id: uid, full_name: 'Invited Friend', role: 'admin',
+                                        client_id: null, shop_id: null, active: true } : null };
+      received.push({ table: 'auth:signup', method: 'POST', rows: { email } });
+      // confirmation switched off in this mock, so a session comes straight back
+      return send(200, { access_token: 'tok-' + uid, refresh_token: 'r', token_type: 'bearer' });
+    }
+
     if (url.pathname === '/auth/v1/token') {
       const { email, password } = JSON.parse(body || '{}');
       const u = USERS[email];

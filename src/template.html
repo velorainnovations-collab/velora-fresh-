@@ -286,14 +286,18 @@ table.ibl tbody tr:hover td{background:none}
     <div class="bd"><span class="mk">VF</span>
       <div><h1>Velora Fresh</h1><p class="co">Velora Innovations Pvt Ltd</p></div>
     </div>
-    <p class="hint">Sign in to the supply desk.</p>
+    <p class="hint" id="gateHint">Sign in to the supply desk.</p>
     <div id="gateErr"></div>
     <div class="f"><label for="gateEmail">Email</label>
       <input id="gateEmail" type="email" autocomplete="username" required></div>
     <div class="f"><label for="gatePass">Password</label>
       <input id="gatePass" type="password" autocomplete="current-password" required></div>
     <button class="btn pri" id="gateBtn" type="submit" style="width:100%">Sign in</button>
-    <p class="foot">Your access is set by the owner. Contact them if you cannot get in.</p>
+    <p class="foot" style="margin-top:12px">
+      <span id="gateSwapText">First time here?</span>
+      <a href="#" id="gateSwap" onclick="swapGateMode(event)">Create your account</a>
+    </p>
+    <p class="foot" style="margin-top:6px">Your access is set by the owner. Contact them if you cannot get in.</p>
   </form>
 </div>
 
@@ -433,18 +437,59 @@ function showGate(msg){
 }
 function hideGate(){ const g = gateEl(); if(g) g.classList.add('hidden'); }
 
+let GATE_MODE = 'in';        /* 'in' | 'up' */
+
+function swapGateMode(ev){
+  if(ev) ev.preventDefault();
+  GATE_MODE = (GATE_MODE === 'in') ? 'up' : 'in';
+  const up = (GATE_MODE === 'up');
+  document.getElementById('gateHint').textContent = up
+    ? 'Create your account with the email the owner added.'
+    : 'Sign in to the supply desk.';
+  document.getElementById('gateBtn').textContent = up ? 'Create account' : 'Sign in';
+  document.getElementById('gateSwapText').textContent = up ? 'Already have an account?' : 'First time here?';
+  document.getElementById('gateSwap').textContent = up ? 'Sign in' : 'Create your account';
+  document.getElementById('gatePass').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+  document.getElementById('gateErr').innerHTML = '';
+}
+
 async function doSignIn(ev){
   ev.preventDefault();
-  const btn = document.getElementById('gateBtn');
-  btn.disabled = true; btn.textContent = 'Signing in...';
+  const btn   = document.getElementById('gateBtn');
+  const email = document.getElementById('gateEmail').value.trim();
+  const pass  = document.getElementById('gatePass').value;
+  const up    = (GATE_MODE === 'up');
+  const label = btn.textContent;
+
+  if(up && pass.length < 8){
+    showGate('Choose a password of at least 8 characters.');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = up ? 'Creating...' : 'Signing in...';
   try{
-    await VFSync.signIn(document.getElementById('gateEmail').value.trim(),
-                        document.getElementById('gatePass').value);
+    if(up){
+      const r = await VFSync.signUp(email, pass);
+      if(!r.signedIn){
+        showGate('');
+        document.getElementById('gateErr').innerHTML =
+          '<div class="notice">Account created. Check your email for the confirmation link, '
+          + 'then come back and sign in.</div>';
+        GATE_MODE = 'in'; swapGateMode(null);
+        /* swapGateMode cleared the message, so put it back */
+        document.getElementById('gateErr').innerHTML =
+          '<div class="notice">Account created. Check your email for the confirmation link, '
+          + 'then come back and sign in.</div>';
+        return;
+      }
+    }else{
+      await VFSync.signIn(email, pass);
+    }
     await afterSignIn();
   }catch(e){
-    showGate(e.message || 'Could not sign in');
+    showGate(e.message || (up ? 'Could not create the account' : 'Could not sign in'));
   }finally{
-    btn.disabled = false; btn.textContent = 'Sign in';
+    btn.disabled = false; btn.textContent = label;
   }
 }
 
@@ -457,7 +502,7 @@ async function afterSignIn(){
   const me = await VFSync.whoami();
   if(!me){
     VFSync.signOut();
-    showGate('This account has no access yet. Ask the owner to add you.');
+    showGate('Your account works, but the owner has not given it access yet. Ask them to add this email under Master > Users.');
     return;
   }
   ME = me;
@@ -914,6 +959,8 @@ let PEOPLE = null;          /* null = not fetched yet */
 let PEOPLE_ERR = '';
 let PEOPLE_BUSY = false;
 
+const ROLE_NAME = {owner:'Owner', admin:'Manager', ho:'Head office', shop:'Shop'};
+
 const ROLE_LABEL = {
   owner: 'Owner — full control, money and bank details',
   admin: 'Manager — runs the day, no money',
@@ -963,7 +1010,7 @@ function vPeople(){
   invites.forEach(i=>{
     inv += '<tr><td>'+esc(i.full_name || '&mdash;')+'</td>'
       + '<td class="mono" style="color:var(--ink-3)">'+esc(i.phone || '&mdash;')+'</td>'
-      + '<td><span class="pill p-blue">'+esc(i.role)+'</span></td>'
+      + '<td><span class="pill p-blue">'+esc(ROLE_NAME[i.role] || i.role)+'</span></td>'
       + '<td style="color:var(--ink-3)">'+(i.shop_id ? esc(i.shop_id) : (i.client_id ? esc(i.client_id) : 'Velora'))+'</td>'
       + '<td class="r"><button class="btn sm" onclick="dropInvite(\''+i.id+'\')">Cancel</button></td></tr>';
   });
@@ -1032,7 +1079,7 @@ function roleSelect(u, isMe){
     if(r === 'shop' && u.role !== 'shop') return;
     if(u.role === 'shop' && r !== 'shop') return;
     h += '<option value="'+r+'"'+(u.role===r?' selected':'')+' title="'+esc(ROLE_LABEL[r])+'">'
-       + {owner:'Owner',admin:'Manager',ho:'Head office',shop:'Shop'}[r]+'</option>';
+       + ROLE_NAME[r]+'</option>';
   });
   return h + '</select>';
 }

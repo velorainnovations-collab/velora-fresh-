@@ -93,8 +93,8 @@ function check(label, got, want) {
   await p.fill('#gatePass', 'right');
   await p.click('#gateBtn');
   await p.waitForTimeout(1200);
-  check('told they have no access',
-        /no access yet/.test(await p.locator('#gateErr').textContent()), true);
+  check('told to ask the owner for access',
+        /has not given it access/.test(await p.locator('#gateErr').textContent()), true);
   check('kept out', await p.locator('#gate').isVisible(), true);
   await ctx.close();
 
