@@ -1,0 +1,16 @@
+{
+  "name": "velora-fresh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Velora Fresh supply desk — indent to invoice for fruit and vegetable supply to supermarket chains",
+  "scripts": {
+    "build": "python3 src/build.py",
+    "import": "python3 src/import_sheets.py data/Vendor_Group.xlsx",
+    "test": "node test/smoke.js",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  },
+  "license": "UNLICENSED"
+}

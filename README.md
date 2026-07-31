@@ -1,94 +1,106 @@
-# 🥬 Velora Fresh
+# Velora Fresh — supply desk
 
-**Velora Fresh** is a front-end website for an online supermarket that sells fresh
-**vegetables and fruits**. Customers can browse the aisles, search and filter produce,
-add items to a basket, apply a coupon, and place an order through a full checkout flow.
+Working prototype for **Velora Innovations Private Limited**, trading as **Velora Fresh**:
+fruit and vegetable supply to supermarket chains in Tamil Nadu.
 
-Built with plain **HTML, CSS and JavaScript** — no build step, no frameworks, no external
-requests. Open a file and it runs.
+It covers one full trading cycle — a shop's indent in the evening, the vendor orders
+that night, market rates and packed quantities the next morning, delivery confirmation,
+the invoice, and weekly accounts.
+
+Current state: **single-file front end, all data in `localStorage`.** No server yet.
+Everything is real and calculating correctly; the storage layer is the only stub.
 
 ---
 
-## Pages
-
-| Page | File | What it does |
-|---|---|---|
-| Home | `index.html` | Hero, categories, today's fresh picks, offer strip, how-it-works, reviews, newsletter |
-| Shop | `shop.html` | Full catalogue with live search, category filter and 5 sort options |
-| Checkout | `checkout.html` | Basket review, delivery form, slot picker, payment method, coupon, order summary |
-| About | `about.html` | Story, sourcing process, company stats and values |
-| Contact | `contact.html` | Contact form, direct details, delivery areas and a FAQ |
-
-## Features
-
-- 🛒 **Shopping basket** — a slide-out drawer on every page, with quantity steppers
-- 💾 **Persistent cart** — saved to `localStorage`, so it survives page changes and reloads
-- 🔍 **Live search** — filter by product name, category or tag as you type
-- 🏷️ **Category filter & sorting** — popular, price up/down, A–Z, biggest discount
-- 🎟️ **Coupons** — `VELORA10` (10% off) and `FRESH20` (20% off)
-- 🚚 **Delivery rules** — ₹29 under ₹499, free above it, with a live "add ₹X more" hint
-- 📦 **Order confirmation** — generates an order ID and clears the basket
-- 📱 **Fully responsive** — mobile menu, fluid grids, works down to small phones
-- ♿ **Accessible** — semantic landmarks, ARIA labels, keyboard focus rings, `Esc` closes the cart
-- 🖼️ **Zero external assets** — emoji product art, inline SVG favicon, so it works offline
-
-## Project structure
-
-```
-veloraproject/
-├── index.html           # Home
-├── shop.html            # Product catalogue
-├── checkout.html        # Basket + checkout
-├── about.html           # About us
-├── contact.html         # Contact + FAQ
-├── assets/
-│   ├── css/
-│   │   └── style.css    # All styling (design tokens, layout, components, responsive)
-│   ├── js/
-│   │   ├── products.js  # Product catalogue data (28 items)
-│   │   └── app.js       # Cart store, rendering, drawer, checkout logic
-│   └── img/             # (reserved for real product photos)
-└── README.md
-```
-
-## Running it
-
-No dependencies or build tools. Either:
-
-**Open directly** — double-click `index.html`, or
-
-**Serve locally** (recommended, keeps URLs clean):
+## Run it
 
 ```bash
-python3 -m http.server 8000
-# then open http://localhost:8000
+git clone <your repo>
+cd velora-fresh
+python3 -m http.server 8080     # or just open index.html
 ```
 
-## Product catalogue
+Open <http://localhost:8080>. Switch roles from the dropdown in the header.
 
-28 items across two categories, defined in `assets/js/products.js`:
+**Turn on "Ignore indent timings"** (Owner role, header) before testing, or the
+6 pm–9 pm indent window will block you outside those hours.
 
-- **Vegetables (14)** — tomato, onion, potato, carrot, broccoli, cucumber, capsicum,
-  sweet corn, green chilli, spinach, garlic, brinjal, mushroom, ginger
-- **Fruits (14)** — banana, apple, mango, grapes, orange, watermelon, pineapple,
-  strawberry, papaya, pomegranate, kiwi, lemon, coconut, pear
+## Build
 
-To add a product, append an object to the `PRODUCTS` array:
+`index.html` is **generated**. Do not edit it directly.
 
-```js
-{ id: 'veg-15', name: 'Cauliflower', category: 'vegetables', art: '🥦',
-  price: 42, mrp: 52, unit: '1 pc', tag: '', stock: 30, rating: 4.4 }
+```bash
+python3 src/build.py            # src/template.html + data/*.txt -> index.html
+node test/smoke.js              # 25 checks across the whole cycle
 ```
 
-Every page picks it up automatically — no other file needs editing.
+When the product or group spreadsheet changes:
 
-## Notes
-
-This is a **front-end demonstration storefront**. There is no server, database or payment
-gateway: placing an order shows a confirmation and empties the basket, and the contact
-and newsletter forms acknowledge the submission without sending anything. Contact details,
-addresses and customer reviews are sample content.
+```bash
+pip install openpyxl
+python3 src/import_sheets.py data/Vendor_Group.xlsx   # rewrites data/*.txt
+python3 src/build.py
+node test/smoke.js
+```
 
 ---
 
-© 2026 Velora Fresh — Farm to your door 🌱
+## Repository layout
+
+```
+index.html                generated app — do not edit
+src/template.html         the source, with @@PRODUCTS@@ and @@GROUPS@@ placeholders
+src/build.py              substitutes the data files into the template
+src/import_sheets.py      regenerates data/*.txt from the spreadsheets
+data/products.txt         code|English / Tamil|unit|unit weight kg|selling margin %|alias
+data/groups.txt           group name|code,code,code
+data/Vendor_Group.xlsx    source spreadsheet for both of the above
+test/smoke.js             headless run of the whole day cycle (jsdom)
+docs/WORKFLOW.md          the business rules the code implements
+docs/DATA_MODEL.md        what is stored and where
+docs/ROADMAP.md           what is built, what is next
+```
+
+---
+
+## Roles
+
+| Role | Sees |
+|---|---|
+| **Owner** (Velora) | Everything. Only role that can record payments, edit margins, or view vendor bank details |
+| **Admin** (Velora) | Day board, indents, orders, rates, packing, delivery, invoices, vendors. No margins, no payments, no bank details |
+| **Head office** (client) | Indents (can edit), invoices, accounts — all read-only on money. No selling price, no cost |
+| **Shop** | Its own indent, its own deliveries, its own bills and outstanding balance |
+
+Logins are a role dropdown for now. Real auth arrives with the backend — see
+`docs/ROADMAP.md`.
+
+## Pricing
+
+Three layers, and only the first is shared across shops:
+
+```
+market rate            typed each morning from the vendor's bill, same for all shops
+  x (1 + commission%)  per shop, set in the margin master  ->  PURCHASE PRICE (billed)
+  x (1 + selling%)     per shop per product                ->  SELLING PRICE (shelf)
+```
+
+Worked through: market ₹100, commission 4% → billed ₹104/kg. At a 30% selling
+margin the shop's shelf price shows ₹135.20.
+
+The commission lives **inside** the per-kg rate. There is no separate service charge
+line on the invoice. The business is GST exempt, so no tax appears anywhere.
+
+An invoice **snapshots** the rate and amount when it is generated. Changing a margin
+afterwards never re-prices a bill that has already been raised.
+
+---
+
+## Known gaps
+
+* 7 box/tray products have no unit weight on file (86, 396, 280, 293, 60, 330, 329).
+  Invoice generation is deliberately blocked rather than billing them at zero.
+* 109 products are in no vendor group and fall into **Manual order**. Mostly fruit —
+  add the fruit tabs to `Vendor_Group.xlsx` and re-import.
+* WhatsApp and email sending are stubs that show the message that would go out.
+* Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.
