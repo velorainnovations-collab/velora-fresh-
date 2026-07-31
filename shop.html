@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shop Vegetables &amp; Fruits — Velora Fresh</title>
+  <meta name="description" content="Browse fresh vegetables and fruits at Velora Fresh. Search, filter and add to your basket for same-day delivery.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥬</text></svg>">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <span>🚚 Free delivery on orders above ₹499 · Same-day slots until 8 PM</span>
+    <span>📞 <a href="tel:+911800123456">1800-123-456</a></span>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="index.html">
+        <span class="mark" aria-hidden="true">🥬</span>
+        <span>Velora Fresh<small>Farm to your door</small></span>
+      </a>
+      <ul class="menu" id="primaryMenu">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="shop.html">Shop</a></li>
+        <li><a href="shop.html?category=vegetables">Vegetables</a></li>
+        <li><a href="shop.html?category=fruits">Fruits</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+      <div class="nav-actions">
+        <button class="icon-btn" type="button" data-open-cart aria-label="Open basket">
+          🛒<span class="badge" data-cart-count hidden>0</span>
+        </button>
+        <button class="icon-btn nav-toggle" type="button" data-nav-toggle aria-label="Toggle menu" aria-expanded="false" aria-controls="primaryMenu">☰</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<section class="page-banner">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Home</a> / Shop</p>
+    <h1 id="shopTitle">All fresh produce</h1>
+    <p id="shopSub">Picked this morning, packed cold, delivered today.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+
+    <div class="toolbar">
+      <div class="search-field">
+        <span class="ico" aria-hidden="true">🔍</span>
+        <label class="sr-only" for="search">Search produce</label>
+        <input id="search" type="search" placeholder="Search tomato, mango, spinach…" autocomplete="off">
+      </div>
+
+      <div class="chips" id="filterChips" role="group" aria-label="Filter by category">
+        <button class="chip active" type="button" data-filter="all">All</button>
+        <button class="chip" type="button" data-filter="vegetables">🥬 Vegetables</button>
+        <button class="chip" type="button" data-filter="fruits">🍓 Fruits</button>
+      </div>
+
+      <label class="sr-only" for="sort">Sort products</label>
+      <select class="sort" id="sort">
+        <option value="popular">Sort: Popular</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+        <option value="name">Name: A–Z</option>
+        <option value="discount">Biggest discount</option>
+      </select>
+    </div>
+
+    <p class="muted" id="resultCount" style="margin-bottom:1rem"></p>
+    <div class="product-grid" id="shopGrid"></div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="brand"><span class="mark" aria-hidden="true">🥬</span><span>Velora Fresh<small>Farm to your door</small></span></div>
+        <p>An online supermarket for everyday vegetables and fruits, sourced from growers we know by name.</p>
+      </div>
+      <div>
+        <h4>Shop</h4>
+        <ul>
+          <li><a href="shop.html?category=vegetables">Vegetables</a></li>
+          <li><a href="shop.html?category=fruits">Fruits</a></li>
+          <li><a href="checkout.html">Your basket</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="about.html">About us</a></li>
+          <li><a href="contact.html">Contact</a></li>
+          <li><a href="contact.html#faq">FAQ</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Support</h4>
+        <ul>
+          <li><a href="tel:+911800123456">1800-123-456</a></li>
+          <li><a href="mailto:care@velorafresh.example">care@velorafresh.example</a></li>
+          <li>Mon–Sun, 7 AM – 10 PM</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 Velora Fresh. All rights reserved.</span>
+      <span>Made with 🌱 for fresher kitchens</span>
+    </div>
+  </div>
+</footer>
+
+<div class="overlay" id="overlay" data-close-cart></div>
+<aside class="drawer" id="cartDrawer" aria-label="Shopping basket">
+  <header>
+    <h3>Your basket</h3>
+    <button class="close" type="button" data-close-cart aria-label="Close basket">×</button>
+  </header>
+  <div class="items" id="cartItems"></div>
+  <footer id="cartFooter" hidden>
+    <p class="notice" id="drawerHint" style="margin:0 0 .9rem"></p>
+    <div class="totals"><span>Subtotal</span><b id="drawerSubtotal">₹0</b></div>
+    <div class="totals"><span>Delivery</span><b id="drawerDelivery">FREE</b></div>
+    <div class="totals grand"><span>Total</span><span id="drawerTotal">₹0</span></div>
+    <a class="btn btn-primary btn-block" href="checkout.html" style="margin-top:1rem">Go to checkout</a>
+  </footer>
+</aside>
+
+<script src="assets/js/products.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var V = window.Velora;
+    var grid   = document.getElementById('shopGrid');
+    var search = document.getElementById('search');
+    var sort   = document.getElementById('sort');
+    var count  = document.getElementById('resultCount');
+
+    var state = { category: 'all', q: '', sort: 'popular' };
+
+    // read ?category= from the URL
+    var params = new URLSearchParams(location.search);
+    var urlCat = params.get('category');
+    if (urlCat === 'vegetables' || urlCat === 'fruits') state.category = urlCat;
+    var urlQ = params.get('q');
+    if (urlQ) { state.q = urlQ; search.value = urlQ; }
+
+    function syncChips() {
+      document.querySelectorAll('#filterChips .chip').forEach(function (c) {
+        c.classList.toggle('active', c.dataset.filter === state.category);
+      });
+      var titles = {
+        all: ['All fresh produce', 'Picked this morning, packed cold, delivered today.'],
+        vegetables: ['Fresh vegetables', 'Farm-picked greens and daily staples for every kitchen.'],
+        fruits: ['Fresh fruits', 'Sweet, seasonal and hand-graded fruit.']
+      };
+      document.getElementById('shopTitle').textContent = titles[state.category][0];
+      document.getElementById('shopSub').textContent   = titles[state.category][1];
+      document.title = titles[state.category][0] + ' — Velora Fresh';
+    }
+
+    function visible() {
+      var q = state.q.trim().toLowerCase();
+      var list = PRODUCTS.filter(function (p) {
+        var okCat = state.category === 'all' || p.category === state.category;
+        var okQ = !q || p.name.toLowerCase().indexOf(q) > -1 ||
+                  p.category.indexOf(q) > -1 || (p.tag || '').toLowerCase().indexOf(q) > -1;
+        return okCat && okQ;
+      });
+
+      var sorters = {
+        'popular':    function (a, b) { return b.rating - a.rating; },
+        'price-asc':  function (a, b) { return a.price - b.price; },
+        'price-desc': function (a, b) { return b.price - a.price; },
+        'name':       function (a, b) { return a.name.localeCompare(b.name); },
+        'discount':   function (a, b) { return (1 - b.price / b.mrp) - (1 - a.price / a.mrp); }
+      };
+      return list.sort(sorters[state.sort] || sorters.popular);
+    }
+
+    function draw() {
+      var list = visible();
+      count.textContent = list.length + (list.length === 1 ? ' item' : ' items') + ' available';
+      V.renderGrid(grid, list);
+    }
+
+    // re-render cards when the cart changes (called from app.js)
+    window.veloraRefreshGrid = draw;
+
+    document.getElementById('filterChips').addEventListener('click', function (e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      state.category = chip.dataset.filter;
+      syncChips();
+      draw();
+      var url = state.category === 'all' ? 'shop.html' : 'shop.html?category=' + state.category;
+      history.replaceState(null, '', url);
+    });
+
+    var t;
+    search.addEventListener('input', function () {
+      clearTimeout(t);
+      t = setTimeout(function () { state.q = search.value; draw(); }, 150);
+    });
+
+    sort.addEventListener('change', function () { state.sort = sort.value; draw(); });
+
+    syncChips();
+    draw();
+  });
+</script>
+</body>
+</html>
