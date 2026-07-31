@@ -740,7 +740,15 @@ function mergeCatalogue(cat){
     if(r.alias) ALIAS[String(r.alias).toUpperCase()] = r.code;
     if(!known){ CODES.push(r.code); added++; }
   });
-  (cat.groups || []).forEach(g=>{ if(!GROUPS[g.name]) GROUPS[g.name] = []; });
+  (cat.groups || []).forEach(g=>{
+    if(!GROUPS[g.name]) GROUPS[g.name] = [];
+    /* a group added on another device has no vendor record here yet, and
+       the vendor screen reads its name straight away */
+    if(!DB.vendors[g.name]){
+      DB.vendors[g.name] = {name:g.name, phone:'', contact:'', address:'', notes:'',
+                            manual:!!g.manual, bank:{acName:'',acNo:'',ifsc:'',upi:''}};
+    }
+  });
   (cat.mapping || []).forEach(m=>{
     const was = CODE2GROUP[m.product_code];
     if(was === m.group_name) return;
@@ -1859,7 +1867,62 @@ function vVendors(){
   });
   return '<h2>Vendors</h2><p class="sub">One vendor per group. The group decides which vendor gets the order. '
    + 'Anything not listed in the group sheet falls into &ldquo;'+UNGROUPED+'&rdquo; and is ordered by hand.</p>'
-   + '<div class="card"><table><thead><tr><th>Vendor</th><th>WhatsApp</th><th class="c">Products</th><th>Order by</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+   + addVendorForm()
+   + '<div class="card"><h3>Vendors</h3><div class="twrap"><table><thead><tr><th>Vendor</th><th>WhatsApp</th><th class="c">Products</th><th>Order by</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+
+/* Adding a vendor creates the group it orders for. Products are put
+   into that group from the product list, not here — a vendor is added
+   once, products move between vendors often. */
+function addVendorForm(){
+  return '<div class="card"><h3>Add a vendor</h3><div style="padding:14px 16px">'
+   + '<div class="bar" style="margin:0">'
+   + '<div style="flex:1 1 180px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Group name</label>'
+   + '<input type="text" id="nvGroup" placeholder="Ooty"></div>'
+   + '<div style="flex:1 1 180px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Vendor name</label>'
+   + '<input type="text" id="nvName" placeholder="Ooty Vegetables"></div>'
+   + '<div style="flex:1 1 160px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">WhatsApp number</label>'
+   + '<input type="text" id="nvPhone" placeholder="919342011780"></div>'
+   + '<div style="flex:0 0 auto;align-self:flex-end;padding-bottom:8px">'
+   + '<label style="font-size:13px;display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap">'
+   + '<input type="checkbox" id="nvManual" style="width:auto"> Order by hand</label></div>'
+   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addVendor()">Add vendor</button></div>'
+   + '</div>'
+   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
+   + 'The <b>group name</b> is what the rate screen and the order screen show, so keep it short &mdash; '
+   + 'the vendor name is what appears on their details. Put products into this vendor from '
+   + '<b>Product &rarr; Product list</b>. Tick <b>order by hand</b> if you place their order by phone '
+   + 'rather than WhatsApp.</p>'
+   + '</div></div>';
+}
+
+function addVendor(){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may add a vendor.'); return; }
+  const g     = document.getElementById('nvGroup').value.trim();
+  const name  = document.getElementById('nvName').value.trim();
+  const phone = document.getElementById('nvPhone').value.replace(/\s+/g,'');
+  const manual= document.getElementById('nvManual').checked;
+
+  if(!g){ alert('Enter a group name.'); return; }
+  if(GROUPS[g]){ alert('There is already a vendor group called '+g+'.'); return; }
+
+  const apply = ()=>{
+    GROUPS[g] = [];
+    GROUPNAMES.push(g);
+    DB.vendors[g] = {name:name||g, phone:phone, contact:'', address:'', notes:'',
+                     manual:manual, bank:{acName:'',acNo:'',ifsc:'',upi:''}};
+    save();
+    render();
+  };
+
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.addVendorGroup({name:g, vendorName:name, phone:phone, manual:manual,
+                           sort:GROUPNAMES.length + 1})
+      .then(()=>{ apply(); })
+      .catch(e=> alert('Could not add the vendor: ' + (e.message || e)));
+  }else{
+    apply();
+  }
 }
 function vVendorOne(g){
   const v = DB.vendors[g];

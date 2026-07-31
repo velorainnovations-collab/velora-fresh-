@@ -629,6 +629,30 @@ const VFSync = (function () {
     return true;
   }
 
+  /* A new vendor. The group row has to land before the vendor row —
+     vendors.group_name references it — and before any product can be
+     mapped to it. Queued writes would not hold that order, so both go
+     straight through. */
+  async function addVendorGroup(g) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const grp = await fetch(CFG.url + '/rest/v1/vendor_groups?on_conflict=name', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ name: g.name, manual: !!g.manual, sort_ord: g.sort || 50 }]),
+    });
+    if (grp.status === 401 && await refresh()) return addVendorGroup(g);
+    if (!grp.ok) throw await httpError(grp, 'vendor_groups');
+
+    const ven = await fetch(CFG.url + '/rest/v1/vendors?on_conflict=group_name', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ group_name: g.name, name: g.vendorName || g.name,
+                              phone: g.phone || '', contact: '', address: '', notes: '' }]),
+    });
+    if (!ven.ok) throw await httpError(ven, 'vendors');
+    return true;
+  }
+
   /* Everything the catalogue is made of, for merging over the build. */
   async function fetchCatalogue() {
     if (!enabled() || !signedIn()) return null;
@@ -663,7 +687,7 @@ const VFSync = (function () {
     enabled, signIn, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
-    addShop, addProduct, fetchCatalogue,
+    addShop, addProduct, addVendorGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },
