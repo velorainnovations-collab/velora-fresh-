@@ -74,6 +74,40 @@ function check(label, got, want) {
   check('no shop for a manager', inv && inv.rows.p_shop_id, 'null');
   check('list refreshed', await p.locator('#main .card:nth-of-type(3) tbody tr').count(), 2);
 
+  console.log('\ncreating a login with a password');
+  received.length = 0;
+  await p.fill('#npName', 'Made Manager');
+  await p.fill('#npEmail', 'made@velora.example');
+  await p.selectOption('#npRole', 'admin');
+  await p.click('button[title="Suggest one"]');
+  const suggested = await p.inputValue('#npPass');
+  check('a password is suggested', suggested.length, 10);
+  check('no easily confused characters', /[lIO01]/.test(suggested), false);
+
+  let shown = '';
+  p.once('dialog', async d => { shown = d.message(); await d.accept(); });
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(900);
+  const made = received.find(r => r.table === 'fn:create-user');
+  check('the edge function was called', !!made, true);
+  check('password sent', made && made.rows.password, suggested);
+  check('role sent', made && made.rows.role, 'admin');
+  check('owner is shown the credentials', /made@velora.example/.test(shown), true);
+  check('and the password', shown.indexOf(suggested) > -1, true);
+
+  console.log('\na short password never reaches the server');
+  received.length = 0;
+  let refused = '';
+  p.once('dialog', async d => { refused = d.message(); await d.accept(); });
+  await p.fill('#npName', 'Too Short');
+  await p.fill('#npEmail', 'short2@velora.example');
+  await p.fill('#npPass', 'abc');
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(500);
+  check('refused locally', /at least 8/.test(refused), true);
+  check('nothing sent', received.filter(r => r.table === 'fn:create-user').length, 0);
+  await p.fill('#npPass', '');
+
   console.log('\nshop role requires a shop');
   await p.selectOption('#npRole', 'shop');
   await p.waitForTimeout(200);

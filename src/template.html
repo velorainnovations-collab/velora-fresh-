@@ -1033,8 +1033,12 @@ function vPeople(){
    + '<input type="text" id="npName" placeholder="Full name"></div>'
    + '<div style="flex:1 1 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Phone</label>'
    + '<input type="text" id="npPhone" placeholder="98400 00000"></div>'
-   + '<div style="flex:1 1 190px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Email <span style="font-weight:400;color:var(--ink-4)">(owner / manager)</span></label>'
+   + '<div style="flex:1 1 190px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Email</label>'
    + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
+   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Password '
+   + '<span style="font-weight:400;color:var(--ink-4)">(you choose it)</span></label>'
+   + '<div style="display:flex;gap:6px"><input type="text" id="npPass" class="mono" placeholder="leave blank to invite">'
+   + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
    + '<div style="flex:1 1 160px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Role</label>'
    + '<select id="npRole" onchange="npRoleChanged()">'
    + '<option value="admin">Manager</option>'
@@ -1048,8 +1052,9 @@ function vPeople(){
    + (PEOPLE_BUSY?' disabled':'')+'>Add</button></div>'
    + '</div>'
    + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
-   + 'They will not exist until they sign up themselves with this phone or email. '
-   + 'Shop staff sign in by phone; owners and managers by email and password.</p>'
+   + 'Type a password and the login is created straight away &mdash; hand it to them and '
+   + 'they can sign in at once. Leave it blank and they are invited instead: nothing exists '
+   + 'until they sign up themselves with that email.</p>'
    + '</div></div>'
 
    /* ---- people ---- */
@@ -1086,6 +1091,17 @@ function roleSelect(u, isMe){
   return h + '</select>';
 }
 
+function suggestPass(){
+  /* no l, I, O, 0 or 1 — this gets read out over the phone */
+  const a = 'abcdefghjkmnpqrstuvwxyz', A = 'ABCDEFGHJKMNPQRSTUVWXYZ', d = '23456789';
+  const pool = a + A + d;
+  let out = '';
+  const r = new Uint32Array(10);
+  (window.crypto || window.msCrypto).getRandomValues(r);
+  for(let i=0;i<10;i++) out += pool.charAt(r[i] % pool.length);
+  document.getElementById('npPass').value = out;
+}
+
 function npRoleChanged(){
   const r = document.getElementById('npRole').value;
   document.getElementById('npShopWrap').className = (r === 'shop') ? '' : 'hidden';
@@ -1098,22 +1114,51 @@ function addPerson(){
   const role  = document.getElementById('npRole').value;
   const shop  = document.getElementById('npShop').value;
 
-  if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
-  if(role === 'shop' && !phone){ alert('Shop staff sign in by phone, so a phone number is required.'); return; }
+  const pass = document.getElementById('npPass').value.trim();
 
-  PEOPLE_BUSY = true; render();
-  VFSync.invitePerson({
+  if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
+  if(role === 'shop' && !phone){ alert('A shop login needs a phone number.'); return; }
+  if(pass && !email){ alert('Creating the login needs an email address. Leave the password blank to invite by phone instead.'); return; }
+  if(pass && pass.length < 8){ alert('Use a password of at least 8 characters.'); return; }
+
+  const common = {
     role: role, name: name, phone: phone || null, email: email || null,
     clientId: (role === 'shop' || role === 'ho') ? VF_CONFIG.clientId : null,
     shopId:   (role === 'shop') ? shop : null,
-  }).then(()=>{
-    PEOPLE = null;          /* force a refetch */
-    loadPeople();
-  }).catch(e=>{
+  };
+
+  const done = ()=>{ PEOPLE = null; loadPeople(); };
+  const failed = (e)=>{
     PEOPLE_BUSY = false;
     alert('Could not add: ' + (e.message || e));
     render();
-  });
+  };
+
+  PEOPLE_BUSY = true; render();
+
+  if(pass){
+    VFSync.createUser(Object.assign({password: pass}, common))
+      .then(()=>{
+        alert('Login created.\n\n' + email + '\n' + pass
+            + '\n\nHand these over — they can sign in straight away. '
+            + 'This password is not shown again.');
+        done();
+      })
+      .catch(e=>{
+        if(e.notDeployed){
+          /* the edge function is not up yet — fall back rather than
+             leaving the owner with nothing */
+          VFSync.invitePerson(common).then(()=>{
+            alert('Creating logins directly is not switched on for this project yet, '
+                + 'so an invite was recorded instead. They can sign up with '
+                + email + ' and choose their own password.');
+            done();
+          }).catch(failed);
+        }else failed(e);
+      });
+  }else{
+    VFSync.invitePerson(common).then(done).catch(failed);
+  }
 }
 
 function changeRole(id, role){

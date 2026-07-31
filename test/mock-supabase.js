@@ -46,6 +46,22 @@ const srv = http.createServer((req, res) => {
     };
     if (req.method === 'OPTIONS') return send(200, {});
 
+    if (url.pathname === '/functions/v1/create-user') {
+      const a = JSON.parse(body || '{}');
+      received.push({ table: 'fn:create-user', method: 'POST', rows: a });
+      if (!a.email) return send(400, { error: 'An email address is required' });
+      if (!a.password || a.password.length < 8)
+        return send(400, { error: 'Use a password of at least 8 characters' });
+      if (a.role === 'shop' && !a.shop_id) return send(400, { error: 'A shop login needs a shop' });
+      const uid = 'made' + PEOPLE.length + '000-0000-0000-0000-00000000000c';
+      PEOPLE.push({ kind: 'user', id: uid, phone: a.phone, full_name: a.full_name,
+                    role: a.role, client_id: a.client_id, shop_id: a.shop_id, active: true });
+      USERS[a.email] = { pw: a.password, uid: uid,
+                         row: { id: uid, full_name: a.full_name, role: a.role,
+                                client_id: a.client_id, shop_id: a.shop_id, active: true } };
+      return send(200, { id: uid, email: a.email, role: a.role });
+    }
+
     if (url.pathname === '/auth/v1/signup') {
       const { email, password } = JSON.parse(body || '{}');
       if (USERS[email]) return send(400, { msg: 'User already registered' });

@@ -590,6 +590,32 @@ const VFSync = (function () {
 
   const listPeople      = ()             => rpc('list_people');
 
+  /* Create the login outright, password and all, instead of waiting for
+     the person to sign up. Runs in an edge function because it needs the
+     service_role key. Throws NOT_DEPLOYED if the function is not there,
+     so the caller can fall back to an invite. */
+  async function createUser(o) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    let r;
+    try {
+      r = await fetch(CFG.url + '/functions/v1/create-user', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({
+          email: o.email, password: o.password, full_name: o.name || '',
+          role: o.role, phone: o.phone || null,
+          client_id: o.clientId || null, shop_id: o.shopId || null,
+        }),
+      });
+    } catch (e) {
+      const err = new Error('NOT_DEPLOYED'); err.notDeployed = true; throw err;
+    }
+    if (r.status === 404) { const e = new Error('NOT_DEPLOYED'); e.notDeployed = true; throw e; }
+    if (r.status === 401 && await refresh()) return createUser(o);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || ('Could not create the login (' + r.status + ')'));
+    return body;
+  }
+
   /* A new branch. Written straight through rather than queued: every
      indent, packed line and margin row carries a foreign key to shops,
      so the shop has to exist on the server before anything referencing
@@ -702,7 +728,7 @@ const VFSync = (function () {
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
-    listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
+    listPeople, invitePerson, createUser, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
