@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velora Fresh — supply desk</title>
+<style>
+/* ============================================================
+   Velora Fresh — supply desk
+   Design tokens first, then components. Class names are fixed by
+   the render functions below; do not rename them here alone.
+   ============================================================ */
+:root{
+  --ink:#12100e; --ink-2:#3f3b36; --ink-3:#6f6960; --ink-4:#9b948a;
+  --line:#e6e2db; --line-2:#f1eee9;
+  --bg:#f6f4f0; --surface:#fff; --surface-2:#faf9f6;
+  --brand:#1c6b45; --brand-dark:#175a3a; --brand-soft:#e8f2ec;
+  --blue:#1c4f80; --blue-soft:#e7f0fa;
+  --amber:#8a5a06; --amber-soft:#fdf2dd;
+  --red:#96241f; --red-soft:#fbeae9;
+  --green:#14653f; --green-soft:#e6f4ec;
+  --r:9px; --r-lg:13px;
+  --sh:0 1px 2px rgba(18,16,14,.05);
+  --sh-2:0 2px 4px rgba(18,16,14,.05),0 6px 16px rgba(18,16,14,.06);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+/* ---------- header ---------- */
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px 20px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:var(--sh)}
+#burger{background:none;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;
+  cursor:pointer;font-size:15px;color:var(--ink-2);display:none;place-items:center;flex:none}
+#burger:hover{background:var(--surface-2)}
+.brand{font-size:16px;font-weight:650;letter-spacing:-.2px;line-height:1.15;
+  display:flex;align-items:center;gap:9px;padding-right:4px}
+.brand .mk{width:31px;height:31px;border-radius:8px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(145deg,#2f9163,var(--brand));color:#fff;font-size:15px;font-weight:700}
+.brand small{display:block;font-size:9.5px;font-weight:500;color:var(--ink-4);
+  letter-spacing:.09em;text-transform:uppercase;margin-top:1px}
+.spacer{margin-left:auto}
+header select,header input[type=date]{width:auto;background:var(--surface-2)}
+
+/* ---------- nav ---------- */
+/* ---------- sidebar ---------- */
+#side{position:fixed;top:52px;left:0;bottom:0;width:236px;background:var(--surface);
+  border-right:1px solid var(--line);overflow-y:auto;z-index:18;padding:8px 0 24px;
+  transition:transform .22s ease}
+#side::-webkit-scrollbar{width:6px}
+#side::-webkit-scrollbar-thumb{background:#dcd7ce;border-radius:3px}
+
+.grp{border-bottom:1px solid var(--line-2)}
+.grp>button{width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;
+  padding:11px 16px;font:inherit;font-size:14px;font-weight:600;color:var(--ink-2);
+  cursor:pointer;text-align:left;font-family:inherit;transition:background .12s,color .12s}
+.grp>button:hover{background:var(--surface-2);color:var(--ink)}
+.grp>button .ic{width:19px;text-align:center;font-size:14px;color:var(--ink-4);flex:none}
+.grp>button .cv{margin-left:auto;font-size:10px;color:var(--ink-4);transition:transform .18s}
+.grp.open>button{color:var(--brand)}
+.grp.open>button .ic{color:var(--brand)}
+.grp.open>button .cv{transform:rotate(90deg)}
+.grp.solo>button.on{color:var(--brand);background:var(--brand-soft)}
+
+.kids{display:none;padding:2px 0 8px}
+.grp.open .kids{display:block}
+.kids button{width:100%;display:flex;align-items:center;gap:9px;background:none;border:none;
+  padding:8px 16px 8px 45px;font:inherit;font-size:13.5px;color:var(--ink-3);cursor:pointer;
+  text-align:left;font-family:inherit;border-left:2px solid transparent;transition:all .12s}
+.kids button:hover{background:var(--surface-2);color:var(--ink)}
+.kids button.on{color:var(--brand);font-weight:600;background:var(--brand-soft);
+  border-left-color:var(--brand)}
+
+#scrim{position:fixed;inset:52px 0 0 0;background:rgba(18,16,14,.4);z-index:17;display:none}
+
+/* ---------- page ---------- */
+main{padding:22px 24px 72px;margin-left:236px;max-width:1240px}
+h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
+.sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
+
+/* ---------- controls ---------- */
+button,select,input{font-family:inherit;font-size:14px}
+.btn{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 15px;
+  cursor:pointer;font-weight:500;color:var(--ink-2);box-shadow:var(--sh);
+  transition:background .13s,border-color .13s,color .13s}
+.btn:hover{background:var(--surface-2);border-color:#d5cfc6;color:var(--ink)}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand);
+  box-shadow:0 1px 2px rgba(28,107,69,.28)}
+.btn.pri:hover{background:#175a3a;border-color:#175a3a;color:#fff}
+.btn.sm{padding:5px 11px;font-size:12.5px;border-radius:7px}
+.btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+input[type=text],input[type=number],input[type=date],select{border:1px solid var(--line);border-radius:8px;
+  padding:7px 10px;background:var(--surface);width:100%;color:var(--ink);transition:border-color .13s,box-shadow .13s}
+input:hover,select:hover{border-color:#d5cfc6}
+input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+
+/* ---------- card ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  margin-bottom:16px;box-shadow:var(--sh)}
+.card h3{margin:0;padding:12px 16px;font-size:13.5px;font-weight:650;letter-spacing:-.1px;
+  background:var(--surface-2);border-bottom:1px solid var(--line);border-radius:var(--r-lg) var(--r-lg) 0 0}
+.card>table{border-radius:0 0 var(--r-lg) var(--r-lg)}
+/* few-column entry tables read badly stretched to full width */
+.card.narrow{max-width:760px}
+
+/* ---------- table ---------- */
+.twrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:0 0 var(--r-lg) var(--r-lg)}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-4);text-align:left;
+  padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line-2);font-size:14px;vertical-align:middle}
+tbody tr:hover td{background:#fcfbf8}
+tr:last-child td{border-bottom:none}
+.r{text-align:right}.c{text-align:center}
+.tam{font-size:11.5px;color:var(--ink-4);display:block;margin-top:1px}
+.vgrp{background:var(--brand-soft);font-weight:650;font-size:12.5px;color:#14563a;
+  letter-spacing:.01em;border-bottom:1px solid #d3e6dc}
+.vgrp td{border-bottom:1px solid #d3e6dc}
+tbody tr.vgrp:hover td{background:var(--brand-soft)}
+.skipped td{background:var(--red-soft);color:var(--red)}
+tbody tr.skipped:hover td{background:#f7dedc}
+.row-inp{width:86px;text-align:center;padding:6px 6px;font-variant-numeric:tabular-nums}
+
+/* ---------- pills ---------- */
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;
+  border:1px solid transparent;letter-spacing:.01em;white-space:nowrap}
+.p-grey{background:#f0eeea;color:var(--ink-3);border-color:#e3dfd8}
+.p-blue{background:var(--blue-soft);color:var(--blue);border-color:#cfe0f2}
+.p-green{background:var(--green-soft);color:var(--green);border-color:#c9e6d6}
+.p-amber{background:var(--amber-soft);color:var(--amber);border-color:#f2e0b8}
+.p-red{background:var(--red-soft);color:var(--red);border-color:#f2d3d1}
+
+/* ---------- shop tiles ---------- */
+.grid{display:grid;gap:13px;grid-template-columns:repeat(auto-fill,minmax(215px,1fr))}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 15px;
+  cursor:pointer;box-shadow:var(--sh);position:relative;overflow:hidden;
+  transition:border-color .14s,box-shadow .14s,transform .14s}
+/* left edge carries the shop's state, so the board reads at a glance */
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#ddd8d0}
+.t-submitted::before{background:#4a80b8}
+.t-accepted::before,.t-packed::before{background:#d9a441}
+.t-shipped::before{background:#2f6ea8}
+.t-received::before,.t-billed::before{background:#2f9163}
+.tile:hover{border-color:#cfc9bf;box-shadow:var(--sh-2);transform:translateY(-1px)}
+.tile .nm{font-weight:650;font-size:14.5px;letter-spacing:-.15px}
+.tile .big{font-size:22px;font-weight:650;margin:7px 0 2px;letter-spacing:-.5px}
+.tile .sub{font-size:12px}
+
+/* ---------- kpi ---------- */
+.kpi{display:grid;gap:11px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:18px}
+.kpi>div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:12px 15px;box-shadow:var(--sh)}
+.kpi .lb{font-size:11px;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.kpi .vl{font-size:23px;font-weight:650;margin-top:3px;letter-spacing:-.6px;color:var(--ink)}
+
+/* ---------- misc ---------- */
+.empty{padding:44px 16px;text-align:center;color:var(--ink-4);font-size:14px}
+.note{background:var(--amber-soft);border:1px solid #f0dcb0;border-left:3px solid #d9a441;
+  border-radius:var(--r);padding:11px 14px;font-size:13.5px;color:#6d4a08;margin-bottom:15px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:15px}
+.srch{position:relative;max-width:360px;flex:1;min-width:200px}
+.sug{position:absolute;left:0;right:0;top:100%;background:var(--surface);border:1px solid var(--line);
+  border-radius:0 0 var(--r) var(--r);max-height:260px;overflow:auto;z-index:30;display:none;box-shadow:var(--sh-2)}
+.sug div{padding:8px 11px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-2)}
+.sug div:last-child{border-bottom:none}
+.sug div:hover,.sug div.hi{background:var(--brand-soft)}
+.rm{color:var(--red);cursor:pointer;border:none;background:none;font-size:16px;line-height:1;
+  padding:2px 7px;border-radius:5px}
+.rm:hover{background:var(--red-soft)}
+.hidden{display:none!important}
+
+/* ---------- invoice (print-faithful, do not restyle) ---------- */
+#inv{background:#fff;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
+.ihead{display:flex;align-items:flex-start;gap:14px;border-bottom:2px solid #1a1a1a;padding-bottom:10px}
+.ihead .mid{flex:1;text-align:center}
+.ihead .cn{font-size:22px;font-weight:700;letter-spacing:.5px}
+.ihead .le{font-size:11px;color:#555;margin-top:2px}
+.ititle{text-align:center;font-size:14px;letter-spacing:.28em;margin:12px 0;font-weight:600}
+.iband{display:flex;border:1px solid #1a1a1a}
+.iband>div{padding:7px 10px;font-size:13px}
+.iband .lft{flex:1;border-right:1px solid #1a1a1a}
+.iband .rgt{width:225px}
+table.ibl{border:1px solid #1a1a1a;border-top:none;font-size:13px}
+table.ibl th,table.ibl td{border-right:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;padding:5px 7px;
+  background:none;color:#1a1a1a;text-transform:none;letter-spacing:0;font-size:12.5px;white-space:normal}
+table.ibl th{font-weight:600;background:#f4f4f2}
+table.ibl th:last-child,table.ibl td:last-child{border-right:none}
+table.ibl tbody tr:hover td{background:none}
+.isign{display:flex;justify-content:space-between;margin-top:44px;font-size:12.5px}
+
+/* ---------- sign in ---------- */
+#gate{position:fixed;inset:0;z-index:200;background:linear-gradient(155deg,#12100e,#1c3b2a 60%,#1c6b45);
+  display:grid;place-items:center;padding:20px}
+#gate .box{background:var(--surface);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.34);
+  padding:26px 26px 22px;width:min(380px,100%)}
+#gate .bd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+#gate .mk{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(145deg,#2f9163,var(--brand));color:#fff;font-weight:700}
+#gate h1{font-size:19px;margin:0;letter-spacing:-.3px}
+#gate .co{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4);margin:0}
+#gate p.hint{font-size:13px;color:var(--ink-3);margin:14px 0 16px}
+#gate label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 4px}
+#gate .f{margin-bottom:12px}
+#gate .err{background:var(--red-soft);border:1px solid #f2d3d1;color:var(--red);
+  border-radius:8px;padding:9px 11px;font-size:13px;margin-bottom:12px}
+#gate .foot{margin-top:14px;font-size:11.5px;color:var(--ink-4);text-align:center}
+.syncdot{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}
+.syncdot i{width:7px;height:7px;border-radius:50%;background:#2f9163;display:inline-block}
+.syncdot.busy i{background:#d9a441}
+.syncdot.bad i{background:#96241f}
+.syncdot.off i{background:#9b948a}
+
+/* ---------- mobile ---------- */
+@media (max-width:720px){
+  header{padding:8px 13px;gap:9px;row-gap:7px}
+  .brand{font-size:15px}
+  header select,header input[type=date]{font-size:13px;padding:6px 8px}
+  #burger{display:grid}
+  #side{transform:translateX(-100%);box-shadow:var(--sh-2)}
+  #side.open{transform:translateX(0)}
+  #scrim.on{display:block}
+  main{padding:16px 13px 64px;margin-left:0}
+  h2{font-size:19px}
+  .kpi{grid-template-columns:repeat(2,1fr);gap:9px}
+  .kpi .vl{font-size:20px}
+  .grid{grid-template-columns:1fr}
+  .card{border-radius:var(--r)}
+  th,td{padding:8px 10px}
+  #inv{padding:16px 14px}
+  .iband{flex-direction:column}
+  .iband .lft{border-right:none;border-bottom:1px solid #1a1a1a}
+  .iband .rgt{width:auto}
+}
+
+/* ---------- print ---------- */
+@media print{
+  body{background:#fff}
+  header,nav,.noprint{display:none!important}
+  main{padding:0;max-width:none}
+  #inv{border:none;border-radius:0;padding:0;box-shadow:none}
+  @page{size:A4;margin:12mm}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <button id="burger" type="button" onclick="toggleSide()" aria-label="Menu">&#9776;</button>
+  <div class="brand"><span class="mk" aria-hidden="true">VF</span><span>Velora Fresh<small>Velora Innovations Pvt Ltd</small></span></div>
+  <select id="roleSel" style="width:auto" onchange="setRole(this.value)"></select>
+  <input type="date" id="dateSel" style="width:auto" onchange="setDate(this.value)">
+  <span class="spacer"></span>
+  <label id="anyBox" class="hidden" style="font-size:12.5px;color:#6b6b66;display:flex;align-items:center;gap:5px;cursor:pointer">
+    <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore indent timings
+  </label>
+  <span id="syncState" class="syncdot hidden"><i></i><span></span></span>
+  <button id="signOutBtn" class="btn sm hidden" type="button" onclick="doSignOut()">Sign out</button>
+  <span id="clock" class="mono" style="font-size:13px;color:#6b6b66"></span>
+</header>
+
+<aside id="side"></aside>
+<div id="scrim" onclick="toggleSide(false)"></div>
+<main id="main"></main>
+
+<!-- Shown only when a Supabase key is configured. Without one the app
+     behaves exactly as before and this stays hidden. -->
+<div id="gate" class="hidden">
+  <form class="box" onsubmit="doSignIn(event)">
+    <div class="bd"><span class="mk">VF</span>
+      <div><h1>Velora Fresh</h1><p class="co">Velora Innovations Pvt Ltd</p></div>
+    </div>
+    <p class="hint">Sign in to the supply desk.</p>
+    <div id="gateErr"></div>
+    <div class="f"><label for="gateEmail">Email</label>
+      <input id="gateEmail" type="email" autocomplete="username" required></div>
+    <div class="f"><label for="gatePass">Password</label>
+      <input id="gatePass" type="password" autocomplete="current-password" required></div>
+    <button class="btn pri" id="gateBtn" type="submit" style="width:100%">Sign in</button>
+    <p class="foot">Your access is set by the owner. Contact them if you cannot get in.</p>
+  </form>
+</div>
+
+<script>
+/* ============================================================
+   Velora Fresh — v1 working prototype
+   Single file. All data in localStorage under VF_DB.
+   Flow: indent -> accept -> rates -> packing -> delivery -> invoice
+   ============================================================ */
+
+/* ---------- product catalogue ----------
+   code | name (English / Tamil) | unit | unit weight kg | selling margin % | alias
+   Paste replacement rows here when the master sheet changes.        */
+const PRODUCTS = `
+@@PRODUCTS@@
+`;
+
+/* ---------- groups ----------
+   One line per group: <group name>|<code>,<code>,...
+   The group name is also the vendor label until a vendor record is filled in. */
+const GROUP_LIST = `
+@@GROUPS@@
+`;
+
+/* ---------- shops ----------
+   id, name, bill prefix, commission % (goes into the per-kg rate) */
+const SHOPS = [
+  {id:'KLP', name:'Kilpauk',      prefix:'VF/KLP', comm:4},
+  {id:'NGB', name:'Nungambakkam', prefix:'VF/NGB', comm:4},
+  {id:'SHN', name:'Shenoy Nagar', prefix:'VF/SHN', comm:4},
+  {id:'MBK', name:'Mambakkam',    prefix:'VF/MBK', comm:4},
+  {id:'HRN', name:'Hiranandani',  prefix:'VF/HRN', comm:4}
+];
+
+const CLIENT = 'Kalpaviruksha Pazhamudir Nilayam';
+const OPEN_H = 18, CLOSE_H = 21, LATE_H = 23.5;   /* 6pm / 9pm / 11:30pm */
+
+/* ---------- catalogue parse ---------- */
+const CAT = {}, ALIAS = {};
+PRODUCTS.split('\n').map(l=>l.trim()).filter(Boolean).forEach(line=>{
+  const f = line.split('|');
+  const code = (f[0]||'').trim();
+  if(!code) return;
+  const full = (f[1]||'').trim();
+  const bits = full.split(' / ');
+  CAT[code] = {
+    code, name: bits[0].trim(), tamil: (bits[1]||'').trim(), full,
+    unit: (f[2]||'kg').trim() || 'kg',
+    wt: parseFloat(f[3]) || 0,
+    margin: f[4]!==undefined && f[4].trim()!=='' ? parseFloat(f[4]) : null,
+    alias: (f[5]||'').trim()
+  };
+  if(CAT[code].alias) ALIAS[CAT[code].alias.toUpperCase()] = code;
+});
+const CODES = Object.keys(CAT);
+
+/* ---------- groups parse ---------- */
+const GROUPS = {}, CODE2GROUP = {};
+GROUP_LIST.split('\n').map(l=>l.trim()).filter(Boolean).forEach(line=>{
+  const i = line.indexOf('|'); if(i<0) return;
+  const name = line.slice(0,i).trim();
+  const codes = line.slice(i+1).split(',').map(c=>c.trim()).filter(Boolean);
+  GROUPS[name] = codes;
+  codes.forEach(c=>{ CODE2GROUP[c] = name; });
+});
+/* anything not listed in a group tab is a manual-order group of its own */
+const UNGROUPED = 'Manual order';
+GROUPS[UNGROUPED] = CODES.filter(c=>!CODE2GROUP[c]);
+GROUPS[UNGROUPED].forEach(c=>{ CODE2GROUP[c] = UNGROUPED; });
+const GROUPNAMES = Object.keys(GROUPS);
+function groupOf(code){ return CODE2GROUP[code] || UNGROUPED; }
+
+function unitWeight(c, unit){
+  const e = CAT[c]; if(!e) return 1;
+  const u = unit || e.unit;
+  if(u === 'g') return 0.001;
+  if(u === 'box' || u === 'tray') return e.wt || 0;
+  return 1;
+}
+function netKg(code, qty, unit){ return (parseFloat(qty)||0) * unitWeight(code, unit); }
+
+/* ---------- storage ---------- */
+const KEY = 'VF_DB';
+let DB;
+function load(){
+  try{ DB = JSON.parse(localStorage.getItem(KEY)) || null; }catch(e){ DB = null; }
+  if(!DB) DB = {};
+  DB.indents = DB.indents || {};   /* [date][shopId] = {status, lines:{code:qty}, submittedAt, late} */
+  DB.days    = DB.days    || {};   /* [date] = {rates:{code:r}, packed:{shop:{code:q}}, ship:{shop:status}} */
+  DB.invoices= DB.invoices|| {};   /* [date][shopId] = {no, lines:[...], total} */
+  DB.master  = DB.master  || {};
+  DB.master.comm    = DB.master.comm    || {};
+  DB.master.selling = DB.master.selling || {};
+  DB.serial   = DB.serial   || {};
+  DB.settings = DB.settings || {anytime:false};
+  DB.vendors  = DB.vendors  || {};
+  GROUPNAMES.forEach(g=>{
+    if(!DB.vendors[g]) DB.vendors[g] = {name:g, phone:'', contact:'', address:'', notes:'',
+                                        manual:(g.toLowerCase()==='others' || g===UNGROUPED),
+                                        bank:{acName:'',acNo:'',ifsc:'',upi:''}};
+  });
+  DB.payments = DB.payments || [];   /* [{id,date,amount,mode,ref}] chain-level, oldest-bill-first */
+  SHOPS.forEach(s=>{ if(DB.master.comm[s.id]===undefined) DB.master.comm[s.id] = s.comm; });
+  return DB;
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){}
+  /* Local write already done above, so the app never waits on the
+     network. This only queues the changed rows. No-op when the sync
+     layer is absent or unconfigured. */
+  try{ if(typeof VFSync !== 'undefined' && VFSync.enabled()) VFSync.record(DB); }catch(e){}
+}
+load();
+
+/* ---------- deployment config (inlined by src/build.py) ---------- */
+@@CONFIG@@
+
+/* ---------- Supabase sync (inlined by src/build.py) ---------- */
+@@SYNC@@
+
+/* ============================================================
+   Sign in
+   ============================================================
+   With no anon key configured VFSync.enabled() is false, the gate
+   never shows, and the role dropdown works as it always has. Once a
+   key is present the dropdown is replaced by the role the database
+   reports for the signed-in account — the browser never chooses it.
+   ============================================================ */
+
+function gateEl(){ return document.getElementById('gate'); }
+
+function showGate(msg){
+  const g = gateEl(); if(!g) return;
+  g.classList.remove('hidden');
+  document.getElementById('gateErr').innerHTML =
+    msg ? '<div class="err">' + esc(msg) + '</div>' : '';
+}
+function hideGate(){ const g = gateEl(); if(g) g.classList.add('hidden'); }
+
+async function doSignIn(ev){
+  ev.preventDefault();
+  const btn = document.getElementById('gateBtn');
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try{
+    await VFSync.signIn(document.getElementById('gateEmail').value.trim(),
+                        document.getElementById('gatePass').value);
+    await afterSignIn();
+  }catch(e){
+    showGate(e.message || 'Could not sign in');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+function doSignOut(){
+  VFSync.signOut();
+  location.reload();
+}
+
+async function afterSignIn(){
+  const me = await VFSync.whoami();
+  if(!me){
+    VFSync.signOut();
+    showGate('This account has no access yet. Ask the owner to add you.');
+    return;
+  }
+  ME = me;
+  ROLE = me.appRole;
+  try{ await VFSync.pull(DB); }catch(e){ /* offline: carry on with local data */ }
+  hideGate();
+  const so = document.getElementById('signOutBtn');
+  if(so) so.classList.remove('hidden');
+  /* The role now comes from the database, so the dropdown would be a
+     lie — it cannot change what the server will allow. */
+  const rs = document.getElementById('roleSel');
+  if(rs) rs.disabled = true;
+  render();
+  VFSync.push();
+}
+
+let ME = null;
+
+function syncBadge(state, detail){
+  const el = document.getElementById('syncState');
+  if(!el) return;
+  el.classList.remove('hidden','busy','bad','off');
+  const label = el.lastElementChild;
+  if(state === 'pushing'){ el.classList.add('busy'); label.textContent = 'Saving ' + detail; }
+  else if(state === 'synced'){ label.textContent = 'Saved'; }
+  else if(state === 'offline'){ el.classList.add('off'); label.textContent = 'Offline ' + detail + ' waiting'; }
+  else if(state === 'signed-out'){ el.classList.add('bad'); label.textContent = 'Not signed in'; }
+  else if(state === 'error'){ el.classList.add('bad'); label.textContent = 'Sync problem'; }
+}
+
+if(typeof VFSync !== 'undefined' && VFSync.enabled()){
+  VFSync.on(syncBadge);
+  if(VFSync.signedIn()){
+    afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
+  }else{
+    showGate('');
+  }
+}
+
+
+
+/* ---------- session ---------- */
+let ROLE = 'admin';        /* 'owner' | 'admin' | shopId */
+let DATE = todayISO();
+let TAB  = '';
+
+function todayISO(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return d+'/'+m+'/'+y;
+}
+function money(n){ return (Math.round((n||0)*100)/100).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function num(n, dp){ dp = dp===undefined?2:dp; return (Math.round((n||0)*Math.pow(10,dp))/Math.pow(10,dp)).toString(); }
+function shopById(id){ return SHOPS.filter(s=>s.id===id)[0]; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---------- pricing ---------- */
+function commOf(shopId){
+  const v = DB.master.comm[shopId];
+  return v===undefined || v===null || v==='' ? 0 : parseFloat(v)||0;
+}
+function purchaseRate(shopId, code){
+  const mk = DB.days[DATE] && DB.days[DATE].rates ? DB.days[DATE].rates[code] : null;
+  if(mk===undefined || mk===null || mk==='') return null;
+  return (parseFloat(mk)||0) * (1 + commOf(shopId)/100);
+}
+function sellMargin(shopId, code){
+  const s = DB.master.selling[shopId];
+  if(s && s[code]!==undefined && s[code]!==null && s[code]!=='') return parseFloat(s[code]);
+  const e = CAT[code];
+  return (e && e.margin!==null && e.margin!==undefined) ? e.margin : null;
+}
+function sellingPrice(shopId, code){
+  const p = purchaseRate(shopId, code);
+  const m = sellMargin(shopId, code);
+  if(p===null || m===null) return null;
+  return p * (1 + m/100);
+}
+
+/* ---------- indent state helpers ---------- */
+function indentOf(date, shopId){
+  DB.indents[date] = DB.indents[date] || {};
+  if(!DB.indents[date][shopId]) DB.indents[date][shopId] = {status:'draft', lines:{}, submittedAt:null, late:false};
+  return DB.indents[date][shopId];
+}
+function dayOf(date){
+  DB.days[date] = DB.days[date] || {rates:{}, packed:{}, ship:{}, extra:{}};
+  const d = DB.days[date];
+  d.rates = d.rates || {}; d.packed = d.packed || {}; d.ship = d.ship || {}; d.extra = d.extra || {};
+  return d;
+}
+/* every product any shop has an accepted indent for, plus anything added at packing */
+function uniqueCodes(date){
+  const set = {};
+  const day = dayOf(date);
+  Object.keys(DB.indents[date]||{}).forEach(sid=>{
+    const ind = DB.indents[date][sid];
+    if(ind.status==='accepted' || ind.status==='packed' || ind.status==='shipped' || ind.status==='billed')
+      Object.keys(ind.lines).forEach(c=>{ if(ind.lines[c]) set[c]=1; });
+  });
+  Object.keys(day.packed).forEach(sid=>{
+    Object.keys(day.packed[sid]||{}).forEach(c=>{ set[c]=1; });
+  });
+  return Object.keys(set).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
+}
+function windowState(){
+  if(DB.settings.anytime) return 'open';
+  const n = new Date(); const h = n.getHours() + n.getMinutes()/60;
+  if(h >= OPEN_H && h < CLOSE_H) return 'open';
+  if(h >= CLOSE_H && h < LATE_H) return 'late';
+  return 'closed';
+}
+
+/* ---------- shell ---------- */
+function setRole(r){ ROLE = r; TAB = tabsFor()[0].id; render(); }
+function setDate(d){ DATE = d; render(); }
+function go(t){ TAB = t; toggleSide(false); render(); }
+
+/* ============================================================
+   Sidebar menu
+   ============================================================
+   Grouped the way the trade runs, not the way the code is arranged:
+   what you buy, what you pack, what you sell, what you collect.
+   `id` values are unchanged, so every existing view and the tests
+   still address the same screens.                                  */
+
+const MENU = {
+  owner: [
+    {t:'Day board',  ic:'\u25A6', id:'board'},
+    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+                                         {id:'rates',  t:'Market rates'}]},
+    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+                                         {id:'ship', t:'Out for delivery'}]},
+    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Receipt',    ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+                                         {id:'shops',   t:'Shops'}]},
+    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+    {t:'Master',     ic:'\u2699', kids:[{id:'master', t:'Margin master'}]},
+  ],
+  admin: [
+    {t:'Day board',  ic:'\u25A6', id:'board'},
+    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+                                         {id:'rates',  t:'Market rates'}]},
+    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+                                         {id:'ship', t:'Out for delivery'}]},
+    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+                                         {id:'shops',   t:'Shops'}]},
+    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+  ho: [
+    {t:'Indents',  ic:'\u25A4', kids:[{id:'indents', t:'Indents'}]},
+    {t:'Sales',    ic:'\u2691', kids:[{id:'inv',  t:'Invoice'}]},
+    {t:'Receipt',  ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+  shop: [
+    {t:'Indents',  ic:'\u25A4', kids:[{id:'myindent', t:'My indent'}]},
+    {t:'Delivery', ic:'\u25A7', kids:[{id:'mydel', t:'Deliveries'}]},
+    {t:'Sales',    ic:'\u2691', kids:[{id:'mybills', t:'Bills'}]},
+    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+};
+
+function menuFor(){
+  if(MENU[ROLE]) return MENU[ROLE];
+  return MENU.shop;                    /* ROLE is a shop id */
+}
+
+/* Flat list of reachable screen ids — the permission check the views
+   rely on, kept separate from how the menu is drawn. */
+function tabsFor(){
+  const out = [];
+  menuFor().forEach(g=>{
+    if(g.id) out.push({id:g.id, t:g.t});
+    (g.kids||[]).forEach(k=> out.push({id:k.id, t:k.t}));
+  });
+  return out;
+}
+
+let OPENGRP = null;
+
+/* ============================================================
+   Product list  —  the catalogue, read-only
+   ============================================================ */
+let PRODQ = '';
+function vProducts(){
+  const q = PRODQ.trim().toLowerCase();
+  const codes = CODES.filter(c=>{
+    if(!q) return true;
+    const e = CAT[c];
+    return (e.name+' '+e.tamil+' '+c+' '+(e.alias||'')).toLowerCase().indexOf(q) > -1;
+  });
+  const cost = (ROLE==='owner' || ROLE==='admin');
+  let rows = '';
+  codes.forEach(c=>{
+    const e = CAT[c];
+    const g = groupOf(c);
+    rows += '<tr><td class="mono" style="width:64px">'+esc(c)+'</td>'
+      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      + '<td class="c mono" style="width:70px;color:var(--ink-3)">'+esc(e.unit)+'</td>'
+      + '<td class="c mono" style="width:90px;color:var(--ink-3)">'
+        + ((e.unit==='box'||e.unit==='tray') ? (e.wt ? num(e.wt,2)+' kg'
+             : '<span class="pill p-red">no weight</span>') : '&mdash;') + '</td>'
+      + (cost ? '<td style="width:190px"><span class="pill '
+           + (g===UNGROUPED?'p-amber':'p-grey')+'">'+esc(g)+'</span></td>' : '')
+      + '</tr>';
+  });
+  const missing = CODES.filter(c=>{
+    const e = CAT[c];
+    return (e.unit==='box'||e.unit==='tray') && !e.wt;
+  }).length;
+  const manual = CODES.filter(c=>groupOf(c)===UNGROUPED).length;
+
+  return '<h2>Product list</h2>'
+   + '<p class="sub">'+CODES.length+' products in the catalogue.</p>'
+   + '<div class="kpi">'
+   + '<div><div class="lb">Products</div><div class="vl mono">'+CODES.length+'</div></div>'
+   + (cost ? '<div><div class="lb">Vendor groups</div><div class="vl mono">'+GROUPNAMES.length+'</div></div>'
+           + '<div><div class="lb">Manual order</div><div class="vl mono">'+manual+'</div></div>' : '')
+   + '<div><div class="lb">No unit weight</div><div class="vl mono">'+missing+'</div></div>'
+   + '</div>'
+   + (missing ? '<div class="note">'+missing+' box or tray product(s) have no unit weight on file. '
+       + 'Invoices containing them are blocked rather than billed at zero.</div>' : '')
+   + '<div class="bar"><div class="srch">'
+   + '<input type="text" id="prodQ" placeholder="Search product, Tamil name or code" value="'+esc(PRODQ)+'" '
+   + 'oninput="PRODQ=this.value;afterRender=focusProdQ;render()"></div>'
+   + '<span class="muted" style="font-size:13px;color:var(--ink-3)">'+codes.length+' shown</span></div>'
+   + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="c">Unit</th><th class="c">Unit weight</th>'
+   + (cost ? '<th>Vendor group</th>' : '')
+   + '</tr></thead><tbody>'
+   + (rows || '<tr><td colspan="5"><div class="empty">Nothing matched that search.</div></td></tr>')
+   + '</tbody></table></div></div>';
+}
+function focusProdQ(){
+  const i = document.getElementById('prodQ');
+  if(i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+
+/* ============================================================
+   Shops  —  the client's branches
+   ============================================================ */
+function vShops(){
+  let rows = '';
+  SHOPS.forEach(s=>{
+    const comm = commOf(s.id);
+    rows += '<tr><td class="mono" style="width:70px">'+esc(s.id)+'</td>'
+      + '<td>'+esc(s.name)+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+esc(s.prefix)+'</td>'
+      + (ROLE==='owner' ? '<td class="c mono" style="width:120px">'+num(comm,2)+'%</td>' : '')
+      + '</tr>';
+  });
+  return '<h2>Shops</h2><p class="sub">'+esc(CLIENT)+' &middot; '+SHOPS.length+' branches.</p>'
+   + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Shop</th>'
+   + '<th>Bill prefix</th>'+(ROLE==='owner'?'<th class="c">Commission</th>':'')
+   + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+
+
+function drawSide(){
+  const groups = menuFor();
+  /* open the group holding the current screen */
+  groups.forEach(g=>{
+    if((g.kids||[]).some(k=>k.id===TAB)) OPENGRP = OPENGRP===null ? g.t : OPENGRP;
+  });
+  let h = '';
+  groups.forEach(g=>{
+    const holds = (g.kids||[]).some(k=>k.id===TAB);
+    if(g.id){
+      h += '<div class="grp solo"><button class="'+(TAB===g.id?'on':'')+'" onclick="go(\''+g.id+'\')">'
+         + '<span class="ic">'+g.ic+'</span>'+g.t+'</button></div>';
+      return;
+    }
+    const open = (OPENGRP===g.t) || holds;
+    h += '<div class="grp'+(open?' open':'')+'">'
+       + '<button onclick="toggleGrp(\''+g.t.replace(/'/g,"\\'")+'\')">'
+       + '<span class="ic">'+g.ic+'</span>'+g.t+'<span class="cv">&#9654;</span></button>'
+       + '<div class="kids">'
+       + g.kids.map(k=>'<button class="'+(TAB===k.id?'on':'')+'" onclick="go(\''+k.id+'\')">'
+                       + k.t+'</button>').join('')
+       + '</div></div>';
+  });
+  document.getElementById('side').innerHTML = h;
+}
+
+function toggleGrp(name){
+  OPENGRP = (OPENGRP===name) ? '' : name;
+  drawSide();
+}
+
+function toggleSide(force){
+  const side = document.getElementById('side'), sc = document.getElementById('scrim');
+  const open = force===undefined ? !side.classList.contains('open') : force;
+  side.classList.toggle('open', open);
+  sc.classList.toggle('on', open);
+}
+
+function render(){
+  const rs = document.getElementById('roleSel');
+  if(!rs.options.length){
+    let h = '<option value="owner">Owner — Velora Fresh</option><option value="admin">Admin — Velora Fresh</option>'
+          + '<option value="ho">Head office — '+esc(CLIENT)+'</option>';
+    SHOPS.forEach(s=> h += '<option value="'+s.id+'">Shop — '+esc(s.name)+'</option>');
+    rs.innerHTML = h;
+  }
+  rs.value = ROLE;
+  document.getElementById('dateSel').value = DATE;
+  const ab = document.getElementById('anyBox');
+  ab.className = (ROLE==='owner') ? '' : 'hidden';
+  document.getElementById('anyChk').checked = !!DB.settings.anytime;
+
+  const tabs = tabsFor();
+  if(!tabs.filter(t=>t.id===TAB).length) TAB = tabs[0].id;
+  drawSide();
+
+  const m = document.getElementById('main');
+  const fn = {
+    board:vBoard, indents:vIndents, rates:vRates, pack:vPack, ship:vShip, inv:vInvoices,
+    orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent,
+    mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops
+  }[TAB];
+  m.innerHTML = fn ? fn() : '';
+  if(afterRender){ const f = afterRender; afterRender = null; f(); }
+  save();
+}
+let afterRender = null;
+
+/* ============================================================
+   SHOP — my indent
+   ============================================================ */
+function vMyIndent(){
+  const sh = shopById(ROLE); if(!sh) return '';
+  const ind = indentOf(DATE, ROLE);
+  const w = windowState();
+  const locked = (ind.status !== 'draft' && ind.status !== 'submitted');
+  const codes = Object.keys(ind.lines);
+
+  let note = '';
+  if(w==='open')   note = '<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Indent window is open until 9:00 pm.</div>';
+  if(w==='late')   note = '<div class="note">Late window. Submitting now is recorded as a late indent and the owner is notified.</div>';
+  if(w==='closed') note = '<div class="note" style="background:#fbeaea;border-color:#f0c4c4;color:#8c2020">Indent window is closed. It opens again at 6:00 pm.</div>';
+  if(ind.status==='submitted') note = '<div class="note" style="background:#e7f0fa;border-color:#c4d8ee;color:#1b4f80">Submitted'+(ind.late?' (late)':'')+'. You can still change it until Velora accepts it.</div>';
+  if(locked) note = '<div class="note" style="background:#f0f0ed;border-color:#dedeD8;color:#5f5f5a">Accepted by Velora. This indent can no longer be changed.</div>';
+
+  let rows = '';
+  if(!codes.length){
+    rows = '<tr><td colspan="4" class="empty">Nothing indented yet. Search a product above to add it.</td></tr>';
+  } else {
+    codes.forEach(c=>{
+      const e = CAT[c]; if(!e) return;
+      rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
+        + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+        + '<td class="c" style="width:150px">'
+        + (locked ? '<span class="mono">'+num(ind.lines[c])+' '+esc(e.unit)+'</span>'
+                  : '<input type="number" min="0" step="any" class="row-inp mono" value="'+ind.lines[c]+'" onchange="myQty(\''+c+'\',this.value)"> <span style="font-size:12px;color:#7a7a74">'+esc(e.unit)+'</span>')
+        + '</td>'
+        + '<td class="c" style="width:44px">'+(locked?'':'<button class="rm" onclick="myDel(\''+c+'\')">&times;</button>')+'</td></tr>';
+    });
+  }
+
+  return '<h2>Indent for '+fmtDate(DATE)+'</h2>'
+   + '<p class="sub">'+esc(sh.name)+' &middot; '+esc(CLIENT)+'</p>'
+   + note
+   + (locked ? '' :
+      '<div class="bar"><div class="srch">'
+      + '<input type="text" id="q" placeholder="Type product name or code, then Enter" autocomplete="off">'
+      + '<div class="sug" id="sug"></div></div></div>')
+   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Quantity</th><th></th></tr></thead>'
+   + '<tbody>'+rows+'</tbody></table></div>'
+   + '<div class="bar">'
+   + '<span class="sub" style="margin:0">'+codes.length+' item'+(codes.length===1?'':'s')+'</span>'
+   + '<span class="spacer"></span>'
+   + (locked ? '' :
+      '<button class="btn pri" onclick="submitIndent()"'+(w==='closed'||!codes.length?' disabled':'')+'>'
+      + (ind.status==='submitted'?'Update indent':'Submit indent')+'</button>')
+   + '</div>';
+}
+function myQty(code, v){
+  const ind = indentOf(DATE, ROLE);
+  const q = parseFloat(v)||0;
+  if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
+  save(); render();
+}
+function myDel(code){ const ind = indentOf(DATE, ROLE); delete ind.lines[code]; save(); render(); }
+function submitIndent(){
+  const ind = indentOf(DATE, ROLE);
+  const w = windowState();
+  if(w==='closed'){ alert('The indent window is closed.'); return; }
+  ind.status = 'submitted';
+  ind.submittedAt = new Date().toISOString();
+  ind.late = (w==='late');
+  save(); render();
+}
+
+/* product search (shared) */
+function searchList(term){
+  const t = (term||'').trim().toLowerCase();
+  if(!t) return [];
+  const out = [];
+  for(let i=0;i<CODES.length && out.length<40;i++){
+    const e = CAT[CODES[i]];
+    if(e.code.indexOf(t)===0 || e.name.toLowerCase().indexOf(t)>=0 || e.tamil.indexOf(term.trim())>=0
+       || (e.alias && e.alias.indexOf(t)===0)) out.push(e);
+  }
+  return out;
+}
+function wireSearch(onPick){
+  const q = document.getElementById('q'), sug = document.getElementById('sug');
+  if(!q) return;
+  let hi = -1, list = [];
+  function close(){ sug.style.display='none'; hi=-1; }
+  function draw(){
+    list = searchList(q.value);
+    if(!list.length){ close(); return; }
+    sug.innerHTML = list.map((e,i)=>'<div class="'+(i===hi?'hi':'')+'" data-c="'+e.code+'"><span class="mono">'+esc(e.code)+'</span> &nbsp;'+esc(e.name)+' <span style="color:#9a9a94">'+esc(e.tamil)+'</span></div>').join('');
+    sug.style.display='block';
+    Array.prototype.forEach.call(sug.children, el=>{
+      el.onmousedown = ev=>{ ev.preventDefault(); onPick(el.getAttribute('data-c')); };
+    });
+  }
+  q.oninput = draw;
+  q.onblur = ()=> setTimeout(close, 150);
+  q.onkeydown = ev=>{
+    if(ev.key==='ArrowDown'){ hi=Math.min(hi+1,list.length-1); draw(); ev.preventDefault(); }
+    else if(ev.key==='ArrowUp'){ hi=Math.max(hi-1,0); draw(); ev.preventDefault(); }
+    else if(ev.key==='Enter'){
+      const pick = hi>=0 ? list[hi] : (list.length?list[0]:null);
+      if(pick){ onPick(pick.code); ev.preventDefault(); }
+    } else if(ev.key==='Escape') close();
+  };
+  q.focus();
+}
+
+/* ============================================================
+   SHOP — deliveries & bills
+   ============================================================ */
+function vMyDeliveries(){
+  const day = dayOf(DATE); const st = day.ship[ROLE] || '';
+  const packed = day.packed[ROLE] || {};
+  const codes = Object.keys(packed).filter(c=>packed[c]>0);
+  if(st!=='out' && st!=='received')
+    return '<h2>Deliveries</h2><p class="sub">'+fmtDate(DATE)+'</p><div class="card"><div class="empty">Nothing out for delivery yet.</div></div>';
+
+  let rows='', tot=0;
+  codes.forEach((c,i)=>{
+    const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit), pr=purchaseRate(ROLE,c)||0, amt=nk*pr; tot+=amt;
+    rows+='<tr><td class="c mono">'+(i+1)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      +'<td class="c mono">'+num(q)+' '+esc(e.unit)+'</td><td class="r mono">'+num(nk,3)+'</td>'
+      +'<td class="r mono">'+money(pr)+'</td><td class="r mono">'+money(amt)+'</td></tr>';
+  });
+  return '<h2>Delivery for '+fmtDate(DATE)+'</h2>'
+   +'<p class="sub">Check the weights against the crates, then confirm.</p>'
+   +(st==='received'?'<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Received and confirmed. The invoice can now be raised.</div>'
+     :'<div class="note">If a weight or product differs, tell Velora Fresh before confirming — they will adjust it and send it again.</div>')
+   +'<div class="card"><table><thead><tr><th class="c">#</th><th>Product</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
+   +'<tbody>'+(rows||'<tr><td colspan="6" class="empty">No lines.</td></tr>')+'</tbody></table></div>'
+   +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong></span><span class="spacer"></span>'
+   +(st==='out'?'<button class="btn pri" onclick="confirmReceipt(\''+ROLE+'\')">Confirm receipt</button>':'')+'</div>';
+}
+function vMyBills(){
+  const mine = settled().filter(b=>b.shopId===ROLE);
+  const outstanding = mine.reduce((t,b)=>t+b.due, 0);
+  const rows = mine.slice().reverse().map(b=>{
+    const pill = b.state==='cleared' ? '<span class="pill p-green">Cleared</span>'
+               : b.state==='part' ? '<span class="pill p-amber">Part paid</span>'
+               : '<span class="pill p-grey">Open</span>';
+    return '<tr><td class="mono">'+esc(b.no)+'</td><td>'+fmtDate(b.date)+'</td>'
+      +'<td class="r mono">&#8377;'+money(b.amount)+'</td><td>'+pill+'</td></tr>';
+  });
+  return '<h2>Bills</h2><p class="sub">'+esc(shopById(ROLE).name)+'</p>'
+   +'<div class="kpi"><div><div class="lb">Bills raised</div><div class="vl mono">'+mine.length+'</div></div>'
+   +'<div><div class="lb">Outstanding</div><div class="vl mono" style="'+(outstanding>0?'color:#8c2020':'color:#14663f')+'">&#8377;'+money(outstanding)+'</div></div></div>'
+   +'<div class="card"><table><thead><tr><th>Bill no</th><th>Date</th><th class="r">Amount</th><th>Status</th></tr></thead>'
+   +'<tbody>'+(rows.join('')||'<tr><td colspan="4" class="empty">No bills yet.</td></tr>')+'</tbody></table></div>';
+}
+
+/* ============================================================
+   ADMIN — day board
+   ============================================================ */
+function statusPill(s, late){
+  const map = {draft:['p-grey','Not submitted'], submitted:['p-blue','Submitted'], accepted:['p-amber','Accepted'],
+               packed:['p-amber','Packed'], shipped:['p-blue','Out for delivery'], received:['p-green','Received'], billed:['p-green','Billed']};
+  const m = map[s] || map.draft;
+  return '<span class="pill '+m[0]+'">'+m[1]+'</span>'+(late?' <span class="pill p-red">Late</span>':'');
+}
+function shopStatus(shopId){
+  const day = dayOf(DATE);
+  if(DB.invoices[DATE] && DB.invoices[DATE][shopId]) return 'billed';
+  if(day.ship[shopId]==='received') return 'received';
+  if(day.ship[shopId]==='out') return 'shipped';
+  const ind = indentOf(DATE, shopId);
+  const packed = day.packed[shopId] || {};
+  if(Object.keys(packed).length) return 'packed';
+  return ind.status;
+}
+function vBoard(){
+  const day = dayOf(DATE);
+  let tiles='', totVal=0, totLines=0, indented=0, supplied=0;
+  SHOPS.forEach(s=>{
+    const ind = indentOf(DATE, s.id);
+    const packed = day.packed[s.id]||{};
+    let val=0, n=0;
+    Object.keys(packed).forEach(c=>{
+      const q=packed[c]; if(!q) return;
+      n++; const pr=purchaseRate(s.id,c); if(pr!==null) val += netKg(c,q,CAT[c].unit)*pr;
+    });
+    totVal+=val; totLines+=n;
+    indented += Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
+    supplied += n;
+    const st = shopStatus(s.id);
+    tiles += '<div class="tile t-'+st+'" onclick="openShop(\''+s.id+'\')">'
+      + '<div class="nm">'+esc(s.name)+'</div>'
+      + '<div class="big mono">'+(val?'&#8377;'+money(val):'&mdash;')+'</div>'
+      + '<div class="sub" style="margin:0 0 7px">'+Object.keys(ind.lines).length+' indented &middot; '+n+' packed</div>'
+      + statusPill(st, ind.late) + '</div>';
+  });
+  const fill = indented ? Math.round(supplied/indented*100) : 0;
+  return '<h2>Day board</h2><p class="sub">'+fmtDate(DATE)+' &middot; '+esc(CLIENT)+'</p>'
+   + '<div class="kpi">'
+   + '<div><div class="lb">Day value</div><div class="vl mono">&#8377;'+money(totVal)+'</div></div>'
+   + '<div><div class="lb">Lines packed</div><div class="vl mono">'+totLines+'</div></div>'
+   + '<div><div class="lb">Rates entered</div><div class="vl mono">'+Object.keys(day.rates).filter(c=>day.rates[c]!=='').length+' / '+uniqueCodes(DATE).length+'</div></div>'
+   + '<div><div class="lb">Fill rate</div><div class="vl mono">'+fill+'%</div></div>'
+   + '</div><div class="grid">'+tiles+'</div>';
+}
+function openShop(id){ TAB = 'pack'; PACKSHOP = id; render(); }
+
+/* ============================================================
+   ADMIN — indents (cut & accept)
+   ============================================================ */
+let OPENIND = null;
+function vIndents(){
+  if(OPENIND) return vIndentOne(OPENIND);
+  let rows='';
+  SHOPS.forEach(s=>{
+    const ind = indentOf(DATE, s.id);
+    const n = Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
+    rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td>'
+      + '<td>'+statusPill(ind.status, ind.late)+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="OPENIND=\''+s.id+'\';render()">'
+      + (ind.status==='submitted'?'Review &amp; accept':'Open')+'</button></td></tr>';
+  });
+  return '<h2>Indents</h2><p class="sub">'+fmtDate(DATE)+' &middot; cut what is not needed, then accept</p>'
+   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Lines</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function vIndentOne(id){
+  const s = shopById(id), ind = indentOf(DATE, id);
+  const codes = Object.keys(ind.lines);
+  const editable = (ind.status==='submitted' || ind.status==='draft');
+  let rows='';
+  codes.forEach(c=>{
+    const e=CAT[c]; if(!e) return;
+    rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      + '<td class="c" style="width:150px">'
+      + (editable?'<input type="number" min="0" step="any" class="row-inp mono" value="'+ind.lines[c]+'" onchange="adminQty(\''+id+'\',\''+c+'\',this.value)"> <span style="font-size:12px;color:#7a7a74">'+esc(e.unit)+'</span>'
+                 :'<span class="mono">'+num(ind.lines[c])+' '+esc(e.unit)+'</span>')
+      + '</td><td class="c" style="width:44px">'
+      + (editable?'<button class="rm" title="Remove" onclick="adminQty(\''+id+'\',\''+c+'\',0)">&times;</button>':'')+'</td></tr>';
+  });
+  return '<div class="bar"><button class="btn sm" onclick="OPENIND=null;render()">&larr; All indents</button></div>'
+   + '<h2>'+esc(s.name)+'</h2><p class="sub">Indent for '+fmtDate(DATE)+' &middot; '+statusPill(ind.status, ind.late)+'</p>'
+   + (ind.late?'<div class="note">This indent was submitted late.</div>':'')
+   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Quantity</th><th></th></tr></thead>'
+   + '<tbody>'+(rows||'<tr><td colspan="4" class="empty">Nothing indented.</td></tr>')+'</tbody></table></div>'
+   + '<div class="bar"><span class="spacer"></span>'
+   + (ind.status==='submitted' && ROLE!=='ho' ? '<button class="btn pri" onclick="acceptIndent(\''+id+'\')">Accept indent</button>' : '')
+   + '</div>';
+}
+function adminQty(shopId, code, v){
+  const ind = indentOf(DATE, shopId);
+  const q = parseFloat(v)||0;
+  if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
+  save(); render();
+}
+function acceptIndent(shopId){
+  const ind = indentOf(DATE, shopId);
+  ind.status = 'accepted';
+  save(); OPENIND=null; render();
+}
+
+/* ============================================================
+   ADMIN — rates (unique products, clubbed by group/vendor later)
+   ============================================================ */
+function vRates(){
+  const day = dayOf(DATE);
+  const codes = uniqueCodes(DATE);
+  if(!codes.length) return '<h2>Rates</h2><p class="sub">'+fmtDate(DATE)+'</p><div class="card"><div class="empty">No accepted indents for this date yet.</div></div>';
+  const yest = prevRates(DATE);
+  const byGroup = {};
+  codes.forEach(c=>{ const g=groupOf(c); (byGroup[g]=byGroup[g]||[]).push(c); });
+  const gnames = Object.keys(byGroup).sort((a,b)=>{
+    if(a===UNGROUPED) return 1; if(b===UNGROUPED) return -1;
+    return GROUPNAMES.indexOf(a)-GROUPNAMES.indexOf(b);
+  });
+  let rows='';
+  gnames.forEach(g=>{
+   const vn = (DB.vendors[g] && DB.vendors[g].name) || g;
+   rows += '<tr class="vgrp"><td colspan="4">'+esc(vn)+' &nbsp;<span style="font-weight:400;color:#7a7a74">'+byGroup[g].length+' items</span></td></tr>';
+   byGroup[g].forEach(c=>{
+    const e=CAT[c]; if(!e) return;
+    const r = day.rates[c];
+    const y = yest[c];
+    let hint='';
+    if(y!==undefined && y!==null && y!==''){
+      if(r!==undefined && r!=='' && r!==null){
+        const ch = ((parseFloat(r)-parseFloat(y))/parseFloat(y))*100;
+        hint = 'y\'day &#8377;'+money(y)+(Math.abs(ch)>=15?' &middot; '+(ch>0?'+':'')+Math.round(ch)+'%':'');
+      } else hint = 'y\'day &#8377;'+money(y);
+    }
+    const big = (y && r && Math.abs((parseFloat(r)-parseFloat(y))/parseFloat(y))>=0.15);
+    rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
+      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+(hint?' &middot; '+hint:'')+'</span></td>'
+      + '<td class="c mono" style="width:70px;color:#7a7a74">'+esc(e.unit)+'</td>'
+      + '<td class="c" style="width:130px"><input type="number" min="0" step="any" class="row-inp mono" '
+      + (big?'style="border-color:#e0a92c;background:#fdf9ef"':'')
+      + ' value="'+(r===undefined||r===null?'':r)+'" onchange="setRate(\''+c+'\',this.value)"></td></tr>';
+   });
+  });
+  const done = codes.filter(c=>day.rates[c]!==undefined && day.rates[c]!=='').length;
+  return '<h2>Rates &mdash; '+fmtDate(DATE)+'</h2>'
+   + '<p class="sub">Market rate per kg, same for every shop. '+done+' of '+codes.length+' entered, grouped by vendor bill.</p>'
+   + '<div class="card narrow"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Unit</th><th class="c">Market &#8377;/kg</th></tr></thead>'
+   + '<tbody>'+rows+'</tbody></table></div>';
+}
+function setRate(code, v){
+  const day = dayOf(DATE);
+  if(v==='' || v===null) delete day.rates[code]; else day.rates[code] = parseFloat(v)||0;
+  save(); render();
+}
+function prevRates(date){
+  const ds = Object.keys(DB.days).filter(d=>d<date).sort();
+  return ds.length ? (DB.days[ds[ds.length-1]].rates||{}) : {};
+}
+
+/* ============================================================
+   ADMIN — packing (per shop quantities)
+   ============================================================ */
+let PACKSHOP = null;
+function vPack(){
+  const day = dayOf(DATE);
+  if(!PACKSHOP) PACKSHOP = SHOPS[0].id;
+  const s = shopById(PACKSHOP);
+  const ind = indentOf(DATE, PACKSHOP);
+  day.packed[PACKSHOP] = day.packed[PACKSHOP] || {};
+  const packed = day.packed[PACKSHOP];
+
+  const codes = [];
+  Object.keys(ind.lines).forEach(c=>{ if(ind.lines[c]>0) codes.push(c); });
+  Object.keys(packed).forEach(c=>{ if(codes.indexOf(c)<0) codes.push(c); });
+
+  let rows='', tot=0;
+  codes.forEach(c=>{
+    const e=CAT[c]; if(!e) return;
+    const pr = purchaseRate(PACKSHOP, c);
+    const q  = packed[c];
+    const has = q!==undefined && q!==null && q!=='' && parseFloat(q)>0;
+    const nk = has ? netKg(c,q,e.unit) : 0;
+    const amt = (has && pr!==null) ? nk*pr : 0;
+    tot += amt;
+    const extra = !(ind.lines[c]>0);
+    const skipped = (q!==undefined && parseFloat(q)===0);
+    rows += '<tr class="'+(skipped?'skipped':'')+'">'
+      + '<td class="mono" style="width:58px">'+esc(c)+'</td>'
+      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+(extra?' &middot; not indented':'')+'</span></td>'
+      + '<td class="c mono" style="width:88px;color:#7a7a74">'+(ind.lines[c]>0?num(ind.lines[c])+' '+esc(e.unit):'&mdash;')+'</td>'
+      + '<td class="c" style="width:120px"><input type="number" min="0" step="any" class="row-inp mono" value="'+(q===undefined?'':q)+'" onchange="setPacked(\''+c+'\',this.value)"></td>'
+      + '<td class="r mono" style="width:82px">'+(has ? (nk>0?num(nk,3):'<span style="color:#a33">no weight</span>') : '&mdash;')+'</td>'
+      + '<td class="r mono" style="width:92px">'+(pr!==null?money(pr):'<span style="color:#a33">no rate</span>')+'</td>'
+      + '<td class="r mono" style="width:104px">'+(amt?money(amt):'&mdash;')+'</td></tr>';
+  });
+
+  const st = shopStatus(PACKSHOP);
+  const canShip = (st==='packed');
+  return '<h2>Packing &mdash; '+fmtDate(DATE)+'</h2>'
+   + '<p class="sub">Enter what the vendor actually packed. 0 means the vendor left it. Blank means not handled yet.</p>'
+   + '<div class="bar">'+SHOPS.map(x=>'<button class="btn sm'+(x.id===PACKSHOP?' pri':'')+'" onclick="PACKSHOP=\''+x.id+'\';render()">'+esc(x.name)+'</button>').join('')+'</div>'
+   + '<div class="bar"><div class="srch"><input type="text" id="q" placeholder="Add a product this shop did not indent" autocomplete="off"><div class="sug" id="sug"></div></div>'
+   + '<span class="spacer"></span><span class="sub" style="margin:0">'+statusPill(st, ind.late)+'</span></div>'
+   + (ind.status==='draft' || ind.status==='submitted'
+      ? '<div class="note">This shop\'s indent has not been accepted yet. Accept it on the Indents tab first.</div>' : '')
+   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Indent</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
+   + '<tbody>'+(rows||'<tr><td colspan="7" class="empty">Nothing to pack for this shop.</td></tr>')+'</tbody></table></div>'
+   + '<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong></span>'
+   + '<span class="spacer"></span>'
+   + '<button class="btn pri" onclick="markOut(\''+PACKSHOP+'\')"'+(canShip?'':' disabled')+'>Out for delivery</button></div>';
+}
+function setPacked(code, v){
+  const day = dayOf(DATE);
+  day.packed[PACKSHOP] = day.packed[PACKSHOP] || {};
+  if(v===''||v===null) delete day.packed[PACKSHOP][code];
+  else day.packed[PACKSHOP][code] = parseFloat(v)||0;
+  save(); render();
+}
+function addExtra(code){
+  const day = dayOf(DATE);
+  day.packed[PACKSHOP] = day.packed[PACKSHOP] || {};
+  if(day.packed[PACKSHOP][code]===undefined) day.packed[PACKSHOP][code] = 0;
+  save(); render();
+}
+function markOut(shopId){
+  const day = dayOf(DATE);
+  day.ship[shopId] = 'out';
+  save(); render();
+  alert('Out for delivery.\n\nA WhatsApp with the pack list and weights would be sent to the '+shopById(shopId).name+' manager here.');
+}
+
+/* ============================================================
+   ADMIN — delivery
+   ============================================================ */
+function vShip(){
+  const day = dayOf(DATE);
+  let rows='';
+  SHOPS.forEach(s=>{
+    const st = shopStatus(s.id);
+    const packed = day.packed[s.id]||{};
+    const n = Object.keys(packed).filter(c=>packed[c]>0).length;
+    let act = '&mdash;';
+    if(st==='shipped') act = '<button class="btn sm" onclick="confirmReceipt(\''+s.id+'\')">Mark received</button>';
+    if(st==='received') act = '<button class="btn sm" onclick="reopenReceipt(\''+s.id+'\')">Reopen</button>';
+    rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td><td>'+statusPill(st)+'</td><td class="r">'+act+'</td></tr>';
+  });
+  return '<h2>Delivery</h2><p class="sub">'+fmtDate(DATE)+' &middot; the invoice can only be raised once the shop has confirmed</p>'
+   + '<div class="note">If a shop reports a difference, change the packed quantity on the Packing tab, then mark it received.</div>'
+   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Lines</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function confirmReceipt(shopId){ dayOf(DATE).ship[shopId] = 'received'; save(); render(); }
+function reopenReceipt(shopId){ dayOf(DATE).ship[shopId] = 'out'; save(); render(); }
+
+/* ============================================================
+   ADMIN — invoices
+   ============================================================ */
+let INVSHOP = null;
+function vInvoices(){
+  if(INVSHOP) return vInvoiceOne(INVSHOP);
+  let rows='';
+  SHOPS.forEach(s=>{
+    const st = shopStatus(s.id);
+    const inv = DB.invoices[DATE] && DB.invoices[DATE][s.id];
+    let act='&mdash;';
+    if(inv) act = '<button class="btn sm" onclick="INVSHOP=\''+s.id+'\';render()">Open</button>';
+    else if(st==='received' && ROLE!=='ho') act = '<button class="btn sm pri" onclick="makeInvoice(\''+s.id+'\')">Generate</button>';
+    rows += '<tr><td>'+esc(s.name)+'</td><td class="mono">'+(inv?esc(inv.no):'&mdash;')+'</td>'
+      + '<td class="r mono">'+(inv?'&#8377;'+money(inv.total):'&mdash;')+'</td>'
+      + '<td>'+statusPill(st)+'</td><td class="r">'+act+'</td></tr>';
+  });
+  return '<h2>Invoices</h2><p class="sub">'+fmtDate(DATE)+'</p>'
+   + '<div class="card"><table><thead><tr><th>Shop</th><th>Bill no</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function makeInvoice(shopId){
+  const day = dayOf(DATE);
+  const packed = day.packed[shopId] || {};
+  const lines = [];
+  Object.keys(packed).forEach(c=>{
+    const q = parseFloat(packed[c])||0;
+    if(q<=0) return;                       /* skipped lines never reach the invoice */
+    const e = CAT[c]; if(!e) return;
+    const pr = purchaseRate(shopId, c);
+    if(pr===null) return;
+    const nk = netKg(c,q,e.unit);
+    lines.push({code:c, name:e.name, tamil:e.tamil, unit:e.unit, qty:q, net:nk,
+                rate:pr, amount:nk*pr, sell:sellingPrice(shopId,c)});
+  });
+  lines.sort((a,b)=>(parseInt(a.code)||0)-(parseInt(b.code)||0));
+  if(!lines.length){ alert('Nothing priced to invoice for this shop.'); return; }
+  const bad = lines.filter(l=>!(l.net>0));
+  if(bad.length){
+    alert('These products have no unit weight set, so they would bill as zero:\n\n'
+      + bad.map(l=>'  '+l.code+'  '+l.name).join('\n')
+      + '\n\nSet the weight in the product list, or change the quantity, then generate again.');
+    return;
+  }
+  const total = lines.reduce((s,l)=>s+l.amount,0);
+  const s = shopById(shopId);
+  const mk = DATE.slice(5,7)+DATE.slice(0,4);
+  const key = shopId+'-'+mk;
+  DB.serial[key] = (DB.serial[key]||0)+1;
+  const no = s.prefix+'/'+mk+'/'+String(DB.serial[key]).padStart(4,'0');
+  DB.invoices[DATE] = DB.invoices[DATE] || {};
+  DB.invoices[DATE][shopId] = {no, date:DATE, shopId, lines, total, roundOff: Math.round(total)-total};
+  save(); INVSHOP = shopId; render();
+}
+function vInvoiceOne(shopId){
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv){ INVSHOP=null; return vInvoices(); }
+  const s = shopById(shopId);
+  const showSell = (ROLE==='owner');
+  let rows='';
+  inv.lines.forEach((l,i)=>{
+    rows += '<tr><td class="c">'+(i+1)+'</td><td class="c mono">'+esc(l.code)+'</td><td>'+esc(l.name)+'</td>'
+      + '<td class="c mono">'+num(l.qty)+' '+esc(l.unit)+'</td>'
+      + '<td class="r mono">'+num(l.net,3)+'</td>'
+      + '<td class="r mono">'+money(l.rate)+'</td>'
+      + '<td class="r mono">'+money(l.amount)+'</td>'
+      + (showSell?'<td class="r mono">'+(l.sell===null?'':money(l.sell))+'</td>':'') + '</tr>';
+  });
+  const cols = showSell?8:7;
+  const net = Math.round(inv.total);
+  return '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
+   + '<span class="spacer"></span>'
+   + '<button class="btn sm" onclick="waInvoice(\''+shopId+'\')">Send on WhatsApp</button>'
+   + '<button class="btn sm pri" onclick="window.print()">Print</button></div>'
+   + '<div id="inv">'
+   + '<div class="ihead"><div style="width:74px;font-size:11px;line-height:1.25;font-weight:700">VELORA<br>FRESH</div>'
+   + '<div class="mid"><div class="cn">VELORA FRESH</div><div class="le">Velora Innovations Private Limited &middot; Chennai</div></div>'
+   + '<div style="width:150px;text-align:right;font-size:12px">Mobile-9342011780</div></div>'
+   + '<div class="ititle">INVOICE</div>'
+   + '<div class="iband"><div class="lft"><strong>'+esc(CLIENT)+'</strong><br>'+esc(s.name)+' branch</div>'
+   + '<div class="rgt">Bill No : <span class="mono">'+esc(inv.no)+'</span><br>Date : <span class="mono">'+fmtDate(inv.date)+'</span></div></div>'
+   + '<table class="ibl"><thead><tr><th class="c" style="width:34px">S.No</th><th class="c" style="width:50px">Code</th><th>Product</th>'
+   + '<th class="c" style="width:82px">Quantity</th><th class="r" style="width:70px">Net Kg</th>'
+   + '<th class="r" style="width:76px">Rate/Kg</th><th class="r" style="width:92px">Amount</th>'
+   + (showSell?'<th class="r" style="width:82px">Selling</th>':'')+'</tr></thead><tbody>'+rows
+   + '<tr><td colspan="'+(cols-1)+'" class="r"><strong>Total</strong></td><td class="r mono"><strong>'+money(inv.total)+'</strong></td></tr>'
+   + (Math.abs(inv.roundOff)>=0.005?'<tr><td colspan="'+(cols-1)+'" class="r">Round Off</td><td class="r mono">'+money(inv.roundOff)+'</td></tr>':'')
+   + '<tr><td colspan="'+(cols-1)+'" class="r"><strong>Net Amount</strong></td><td class="r mono"><strong>'+money(net)+'</strong></td></tr>'
+   + '</tbody></table>'
+   + '<div style="font-size:12px;margin-top:7px"><em>Rupees '+esc(words(net))+' only</em></div>'
+   + '<div class="isign"><div>Party\'s Signature</div><div style="text-align:right">For VELORA FRESH<br><br><br>Authorised Signatory</div></div>'
+   + '</div>';
+}
+function waInvoice(shopId){
+  const inv = DB.invoices[DATE][shopId];
+  const s = shopById(shopId);
+  alert('WhatsApp template would go to the '+s.name+' owner and manager:\n\n'
+   + 'Velora Fresh — invoice '+inv.no+'\n'
+   + 'Date '+fmtDate(inv.date)+'\n'
+   + inv.lines.length+' items\n'
+   + 'Amount Rs '+money(Math.round(inv.total))+'\n'
+   + '(PDF attached)');
+}
+
+/* amount in words, Indian system */
+function words(n){
+  n = Math.round(n||0);
+  if(n===0) return 'Zero';
+  const a=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const b=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function two(x){ return x<20 ? a[x] : (b[Math.floor(x/10)] + (x%10?' '+a[x%10]:'')); }
+  function three(x){ return (x>99? a[Math.floor(x/100)]+' Hundred'+(x%100?' ':'') : '') + (x%100? two(x%100):''); }
+  let out='';
+  const cr=Math.floor(n/10000000); n%=10000000;
+  const la=Math.floor(n/100000);   n%=100000;
+  const th=Math.floor(n/1000);     n%=1000;
+  if(cr) out += three(cr)+' Crore ';
+  if(la) out += three(la)+' Lakh ';
+  if(th) out += three(th)+' Thousand ';
+  if(n)  out += three(n);
+  return out.replace(/\s+/g,' ').trim();
+}
+
+
+
+/* ============================================================
+   ORDERS — accepted indents grouped by vendor group, sent per group
+   ============================================================ */
+/* {code: {total, byShop:{shopId:qty}}} across every accepted indent for the day */
+function dayRequirement(date){
+  const need = {};
+  SHOPS.forEach(s=>{
+    const ind = (DB.indents[date]||{})[s.id];
+    if(!ind) return;
+    if(['accepted','packed','shipped','received','billed'].indexOf(ind.status)<0) return;
+    Object.keys(ind.lines).forEach(c=>{
+      const q = parseFloat(ind.lines[c])||0; if(q<=0) return;
+      if(!need[c]) need[c] = {total:0, byShop:{}};
+      need[c].total += q;
+      need[c].byShop[s.id] = (need[c].byShop[s.id]||0) + q;
+    });
+  });
+  return need;
+}
+function groupedRequirement(date){
+  const need = dayRequirement(date), out = {};
+  Object.keys(need).forEach(c=>{
+    const g = groupOf(c);
+    (out[g] = out[g] || []).push(c);
+  });
+  Object.keys(out).forEach(g=> out[g].sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0)));
+  return {need:need, groups:out};
+}
+function orderText(date, g, codes, need){
+  const v = DB.vendors[g] || {name:g};
+  let t = 'VELORA FRESH — order for ' + fmtDate(date) + '\n' + (v.name||g) + '\n';
+  codes.forEach(c=>{
+    const e = CAT[c]; if(!e) return;
+    t += '\n' + c + ' ' + e.name + ' — ' + num(need[c].total) + ' ' + e.unit + '\n   ';
+    t += SHOPS.filter(s=>need[c].byShop[s.id]).map(s=> s.name+' '+num(need[c].byShop[s.id])).join(' | ');
+  });
+  t += '\n\n' + codes.length + ' items. Please pack shop-wise.';
+  return t;
+}
+let ORDEROPEN = null;
+function vOrders(){
+  const day = dayOf(DATE);
+  day.sent = day.sent || {};
+  const gr = groupedRequirement(DATE);
+  const names = Object.keys(gr.groups).sort((a,b)=>{
+    if(a===UNGROUPED) return 1; if(b===UNGROUPED) return -1;
+    return GROUPNAMES.indexOf(a)-GROUPNAMES.indexOf(b);
+  });
+  if(!names.length)
+    return '<h2>Orders</h2><p class="sub">'+fmtDate(DATE)+'</p><div class="card"><div class="empty">No accepted indents yet. Accept them on the Indents tab first.</div></div>';
+
+  let html = '';
+  names.forEach(g=>{
+    const codes = gr.groups[g];
+    const v = DB.vendors[g] || {name:g, manual:false, phone:''};
+    const sent = !!day.sent[g];
+    let rows='';
+    codes.forEach(c=>{
+      const e=CAT[c]; if(!e) return;
+      const split = SHOPS.filter(s=>gr.need[c].byShop[s.id])
+        .map(s=>esc(s.name)+' <span class="mono">'+num(gr.need[c].byShop[s.id])+'</span>').join(' &nbsp;&middot;&nbsp; ');
+      rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
+        + '<td>'+esc(e.name)+'<span class="tam">'+split+'</span></td>'
+        + '<td class="r mono" style="width:100px">'+num(gr.need[c].total)+' '+esc(e.unit)+'</td></tr>';
+    });
+    const badge = sent ? '<span class="pill p-green">'+(v.manual?'Ordered':'Sent')+'</span>'
+                : v.manual ? '<span class="pill p-amber">Order manually</span>' : '<span class="pill p-grey">Not sent</span>';
+    html += '<div class="card"><h3 style="display:flex;align-items:center;gap:10px">'+esc(g)
+      + ' <span style="font-weight:400;color:#7a7a74">'+codes.length+' items</span> '+badge
+      + '<span class="spacer"></span>'
+      + '<button class="btn sm" onclick="ORDEROPEN=(ORDEROPEN===\'' + g.replace(/'/g,"\\'") + '\'?null:\'' + g.replace(/'/g,"\\'") + '\');render()">List</button> '
+      + (v.manual ? '<button class="btn sm'+(sent?'':' pri')+'" onclick="markSent(\''+g.replace(/'/g,"\\'")+'\')">'+(sent?'Ordered':'Mark ordered')+'</button>'
+                  : '<button class="btn sm'+(sent?'':' pri')+'" onclick="sendOrder(\''+g.replace(/'/g,"\\'")+'\')">'+(sent?'Send again':'Confirm &amp; send')+'</button>')
+      + '</h3>'
+      + '<table><tbody>'+rows+'</tbody></table>'
+      + (ORDEROPEN===g ? '<pre style="margin:0;padding:12px 14px;border-top:1px solid #e2e2de;background:#fafaf8;font-size:12.5px;white-space:pre-wrap;font-family:ui-monospace,monospace">'+esc(orderText(DATE,g,codes,gr.need))+'</pre>' : '')
+      + '</div>';
+  });
+  const pend = names.filter(g=>!day.sent[g]).length;
+  return '<h2>Orders &mdash; '+fmtDate(DATE)+'</h2>'
+   + '<p class="sub">One order per vendor group, already split shop-wise for packing. '
+   + (pend? pend+' still to place.' : 'All placed.')+'</p>' + html;
+}
+function markSent(g){ const day=dayOf(DATE); day.sent=day.sent||{}; day.sent[g]=true; save(); render(); }
+function sendOrder(g){
+  const gr = groupedRequirement(DATE);
+  const v = DB.vendors[g]||{name:g,phone:''};
+  markSent(g);
+  alert('WhatsApp to '+(v.name||g)+(v.phone?' ('+v.phone+')':' — no number saved yet')+':\n\n'
+    + orderText(DATE, g, gr.groups[g]||[], gr.need));
+}
+
+/* ============================================================
+   VENDORS
+   ============================================================ */
+let VENDOROPEN = null;
+function vVendors(){
+  if(VENDOROPEN) return vVendorOne(VENDOROPEN);
+  let rows='';
+  GROUPNAMES.forEach(g=>{
+    const v = DB.vendors[g];
+    rows += '<tr><td>'+esc(v.name||g)+'<span class="tam">group: '+esc(g)+'</span></td>'
+      + '<td class="mono">'+esc(v.phone||'&mdash;')+'</td>'
+      + '<td class="c mono">'+(GROUPS[g]||[]).length+'</td>'
+      + '<td>'+(v.manual?'<span class="pill p-amber">Manual order</span>':'<span class="pill p-blue">WhatsApp</span>')+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="VENDOROPEN=\''+g.replace(/'/g,"\\'")+'\';render()">Edit</button></td></tr>';
+  });
+  return '<h2>Vendors</h2><p class="sub">One vendor per group. The group decides which vendor gets the order. '
+   + 'Anything not listed in the group sheet falls into &ldquo;'+UNGROUPED+'&rdquo; and is ordered by hand.</p>'
+   + '<div class="card"><table><thead><tr><th>Vendor</th><th>WhatsApp</th><th class="c">Products</th><th>Order by</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function vVendorOne(g){
+  const v = DB.vendors[g];
+  const owner = (ROLE==='owner');
+  const f = (lbl,key,val,ph)=> '<div><div style="font-size:12px;color:#7a7a74;margin-bottom:4px">'+lbl+'</div>'
+    + '<input type="text" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" onchange="setVendor(\''+g.replace(/'/g,"\\'")+'\',\''+key+'\',this.value)"></div>';
+  let list='';
+  (GROUPS[g]||[]).forEach(c=>{ const e=CAT[c]; if(e) list += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td></tr>'; });
+  return '<div class="bar"><button class="btn sm" onclick="VENDOROPEN=null;render()">&larr; Vendors</button></div>'
+   + '<h2>'+esc(v.name||g)+'</h2><p class="sub">Group '+esc(g)+' &middot; '+(GROUPS[g]||[]).length+' products</p>'
+   + '<div class="card"><h3>Details</h3><div style="padding:12px 14px">'
+   + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">'
+   + f('Vendor name','name',v.name) + f('WhatsApp number','phone',v.phone,'919342011780')
+   + f('Contact person','contact',v.contact) + f('Address','address',v.address) + f('Notes','notes',v.notes)
+   + '</div><div style="margin-top:11px"><label style="font-size:13.5px;display:flex;align-items:center;gap:7px;cursor:pointer">'
+   + '<input type="checkbox" style="width:auto"'+(v.manual?' checked':'')+' onchange="setVendor(\''+g.replace(/'/g,"\\'")+'\',\'manual\',this.checked)"> Order placed manually, not over WhatsApp</label></div></div></div>'
+   + (owner ? '<div class="card"><h3>Bank details &mdash; owner only</h3><div style="padding:12px 14px">'
+       + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">'
+       + f('Account name','bank.acName',v.bank?v.bank.acName:'') + f('Account number','bank.acNo',v.bank?v.bank.acNo:'')
+       + f('IFSC','bank.ifsc',v.bank?v.bank.ifsc:'') + f('UPI id','bank.upi',v.bank?v.bank.upi:'')
+       + '</div></div></div>' : '')
+   + '<div class="card"><h3>Products in this group</h3><table><tbody>'+list+'</tbody></table></div>';
+}
+function setVendor(g, key, val){
+  const v = DB.vendors[g]; if(!v) return;
+  if(key.indexOf('bank.')===0){ v.bank = v.bank||{}; v.bank[key.slice(5)] = val; }
+  else v[key] = val;
+  save();
+}
+
+/* ============================================================
+   ACCOUNTS — weekly, Monday to Sunday, payment due Monday
+   One chain-level payment, allocated oldest bill first.
+   Owner records; head office reads.
+   ============================================================ */
+function weekStart(iso){
+  const [y,m,d] = iso.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  const off = (dt.getDay() + 6) % 7;          /* Monday = 0 */
+  dt.setDate(dt.getDate() - off);
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+}
+function addDays(iso, n){
+  const [y,m,d] = iso.split('-').map(Number);
+  const dt = new Date(y, m-1, d); dt.setDate(dt.getDate()+n);
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+}
+/* every bill ever raised, oldest first, shop order inside a day */
+function allBills(){
+  const out = [];
+  Object.keys(DB.invoices).sort().forEach(d=>{
+    SHOPS.forEach(s=>{
+      const inv = DB.invoices[d][s.id];
+      if(inv) out.push({date:d, shopId:s.id, no:inv.no, amount:Math.round(inv.total), lines:inv.lines.length});
+    });
+  });
+  return out;
+}
+function totalPaid(){ return DB.payments.reduce((t,p)=>t+(parseFloat(p.amount)||0), 0); }
+/* oldest-first settlement, recomputed every time so it can never drift */
+function settled(){
+  let pot = totalPaid();
+  return allBills().map(b=>{
+    const applied = Math.min(pot, b.amount);
+    pot -= applied;
+    return Object.assign({}, b, {paid:applied, due:b.amount-applied,
+      state: applied>=b.amount ? 'cleared' : (applied>0 ? 'part' : 'open')});
+  });
+}
+function vAccounts(){
+  const canEdit = (ROLE==='owner');
+  if(!ACCTWEEK) ACCTWEEK = weekStart(DATE);
+  const ws = ACCTWEEK, we = addDays(ws, 6);
+  const bills = settled();
+  const before  = bills.filter(b=>b.date <  ws);
+  const inWeek  = bills.filter(b=>b.date >= ws && b.date <= we);
+  const opening = before.reduce((t,b)=>t+b.due, 0);
+  const billed  = inWeek.reduce((t,b)=>t+b.amount, 0);
+  const paidWk  = DB.payments.filter(p=>p.date>=ws && p.date<=we).reduce((t,p)=>t+(parseFloat(p.amount)||0),0);
+  const closing = bills.filter(b=>b.date <= we).reduce((t,b)=>t+b.due, 0);
+
+  /* per shop for the week */
+  let shopRows='';
+  SHOPS.forEach(s=>{
+    const bs = inWeek.filter(b=>b.shopId===s.id);
+    if(!bs.length){ shopRows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">0</td><td class="r mono">&mdash;</td><td class="r mono">&mdash;</td></tr>'; return; }
+    const amt = bs.reduce((t,b)=>t+b.amount,0), due = bs.reduce((t,b)=>t+b.due,0);
+    shopRows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+bs.length+'</td>'
+      + '<td class="r mono">&#8377;'+money(amt)+'</td><td class="r mono">'+(due?'&#8377;'+money(due):'<span style="color:#14663f">cleared</span>')+'</td></tr>';
+  });
+
+  let billRows='';
+  inWeek.forEach(b=>{
+    const pill = b.state==='cleared' ? '<span class="pill p-green">Cleared</span>'
+               : b.state==='part' ? '<span class="pill p-amber">Part &#8377;'+money(b.paid)+'</span>'
+               : '<span class="pill p-grey">Open</span>';
+    billRows += '<tr><td class="mono">'+esc(b.no)+'</td><td>'+fmtDate(b.date)+'</td><td>'+esc(shopById(b.shopId).name)+'</td>'
+      + '<td class="r mono">&#8377;'+money(b.amount)+'</td><td>'+pill+'</td></tr>';
+  });
+
+  let payRows='';
+  DB.payments.slice().sort((a,b)=>a.date<b.date?1:-1).forEach(p=>{
+    payRows += '<tr><td>'+fmtDate(p.date)+'</td><td>'+esc(p.mode)+'</td><td class="mono">'+esc(p.ref||'&mdash;')+'</td>'
+      + '<td class="r mono">&#8377;'+money(p.amount)+'</td>'
+      + (canEdit?'<td class="r"><button class="rm" onclick="delPay(\''+p.id+'\')">&times;</button></td>':'') + '</tr>';
+  });
+
+  const due = (closing>0);
+  return '<h2>Accounts</h2><p class="sub">'+esc(CLIENT)+' &middot; week Monday to Sunday, payment due Monday</p>'
+   + '<div class="bar"><button class="btn sm" onclick="shiftWeek(-7)">&larr; Previous</button>'
+   + '<strong>'+fmtDate(ws)+' &ndash; '+fmtDate(we)+'</strong>'
+   + '<button class="btn sm" onclick="shiftWeek(7)">Next &rarr;</button>'
+   + '<span class="spacer"></span><button class="btn sm" onclick="window.print()">Print statement</button></div>'
+   + '<div class="kpi">'
+   + '<div><div class="lb">Opening balance</div><div class="vl mono">&#8377;'+money(opening)+'</div></div>'
+   + '<div><div class="lb">Billed this week</div><div class="vl mono">&#8377;'+money(billed)+'</div></div>'
+   + '<div><div class="lb">Received this week</div><div class="vl mono">&#8377;'+money(paidWk)+'</div></div>'
+   + '<div><div class="lb">Balance due</div><div class="vl mono" style="'+(due?'color:#8c2020':'color:#14663f')+'">&#8377;'+money(closing)+'</div></div>'
+   + '</div>'
+   + '<div class="card"><h3>By shop</h3><table><thead><tr><th>Shop</th><th class="c">Bills</th><th class="r">Billed</th><th class="r">Still due</th></tr></thead>'
+   + '<tbody>'+shopRows+'</tbody></table></div>'
+   + '<div class="card"><h3>Bills this week</h3><table><thead><tr><th>Bill no</th><th>Date</th><th>Shop</th><th class="r">Amount</th><th>Status</th></tr></thead>'
+   + '<tbody>'+(billRows||'<tr><td colspan="5" class="empty">No bills raised in this week.</td></tr>')+'</tbody></table></div>'
+   + (canEdit ? '<div class="card noprint"><h3>Record a payment</h3><div style="padding:12px 14px">'
+       + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
+       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Date</div><input type="date" id="pDate" value="'+DATE+'"></div>'
+       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Amount</div><input type="number" id="pAmt" min="0" step="any" placeholder="0.00"></div>'
+       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Mode</div><select id="pMode"><option>NEFT</option><option>RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div>'
+       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Reference</div><input type="text" id="pRef" placeholder="UTR / cheque no"></div>'
+       + '</div><div style="margin-top:11px"><button class="btn pri" onclick="addPay()">Record payment</button>'
+       + '<span class="sub" style="margin:0 0 0 12px">Applied to the oldest unpaid bill first.</span></div></div></div>' : '')
+   + '<div class="card"><h3>Payments received</h3><table><thead><tr><th>Date</th><th>Mode</th><th>Reference</th><th class="r">Amount</th>'
+   + (canEdit?'<th></th>':'')+'</tr></thead>'
+   + '<tbody>'+(payRows||'<tr><td colspan="'+(canEdit?5:4)+'" class="empty">Nothing received yet.</td></tr>')+'</tbody></table></div>';
+}
+function shiftWeek(n){ ACCTWEEK = addDays(ACCTWEEK || weekStart(DATE), n); render(); }
+function addPay(){
+  const d = document.getElementById('pDate').value;
+  const a = parseFloat(document.getElementById('pAmt').value)||0;
+  if(!d || a<=0){ alert('Enter a date and an amount.'); return; }
+  DB.payments.push({id:'p'+Date.now(), date:d, amount:a,
+    mode:document.getElementById('pMode').value, ref:document.getElementById('pRef').value.trim()});
+  save(); render();
+}
+function delPay(id){
+  if(!confirm('Remove this payment?')) return;
+  DB.payments = DB.payments.filter(p=>p.id!==id);
+  save(); render();
+}
+
+/* ============================================================
+   OWNER — margin master
+   ============================================================ */
+let MASTERSHOP = null;
+let ACCTWEEK = null;
+function vMaster(){
+  if(MASTERSHOP) return vMasterShop(MASTERSHOP);
+  let rows='';
+  SHOPS.forEach(s=>{
+    const c = commOf(s.id);
+    const set = DB.master.selling[s.id] || {};
+    const n = CODES.filter(code=> (set[code]!==undefined && set[code]!=='') || (CAT[code].margin!==null)).length;
+    rows += '<tr><td>'+esc(s.name)+'</td>'
+      + '<td class="c" style="width:120px"><input type="number" min="0" step="0.01" class="row-inp mono" value="'+c+'" onchange="setComm(\''+s.id+'\',this.value)"></td>'
+      + '<td class="c mono" style="width:120px">'+n+' / '+CODES.length+'</td>'
+      + '<td class="r mono" style="width:120px">&#8377;'+money(100*(1+c/100))+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="MASTERSHOP=\''+s.id+'\';render()">Selling margins</button></td></tr>';
+  });
+  return '<h2>Margin master</h2><p class="sub">Owner only &middot; '+esc(CLIENT)+'</p>'
+   + '<div class="note">A change here applies to invoices raised from now on. Invoices already generated keep the rate they were billed at.</div>'
+   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Commission %</th><th class="c">Selling margins set</th><th class="r">&#8377;100 becomes</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function vMasterShop(id){
+  const s = shopById(id);
+  DB.master.selling[id] = DB.master.selling[id] || {};
+  const set = DB.master.selling[id];
+  let rows='';
+  CODES.forEach(c=>{
+    const e = CAT[c];
+    const v = set[c]!==undefined ? set[c] : (e.margin===null?'':e.margin);
+    rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      + '<td class="c" style="width:120px"><input type="number" min="0" step="0.01" class="row-inp mono" value="'+v+'" onchange="setSell(\''+id+'\',\''+c+'\',this.value)"></td></tr>';
+  });
+  return '<div class="bar"><button class="btn sm" onclick="MASTERSHOP=null;render()">&larr; Margin master</button></div>'
+   + '<h2>'+esc(s.name)+' &mdash; selling margins</h2>'
+   + '<p class="sub">Percentage on top of the purchase price. Blank prints no selling price for that product.</p>'
+   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Selling margin %</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function setAnytime(v){ DB.settings.anytime = !!v; save(); render(); }
+function setComm(id, v){ DB.master.comm[id] = v===''?0:(parseFloat(v)||0); save(); render(); }
+function setSell(id, code, v){
+  DB.master.selling[id] = DB.master.selling[id] || {};
+  if(v==='') DB.master.selling[id][code] = ''; else DB.master.selling[id][code] = parseFloat(v)||0;
+  save();
+}
+
+/* ---------- test / debug hook ---------- */
+function setPackShop(id){ PACKSHOP = id; render(); }
+window.VF = {
+  CAT:CAT, CODES:CODES, SHOPS:SHOPS,
+  settled:function(){ return settled(); }, weekStart:weekStart,
+  GROUPS:GROUPS, CODE2GROUP:CODE2GROUP,
+  grouped:function(d){ return groupedRequirement(d); }, orderText:orderText,
+  get DB(){ return DB; }, get DATE(){ return DATE; }, get ROLE(){ return ROLE; }, get TAB(){ return TAB; }
+};
+
+/* ---------- boot ---------- */
+function tick(){
+  const n = new Date();
+  const w = windowState();
+  const lbl = {open:'Indent window open', late:'Late window', closed:'Indent window closed'}[w];
+  const el = document.getElementById('clock');
+  if(el) el.textContent = lbl + ' · ' + String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+}
+TAB = tabsFor()[0].id;
+render();
+tick();
+setInterval(tick, 30000);
+
+/* re-wire the product search after every render that needs it */
+const _render = render;
+render = function(){
+  _render();
+  if(TAB==='myindent'){ wireSearch(c=>{ const ind=indentOf(DATE,ROLE); if(!ind.lines[c]) ind.lines[c]=1; save(); render(); }); }
+  if(TAB==='pack'){ wireSearch(c=>{ addExtra(c); }); }
+};
+render();
+</script>
+</body>
+</html>
