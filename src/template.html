@@ -5,65 +5,151 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Velora Fresh — supply desk</title>
 <style>
+/* ============================================================
+   Velora Fresh — supply desk
+   Design tokens first, then components. Class names are fixed by
+   the render functions below; do not rename them here alone.
+   ============================================================ */
+:root{
+  --ink:#12100e; --ink-2:#3f3b36; --ink-3:#6f6960; --ink-4:#9b948a;
+  --line:#e6e2db; --line-2:#f1eee9;
+  --bg:#f6f4f0; --surface:#fff; --surface-2:#faf9f6;
+  --brand:#1c6b45; --brand-dark:#175a3a; --brand-soft:#e8f2ec;
+  --blue:#1c4f80; --blue-soft:#e7f0fa;
+  --amber:#8a5a06; --amber-soft:#fdf2dd;
+  --red:#96241f; --red-soft:#fbeae9;
+  --green:#14653f; --green-soft:#e6f4ec;
+  --r:9px; --r-lg:13px;
+  --sh:0 1px 2px rgba(18,16,14,.05);
+  --sh-2:0 2px 4px rgba(18,16,14,.05),0 6px 16px rgba(18,16,14,.06);
+}
 *{box-sizing:border-box}
-body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1a1a1a;background:#f4f4f2}
-.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-header{background:#fff;border-bottom:1px solid #e2e2de;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
-.brand{font-size:17px;font-weight:600;letter-spacing:-.2px}
-.brand small{display:block;font-size:10px;font-weight:400;color:#8a8a84;letter-spacing:.08em;text-transform:uppercase}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+/* ---------- header ---------- */
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px 20px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:var(--sh)}
+.brand{font-size:16px;font-weight:650;letter-spacing:-.2px;line-height:1.15;
+  display:flex;align-items:center;gap:9px;padding-right:4px}
+.brand .mk{width:31px;height:31px;border-radius:8px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(145deg,#2f9163,var(--brand));color:#fff;font-size:15px;font-weight:700}
+.brand small{display:block;font-size:9.5px;font-weight:500;color:var(--ink-4);
+  letter-spacing:.09em;text-transform:uppercase;margin-top:1px}
 .spacer{margin-left:auto}
-nav{background:#fff;border-bottom:1px solid #e2e2de;padding:0 16px;display:flex;gap:2px;overflow-x:auto}
-nav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 13px;font-size:14px;color:#6b6b66;cursor:pointer;white-space:nowrap;font-family:inherit}
-nav button.on{color:#1a1a1a;border-bottom-color:#1a1a1a}
-main{padding:18px 16px 60px;max-width:1180px;margin:0 auto}
-h2{font-size:19px;font-weight:600;margin:0 0 3px}
-.sub{color:#6b6b66;font-size:13px;margin:0 0 16px}
+header select,header input[type=date]{width:auto;background:var(--surface-2)}
+
+/* ---------- nav ---------- */
+nav{background:var(--surface);border-bottom:1px solid var(--line);padding:0 20px;
+  display:flex;gap:1px;overflow-x:auto;scrollbar-width:none;position:sticky;top:50px;z-index:19}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:none;border-bottom:2px solid transparent;padding:11px 14px 9px;
+  font-size:13.5px;font-weight:500;color:var(--ink-3);cursor:pointer;white-space:nowrap;
+  font-family:inherit;transition:color .13s,border-color .13s}
+nav button:hover{color:var(--ink)}
+nav button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+
+/* ---------- page ---------- */
+main{padding:22px 20px 72px;max-width:1180px;margin:0 auto}
+h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
+.sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
+
+/* ---------- controls ---------- */
 button,select,input{font-family:inherit;font-size:14px}
-.btn{background:#fff;border:1px solid #cfcfc9;border-radius:7px;padding:8px 15px;cursor:pointer}
-.btn:hover{background:#f7f7f5}
-.btn.pri{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
-.btn.pri:hover{background:#333}
-.btn.sm{padding:5px 10px;font-size:13px}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-input[type=text],input[type=number],input[type=date],select{border:1px solid #cfcfc9;border-radius:6px;padding:7px 9px;background:#fff;width:100%}
-input:focus,select:focus{outline:2px solid #b9cfe8;outline-offset:-1px}
-.card{background:#fff;border:1px solid #e2e2de;border-radius:10px;overflow:hidden;margin-bottom:16px}
-.card h3{margin:0;padding:11px 14px;font-size:14px;font-weight:600;background:#fafaf8;border-bottom:1px solid #e2e2de}
+.btn{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 15px;
+  cursor:pointer;font-weight:500;color:var(--ink-2);box-shadow:var(--sh);
+  transition:background .13s,border-color .13s,color .13s}
+.btn:hover{background:var(--surface-2);border-color:#d5cfc6;color:var(--ink)}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand);
+  box-shadow:0 1px 2px rgba(28,107,69,.28)}
+.btn.pri:hover{background:#175a3a;border-color:#175a3a;color:#fff}
+.btn.sm{padding:5px 11px;font-size:12.5px;border-radius:7px}
+.btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+input[type=text],input[type=number],input[type=date],select{border:1px solid var(--line);border-radius:8px;
+  padding:7px 10px;background:var(--surface);width:100%;color:var(--ink);transition:border-color .13s,box-shadow .13s}
+input:hover,select:hover{border-color:#d5cfc6}
+input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+
+/* ---------- card ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  margin-bottom:16px;box-shadow:var(--sh)}
+.card h3{margin:0;padding:12px 16px;font-size:13.5px;font-weight:650;letter-spacing:-.1px;
+  background:var(--surface-2);border-bottom:1px solid var(--line);border-radius:var(--r-lg) var(--r-lg) 0 0}
+.card>table{border-radius:0 0 var(--r-lg) var(--r-lg)}
+/* few-column entry tables read badly stretched to full width */
+.card.narrow{max-width:760px}
+
+/* ---------- table ---------- */
+.twrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:0 0 var(--r-lg) var(--r-lg)}
 table{width:100%;border-collapse:collapse}
-th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#7a7a74;text-align:left;padding:8px 10px;background:#fafaf8;border-bottom:1px solid #e2e2de;font-weight:600}
-td{padding:7px 10px;border-bottom:1px solid #f0f0ed;font-size:14px;vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-4);text-align:left;
+  padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line-2);font-size:14px;vertical-align:middle}
+tbody tr:hover td{background:#fcfbf8}
 tr:last-child td{border-bottom:none}
 .r{text-align:right}.c{text-align:center}
-.tam{font-size:11.5px;color:#9a9a94;display:block}
-.pill{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:20px;border:1px solid transparent}
-.p-grey{background:#f0f0ed;color:#5f5f5a}
-.p-blue{background:#e7f0fa;color:#1b4f80}
-.p-green{background:#e6f4ec;color:#14663f}
-.p-amber{background:#fdf1dd;color:#7d5106}
-.p-red{background:#fbeaea;color:#8c2020}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(215px,1fr))}
-.tile{background:#fff;border:1px solid #e2e2de;border-radius:10px;padding:13px 14px;cursor:pointer}
-.tile:hover{border-color:#b5b5ad}
-.tile .nm{font-weight:600;font-size:15px}
-.tile .big{font-size:21px;font-weight:600;margin:6px 0 2px}
-.kpi{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:16px}
-.kpi div{background:#fff;border:1px solid #e2e2de;border-radius:9px;padding:11px 13px}
-.kpi .lb{font-size:12px;color:#7a7a74}
-.kpi .vl{font-size:20px;font-weight:600;margin-top:2px}
-.row-inp{width:80px;text-align:center;padding:5px 4px}
-.empty{padding:34px 14px;text-align:center;color:#8a8a84;font-size:14px}
-.note{background:#fdf1dd;border:1px solid #f0dcb0;border-radius:8px;padding:10px 13px;font-size:13.5px;color:#6d4a08;margin-bottom:14px}
-.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-.srch{position:relative;max-width:340px;flex:1}
-.sug{position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #cfcfc9;border-radius:0 0 8px 8px;max-height:250px;overflow:auto;z-index:30;display:none}
-.sug div{padding:7px 10px;cursor:pointer;font-size:14px;border-bottom:1px solid #f2f2ef}
-.sug div:hover,.sug div.hi{background:#eef4fb}
-.rm{color:#a33;cursor:pointer;border:none;background:none;font-size:16px;line-height:1;padding:2px 6px}
-.vgrp{background:#f6f6f3;font-weight:600;font-size:13px}
-.skipped td{background:#fbeaea;color:#8c2020}
+.tam{font-size:11.5px;color:var(--ink-4);display:block;margin-top:1px}
+.vgrp{background:var(--brand-soft);font-weight:650;font-size:12.5px;color:#14563a;
+  letter-spacing:.01em;border-bottom:1px solid #d3e6dc}
+.vgrp td{border-bottom:1px solid #d3e6dc}
+tbody tr.vgrp:hover td{background:var(--brand-soft)}
+.skipped td{background:var(--red-soft);color:var(--red)}
+tbody tr.skipped:hover td{background:#f7dedc}
+.row-inp{width:86px;text-align:center;padding:6px 6px;font-variant-numeric:tabular-nums}
+
+/* ---------- pills ---------- */
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;
+  border:1px solid transparent;letter-spacing:.01em;white-space:nowrap}
+.p-grey{background:#f0eeea;color:var(--ink-3);border-color:#e3dfd8}
+.p-blue{background:var(--blue-soft);color:var(--blue);border-color:#cfe0f2}
+.p-green{background:var(--green-soft);color:var(--green);border-color:#c9e6d6}
+.p-amber{background:var(--amber-soft);color:var(--amber);border-color:#f2e0b8}
+.p-red{background:var(--red-soft);color:var(--red);border-color:#f2d3d1}
+
+/* ---------- shop tiles ---------- */
+.grid{display:grid;gap:13px;grid-template-columns:repeat(auto-fill,minmax(215px,1fr))}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 15px;
+  cursor:pointer;box-shadow:var(--sh);position:relative;overflow:hidden;
+  transition:border-color .14s,box-shadow .14s,transform .14s}
+/* left edge carries the shop's state, so the board reads at a glance */
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#ddd8d0}
+.t-submitted::before{background:#4a80b8}
+.t-accepted::before,.t-packed::before{background:#d9a441}
+.t-shipped::before{background:#2f6ea8}
+.t-received::before,.t-billed::before{background:#2f9163}
+.tile:hover{border-color:#cfc9bf;box-shadow:var(--sh-2);transform:translateY(-1px)}
+.tile .nm{font-weight:650;font-size:14.5px;letter-spacing:-.15px}
+.tile .big{font-size:22px;font-weight:650;margin:7px 0 2px;letter-spacing:-.5px}
+.tile .sub{font-size:12px}
+
+/* ---------- kpi ---------- */
+.kpi{display:grid;gap:11px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:18px}
+.kpi>div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:12px 15px;box-shadow:var(--sh)}
+.kpi .lb{font-size:11px;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.kpi .vl{font-size:23px;font-weight:650;margin-top:3px;letter-spacing:-.6px;color:var(--ink)}
+
+/* ---------- misc ---------- */
+.empty{padding:44px 16px;text-align:center;color:var(--ink-4);font-size:14px}
+.note{background:var(--amber-soft);border:1px solid #f0dcb0;border-left:3px solid #d9a441;
+  border-radius:var(--r);padding:11px 14px;font-size:13.5px;color:#6d4a08;margin-bottom:15px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:15px}
+.srch{position:relative;max-width:360px;flex:1;min-width:200px}
+.sug{position:absolute;left:0;right:0;top:100%;background:var(--surface);border:1px solid var(--line);
+  border-radius:0 0 var(--r) var(--r);max-height:260px;overflow:auto;z-index:30;display:none;box-shadow:var(--sh-2)}
+.sug div{padding:8px 11px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-2)}
+.sug div:last-child{border-bottom:none}
+.sug div:hover,.sug div.hi{background:var(--brand-soft)}
+.rm{color:var(--red);cursor:pointer;border:none;background:none;font-size:16px;line-height:1;
+  padding:2px 7px;border-radius:5px}
+.rm:hover{background:var(--red-soft)}
 .hidden{display:none!important}
-/* invoice */
-#inv{background:#fff;padding:26px 30px;border:1px solid #e2e2de;border-radius:10px}
+
+/* ---------- invoice (print-faithful, do not restyle) ---------- */
+#inv{background:#fff;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
 .ihead{display:flex;align-items:flex-start;gap:14px;border-bottom:2px solid #1a1a1a;padding-bottom:10px}
 .ihead .mid{flex:1;text-align:center}
 .ihead .cn{font-size:22px;font-weight:700;letter-spacing:.5px}
@@ -74,23 +160,46 @@ tr:last-child td{border-bottom:none}
 .iband .lft{flex:1;border-right:1px solid #1a1a1a}
 .iband .rgt{width:225px}
 table.ibl{border:1px solid #1a1a1a;border-top:none;font-size:13px}
-table.ibl th,table.ibl td{border-right:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;padding:5px 7px;background:none;color:#1a1a1a;text-transform:none;letter-spacing:0;font-size:12.5px}
+table.ibl th,table.ibl td{border-right:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;padding:5px 7px;
+  background:none;color:#1a1a1a;text-transform:none;letter-spacing:0;font-size:12.5px;white-space:normal}
 table.ibl th{font-weight:600;background:#f4f4f2}
 table.ibl th:last-child,table.ibl td:last-child{border-right:none}
+table.ibl tbody tr:hover td{background:none}
 .isign{display:flex;justify-content:space-between;margin-top:44px;font-size:12.5px}
+
+/* ---------- mobile ---------- */
+@media (max-width:720px){
+  header{padding:8px 13px;gap:9px;row-gap:7px}
+  .brand{font-size:15px}
+  header select,header input[type=date]{font-size:13px;padding:6px 8px}
+  nav{padding:0 13px;top:auto;position:static}
+  main{padding:16px 13px 64px}
+  h2{font-size:19px}
+  .kpi{grid-template-columns:repeat(2,1fr);gap:9px}
+  .kpi .vl{font-size:20px}
+  .grid{grid-template-columns:1fr}
+  .card{border-radius:var(--r)}
+  th,td{padding:8px 10px}
+  #inv{padding:16px 14px}
+  .iband{flex-direction:column}
+  .iband .lft{border-right:none;border-bottom:1px solid #1a1a1a}
+  .iband .rgt{width:auto}
+}
+
+/* ---------- print ---------- */
 @media print{
- body{background:#fff}
- header,nav,.noprint{display:none!important}
- main{padding:0;max-width:none}
- #inv{border:none;border-radius:0;padding:0}
- @page{size:A4;margin:12mm}
+  body{background:#fff}
+  header,nav,.noprint{display:none!important}
+  main{padding:0;max-width:none}
+  #inv{border:none;border-radius:0;padding:0;box-shadow:none}
+  @page{size:A4;margin:12mm}
 }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand">Velora Fresh<small>Velora Innovations Pvt Ltd</small></div>
+  <div class="brand"><span class="mk" aria-hidden="true">VF</span><span>Velora Fresh<small>Velora Innovations Pvt Ltd</small></span></div>
   <select id="roleSel" style="width:auto" onchange="setRole(this.value)"></select>
   <input type="date" id="dateSel" style="width:auto" onchange="setDate(this.value)">
   <span class="spacer"></span>
@@ -520,7 +629,7 @@ function vBoard(){
     indented += Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
     supplied += n;
     const st = shopStatus(s.id);
-    tiles += '<div class="tile" onclick="openShop(\''+s.id+'\')">'
+    tiles += '<div class="tile t-'+st+'" onclick="openShop(\''+s.id+'\')">'
       + '<div class="nm">'+esc(s.name)+'</div>'
       + '<div class="big mono">'+(val?'&#8377;'+money(val):'&mdash;')+'</div>'
       + '<div class="sub" style="margin:0 0 7px">'+Object.keys(ind.lines).length+' indented &middot; '+n+' packed</div>'
@@ -631,7 +740,7 @@ function vRates(){
   const done = codes.filter(c=>day.rates[c]!==undefined && day.rates[c]!=='').length;
   return '<h2>Rates &mdash; '+fmtDate(DATE)+'</h2>'
    + '<p class="sub">Market rate per kg, same for every shop. '+done+' of '+codes.length+' entered, grouped by vendor bill.</p>'
-   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Unit</th><th class="c">Market &#8377;/kg</th></tr></thead>'
+   + '<div class="card narrow"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Unit</th><th class="c">Market &#8377;/kg</th></tr></thead>'
    + '<tbody>'+rows+'</tbody></table></div>';
 }
 function setRate(code, v){
