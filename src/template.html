@@ -32,6 +32,9 @@ body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
 /* ---------- header ---------- */
 header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px 20px;
   display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:var(--sh)}
+#burger{background:none;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;
+  cursor:pointer;font-size:15px;color:var(--ink-2);display:none;place-items:center;flex:none}
+#burger:hover{background:var(--surface-2)}
 .brand{font-size:16px;font-weight:650;letter-spacing:-.2px;line-height:1.15;
   display:flex;align-items:center;gap:9px;padding-right:4px}
 .brand .mk{width:31px;height:31px;border-radius:8px;flex:none;display:grid;place-items:center;
@@ -42,17 +45,38 @@ header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px
 header select,header input[type=date]{width:auto;background:var(--surface-2)}
 
 /* ---------- nav ---------- */
-nav{background:var(--surface);border-bottom:1px solid var(--line);padding:0 20px;
-  display:flex;gap:1px;overflow-x:auto;scrollbar-width:none;position:sticky;top:50px;z-index:19}
-nav::-webkit-scrollbar{display:none}
-nav button{background:none;border:none;border-bottom:2px solid transparent;padding:11px 14px 9px;
-  font-size:13.5px;font-weight:500;color:var(--ink-3);cursor:pointer;white-space:nowrap;
-  font-family:inherit;transition:color .13s,border-color .13s}
-nav button:hover{color:var(--ink)}
-nav button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+/* ---------- sidebar ---------- */
+#side{position:fixed;top:52px;left:0;bottom:0;width:236px;background:var(--surface);
+  border-right:1px solid var(--line);overflow-y:auto;z-index:18;padding:8px 0 24px;
+  transition:transform .22s ease}
+#side::-webkit-scrollbar{width:6px}
+#side::-webkit-scrollbar-thumb{background:#dcd7ce;border-radius:3px}
+
+.grp{border-bottom:1px solid var(--line-2)}
+.grp>button{width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;
+  padding:11px 16px;font:inherit;font-size:14px;font-weight:600;color:var(--ink-2);
+  cursor:pointer;text-align:left;font-family:inherit;transition:background .12s,color .12s}
+.grp>button:hover{background:var(--surface-2);color:var(--ink)}
+.grp>button .ic{width:19px;text-align:center;font-size:14px;color:var(--ink-4);flex:none}
+.grp>button .cv{margin-left:auto;font-size:10px;color:var(--ink-4);transition:transform .18s}
+.grp.open>button{color:var(--brand)}
+.grp.open>button .ic{color:var(--brand)}
+.grp.open>button .cv{transform:rotate(90deg)}
+.grp.solo>button.on{color:var(--brand);background:var(--brand-soft)}
+
+.kids{display:none;padding:2px 0 8px}
+.grp.open .kids{display:block}
+.kids button{width:100%;display:flex;align-items:center;gap:9px;background:none;border:none;
+  padding:8px 16px 8px 45px;font:inherit;font-size:13.5px;color:var(--ink-3);cursor:pointer;
+  text-align:left;font-family:inherit;border-left:2px solid transparent;transition:all .12s}
+.kids button:hover{background:var(--surface-2);color:var(--ink)}
+.kids button.on{color:var(--brand);font-weight:600;background:var(--brand-soft);
+  border-left-color:var(--brand)}
+
+#scrim{position:fixed;inset:52px 0 0 0;background:rgba(18,16,14,.4);z-index:17;display:none}
 
 /* ---------- page ---------- */
-main{padding:22px 20px 72px;max-width:1180px;margin:0 auto}
+main{padding:22px 24px 72px;margin-left:236px;max-width:1240px}
 h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
 .sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
 
@@ -194,8 +218,11 @@ table.ibl tbody tr:hover td{background:none}
   header{padding:8px 13px;gap:9px;row-gap:7px}
   .brand{font-size:15px}
   header select,header input[type=date]{font-size:13px;padding:6px 8px}
-  nav{padding:0 13px;top:auto;position:static}
-  main{padding:16px 13px 64px}
+  #burger{display:grid}
+  #side{transform:translateX(-100%);box-shadow:var(--sh-2)}
+  #side.open{transform:translateX(0)}
+  #scrim.on{display:block}
+  main{padding:16px 13px 64px;margin-left:0}
   h2{font-size:19px}
   .kpi{grid-template-columns:repeat(2,1fr);gap:9px}
   .kpi .vl{font-size:20px}
@@ -221,6 +248,7 @@ table.ibl tbody tr:hover td{background:none}
 <body>
 
 <header>
+  <button id="burger" type="button" onclick="toggleSide()" aria-label="Menu">&#9776;</button>
   <div class="brand"><span class="mk" aria-hidden="true">VF</span><span>Velora Fresh<small>Velora Innovations Pvt Ltd</small></span></div>
   <select id="roleSel" style="width:auto" onchange="setRole(this.value)"></select>
   <input type="date" id="dateSel" style="width:auto" onchange="setDate(this.value)">
@@ -233,7 +261,8 @@ table.ibl tbody tr:hover td{background:none}
   <span id="clock" class="mono" style="font-size:13px;color:#6b6b66"></span>
 </header>
 
-<nav id="nav"></nav>
+<aside id="side"></aside>
+<div id="scrim" onclick="toggleSide(false)"></div>
 <main id="main"></main>
 
 <!-- Shown only when a Supabase key is configured. Without one the app
@@ -535,24 +564,189 @@ function windowState(){
 /* ---------- shell ---------- */
 function setRole(r){ ROLE = r; TAB = tabsFor()[0].id; render(); }
 function setDate(d){ DATE = d; render(); }
-function go(t){ TAB = t; render(); }
+function go(t){ TAB = t; toggleSide(false); render(); }
 
+/* ============================================================
+   Sidebar menu
+   ============================================================
+   Grouped the way the trade runs, not the way the code is arranged:
+   what you buy, what you pack, what you sell, what you collect.
+   `id` values are unchanged, so every existing view and the tests
+   still address the same screens.                                  */
+
+const MENU = {
+  owner: [
+    {t:'Day board',  ic:'\u25A6', id:'board'},
+    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+                                         {id:'rates',  t:'Market rates'}]},
+    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+                                         {id:'ship', t:'Out for delivery'}]},
+    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Receipt',    ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+                                         {id:'shops',   t:'Shops'}]},
+    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+    {t:'Master',     ic:'\u2699', kids:[{id:'master', t:'Margin master'}]},
+  ],
+  admin: [
+    {t:'Day board',  ic:'\u25A6', id:'board'},
+    {t:'Indents',    ic:'\u25A4', kids:[{id:'indents', t:'Review &amp; accept'}]},
+    {t:'Purchase',   ic:'\u25A5', kids:[{id:'orders', t:'Vendor orders'},
+                                         {id:'rates',  t:'Market rates'}]},
+    {t:'Delivery',   ic:'\u25A7', kids:[{id:'pack', t:'Packing'},
+                                         {id:'ship', t:'Out for delivery'}]},
+    {t:'Sales',      ic:'\u2691', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Contacts',   ic:'\u25CD', kids:[{id:'vendors', t:'Vendors'},
+                                         {id:'shops',   t:'Shops'}]},
+    {t:'Product',    ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+  ho: [
+    {t:'Indents',  ic:'\u25A4', kids:[{id:'indents', t:'Indents'}]},
+    {t:'Sales',    ic:'\u2691', kids:[{id:'inv',  t:'Invoice'}]},
+    {t:'Receipt',  ic:'\u20B9', kids:[{id:'acct', t:'Accounts'}]},
+    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+  shop: [
+    {t:'Indents',  ic:'\u25A4', kids:[{id:'myindent', t:'My indent'}]},
+    {t:'Delivery', ic:'\u25A7', kids:[{id:'mydel', t:'Deliveries'}]},
+    {t:'Sales',    ic:'\u2691', kids:[{id:'mybills', t:'Bills'}]},
+    {t:'Product',  ic:'\u25A2', kids:[{id:'products', t:'Product list'}]},
+  ],
+};
+
+function menuFor(){
+  if(MENU[ROLE]) return MENU[ROLE];
+  return MENU.shop;                    /* ROLE is a shop id */
+}
+
+/* Flat list of reachable screen ids — the permission check the views
+   rely on, kept separate from how the menu is drawn. */
 function tabsFor(){
-  if(ROLE==='owner') return [
-    {id:'board', t:'Day board'}, {id:'indents', t:'Indents'}, {id:'orders', t:'Orders'},
-    {id:'rates', t:'Rates'}, {id:'pack', t:'Packing'}, {id:'ship', t:'Delivery'},
-    {id:'inv', t:'Invoices'}, {id:'acct', t:'Accounts'},
-    {id:'vendors', t:'Vendors'}, {id:'master', t:'Margin master'}
-  ];
-  if(ROLE==='ho') return [
-    {id:'indents', t:'Indents'}, {id:'inv', t:'Invoices'}, {id:'acct', t:'Accounts'}
-  ];
-  if(ROLE==='admin') return [
-    {id:'board', t:'Day board'}, {id:'indents', t:'Indents'}, {id:'orders', t:'Orders'},
-    {id:'rates', t:'Rates'}, {id:'pack', t:'Packing'}, {id:'ship', t:'Delivery'},
-    {id:'inv', t:'Invoices'}, {id:'vendors', t:'Vendors'}
-  ];
-  return [{id:'myindent', t:'My indent'}, {id:'mydel', t:'Deliveries'}, {id:'mybills', t:'Bills'}];
+  const out = [];
+  menuFor().forEach(g=>{
+    if(g.id) out.push({id:g.id, t:g.t});
+    (g.kids||[]).forEach(k=> out.push({id:k.id, t:k.t}));
+  });
+  return out;
+}
+
+let OPENGRP = null;
+
+/* ============================================================
+   Product list  —  the catalogue, read-only
+   ============================================================ */
+let PRODQ = '';
+function vProducts(){
+  const q = PRODQ.trim().toLowerCase();
+  const codes = CODES.filter(c=>{
+    if(!q) return true;
+    const e = CAT[c];
+    return (e.name+' '+e.tamil+' '+c+' '+(e.alias||'')).toLowerCase().indexOf(q) > -1;
+  });
+  const cost = (ROLE==='owner' || ROLE==='admin');
+  let rows = '';
+  codes.forEach(c=>{
+    const e = CAT[c];
+    const g = groupOf(c);
+    rows += '<tr><td class="mono" style="width:64px">'+esc(c)+'</td>'
+      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      + '<td class="c mono" style="width:70px;color:var(--ink-3)">'+esc(e.unit)+'</td>'
+      + '<td class="c mono" style="width:90px;color:var(--ink-3)">'
+        + ((e.unit==='box'||e.unit==='tray') ? (e.wt ? num(e.wt,2)+' kg'
+             : '<span class="pill p-red">no weight</span>') : '&mdash;') + '</td>'
+      + (cost ? '<td style="width:190px"><span class="pill '
+           + (g===UNGROUPED?'p-amber':'p-grey')+'">'+esc(g)+'</span></td>' : '')
+      + '</tr>';
+  });
+  const missing = CODES.filter(c=>{
+    const e = CAT[c];
+    return (e.unit==='box'||e.unit==='tray') && !e.wt;
+  }).length;
+  const manual = CODES.filter(c=>groupOf(c)===UNGROUPED).length;
+
+  return '<h2>Product list</h2>'
+   + '<p class="sub">'+CODES.length+' products in the catalogue.</p>'
+   + '<div class="kpi">'
+   + '<div><div class="lb">Products</div><div class="vl mono">'+CODES.length+'</div></div>'
+   + (cost ? '<div><div class="lb">Vendor groups</div><div class="vl mono">'+GROUPNAMES.length+'</div></div>'
+           + '<div><div class="lb">Manual order</div><div class="vl mono">'+manual+'</div></div>' : '')
+   + '<div><div class="lb">No unit weight</div><div class="vl mono">'+missing+'</div></div>'
+   + '</div>'
+   + (missing ? '<div class="note">'+missing+' box or tray product(s) have no unit weight on file. '
+       + 'Invoices containing them are blocked rather than billed at zero.</div>' : '')
+   + '<div class="bar"><div class="srch">'
+   + '<input type="text" id="prodQ" placeholder="Search product, Tamil name or code" value="'+esc(PRODQ)+'" '
+   + 'oninput="PRODQ=this.value;afterRender=focusProdQ;render()"></div>'
+   + '<span class="muted" style="font-size:13px;color:var(--ink-3)">'+codes.length+' shown</span></div>'
+   + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="c">Unit</th><th class="c">Unit weight</th>'
+   + (cost ? '<th>Vendor group</th>' : '')
+   + '</tr></thead><tbody>'
+   + (rows || '<tr><td colspan="5"><div class="empty">Nothing matched that search.</div></td></tr>')
+   + '</tbody></table></div></div>';
+}
+function focusProdQ(){
+  const i = document.getElementById('prodQ');
+  if(i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+
+/* ============================================================
+   Shops  —  the client's branches
+   ============================================================ */
+function vShops(){
+  let rows = '';
+  SHOPS.forEach(s=>{
+    const comm = commOf(s.id);
+    rows += '<tr><td class="mono" style="width:70px">'+esc(s.id)+'</td>'
+      + '<td>'+esc(s.name)+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+esc(s.prefix)+'</td>'
+      + (ROLE==='owner' ? '<td class="c mono" style="width:120px">'+num(comm,2)+'%</td>' : '')
+      + '</tr>';
+  });
+  return '<h2>Shops</h2><p class="sub">'+esc(CLIENT)+' &middot; '+SHOPS.length+' branches.</p>'
+   + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Shop</th>'
+   + '<th>Bill prefix</th>'+(ROLE==='owner'?'<th class="c">Commission</th>':'')
+   + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+
+
+function drawSide(){
+  const groups = menuFor();
+  /* open the group holding the current screen */
+  groups.forEach(g=>{
+    if((g.kids||[]).some(k=>k.id===TAB)) OPENGRP = OPENGRP===null ? g.t : OPENGRP;
+  });
+  let h = '';
+  groups.forEach(g=>{
+    const holds = (g.kids||[]).some(k=>k.id===TAB);
+    if(g.id){
+      h += '<div class="grp solo"><button class="'+(TAB===g.id?'on':'')+'" onclick="go(\''+g.id+'\')">'
+         + '<span class="ic">'+g.ic+'</span>'+g.t+'</button></div>';
+      return;
+    }
+    const open = (OPENGRP===g.t) || holds;
+    h += '<div class="grp'+(open?' open':'')+'">'
+       + '<button onclick="toggleGrp(\''+g.t.replace(/'/g,"\\'")+'\')">'
+       + '<span class="ic">'+g.ic+'</span>'+g.t+'<span class="cv">&#9654;</span></button>'
+       + '<div class="kids">'
+       + g.kids.map(k=>'<button class="'+(TAB===k.id?'on':'')+'" onclick="go(\''+k.id+'\')">'
+                       + k.t+'</button>').join('')
+       + '</div></div>';
+  });
+  document.getElementById('side').innerHTML = h;
+}
+
+function toggleGrp(name){
+  OPENGRP = (OPENGRP===name) ? '' : name;
+  drawSide();
+}
+
+function toggleSide(force){
+  const side = document.getElementById('side'), sc = document.getElementById('scrim');
+  const open = force===undefined ? !side.classList.contains('open') : force;
+  side.classList.toggle('open', open);
+  sc.classList.toggle('on', open);
 }
 
 function render(){
@@ -571,13 +765,13 @@ function render(){
 
   const tabs = tabsFor();
   if(!tabs.filter(t=>t.id===TAB).length) TAB = tabs[0].id;
-  document.getElementById('nav').innerHTML = tabs.map(t=>
-    '<button class="'+(t.id===TAB?'on':'')+'" onclick="go(\''+t.id+'\')">'+esc(t.t)+'</button>').join('');
+  drawSide();
 
   const m = document.getElementById('main');
   const fn = {
     board:vBoard, indents:vIndents, rates:vRates, pack:vPack, ship:vShip, inv:vInvoices,
-    orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent, mydel:vMyDeliveries, mybills:vMyBills
+    orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent,
+    mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops
   }[TAB];
   m.innerHTML = fn ? fn() : '';
   if(afterRender){ const f = afterRender; afterRender = null; f(); }

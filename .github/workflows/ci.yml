@@ -1,0 +1,48 @@
+name: build and test
+
+# index.html is generated from src/template.html. Vercel deploys the
+# committed file, so a push where the two have drifted would put stale
+# code live. This job rebuilds and fails if they differ.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Rebuild index.html
+        run: python3 src/build.py
+
+      - name: Fail if index.html was not rebuilt before committing
+        run: |
+          if ! git diff --quiet -- index.html; then
+            echo "::error::index.html is out of date. Run 'npm run build' and commit the result."
+            git diff --stat -- index.html
+            exit 1
+          fi
+          echo "index.html matches src/template.html"
+
+      - name: Smoke and sync tests
+        run: npm test
+
+      - name: Warn if the anon key is missing
+        run: |
+          if grep -q "anonKey: ''" src/config.js; then
+            echo "::warning::src/config.js has no anon key — the deploy will run in offline mode."
+          fi

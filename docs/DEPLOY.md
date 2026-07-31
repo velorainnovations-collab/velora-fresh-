@@ -1,0 +1,83 @@
+# Putting it live
+
+The app is one static file. Any static host works; Vercel is the easiest
+because it redeploys on every push with no configuration.
+
+## Why Vercel here
+
+* Free tier, and it deploys **private** repositories — the app should not be a
+  public repo
+* Every push to `main` goes live in under a minute
+* Every branch and pull request gets its own preview URL, so a change can be
+  checked before it reaches whoever is testing
+* A custom domain later is a DNS record and nothing else
+
+GitHub Pages was the alternative and is rejected: it needs the repository to be
+public on the free plan, and this one holds the client's shop structure.
+
+## First deploy
+
+1. Push this repository to GitHub.
+2. Go to <https://vercel.com>, **Sign up with GitHub**.
+3. **Add New → Project**, pick the repository, **Import**.
+4. Framework preset: **Other**. Leave Build Command and Output Directory empty
+   — `index.html` is committed, so there is nothing to build on their side.
+5. **Deploy**.
+
+You get a URL like `https://velora-fresh.vercel.app`. Send that to whoever is
+testing. Every later `git push` redeploys it automatically.
+
+## Supabase, once you have the URL
+
+Authentication → URL Configuration:
+
+* **Site URL** — your Vercel URL
+* **Redirect URLs** — add the Vercel URL, and `http://localhost:8080` for local
+  work
+
+Password sign-in works without this, but password resets and any future email
+link will not.
+
+## The one rule
+
+`index.html` is **generated**. Edit `src/template.html`, then:
+
+```bash
+npm run build     # regenerate index.html
+npm test          # 25 smoke + 50 sync checks
+git commit -am "..."
+git push          # Vercel deploys
+```
+
+Pushing without rebuilding puts stale code live. `.github/workflows/ci.yml`
+rebuilds on every push and fails the run if the committed `index.html` differs
+from `src/template.html`, so the mistake is caught rather than shipped.
+
+## What is safe to have in the repository
+
+`src/config.js` holds the project URL and the **anon** key. Both belong in the
+page: the anon key identifies the project and grants nothing on its own. Access
+is decided by the row level security in `supabase/02_security.sql`, which is
+tested by `supabase/test_security.sql`.
+
+The **service_role** key bypasses every one of those policies. It must never be
+in this repository, in `config.js`, or in a Vercel environment variable that the
+browser can read.
+
+## Giving your testers access
+
+They cannot sign themselves up — an account with no `app_users` row sees
+nothing. For each person:
+
+1. In the app, as owner, add them with the role they should have
+2. Ask them to sign up at your Vercel URL with that same email or phone
+3. The trigger in `supabase/06_users.sql` links the invite and applies the role
+
+Give testers `admin` rather than `owner` unless they genuinely need to see
+margins, payments and vendor bank details.
+
+## Custom domain later
+
+Vercel → Project → Settings → Domains → add e.g. `desk.velorafresh.com`, then
+create the DNS record Vercel shows you. Add the new domain to Supabase's
+redirect URLs at the same time.
