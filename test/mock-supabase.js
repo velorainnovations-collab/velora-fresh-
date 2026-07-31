@@ -15,10 +15,18 @@ const USERS = {
 
 const received = [];          // every write the app sent
 
+/* Tokens are shaped like a real JWT — header.claims.signature — because
+   the app reads its own user id out of the claims rather than asking. */
+const tokenFor = uid =>
+  'tok-' + uid + '.' + Buffer.from(JSON.stringify({ sub: uid })).toString('base64url') + '.sig';
+const uidOf = req =>
+  (req.headers.authorization || '').replace(/^Bearer\s+/, '').replace(/^tok-/, '').split('.')[0];
+
 // products the "server" holds beyond the compiled catalogue
 const EXTRA_PRODUCTS = [];
 const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
+let LAST_CODE = '';          // the six digit code the mock last 'emailed'
 
 // what list_people() returns; mutated by the rpc handlers below
 const PEOPLE = [
@@ -57,17 +65,50 @@ const srv = http.createServer((req, res) => {
         if (who) USERS[who].pw = a.password;
         return send(200, { id: a.user_id, email: who || null, reset: true });
       }
+      const byInvite = a.action === 'invite' || !a.password;
       if (!a.email) return send(400, { error: 'An email address is required' });
-      if (!a.password || a.password.length < 8)
+      if (!byInvite && a.password.length < 8)
         return send(400, { error: 'Use a password of at least 8 characters' });
       if (a.role === 'shop' && !a.shop_id) return send(400, { error: 'A shop login needs a shop' });
       const uid = 'made' + PEOPLE.length + '000-0000-0000-0000-00000000000c';
       PEOPLE.push({ kind: 'user', id: uid, phone: a.phone, full_name: a.full_name,
                     role: a.role, client_id: a.client_id, shop_id: a.shop_id, active: true });
-      USERS[a.email] = { pw: a.password, uid: uid,
+      USERS[a.email] = { pw: byInvite ? null : a.password, uid: uid,
                          row: { id: uid, full_name: a.full_name, role: a.role,
                                 client_id: a.client_id, shop_id: a.shop_id, active: true } };
-      return send(200, { id: uid, email: a.email, role: a.role });
+      return send(200, { id: uid, email: a.email, role: a.role, invited: byInvite });
+    }
+
+    if (url.pathname === '/auth/v1/otp') {
+      const { email } = JSON.parse(body || '{}');
+      received.push({ table: 'auth:otp', method: 'POST', rows: { email } });
+      if (!USERS[email]) return send(400, { msg: 'Signups not allowed for otp' });
+      LAST_CODE = '654321';
+      return send(200, {});
+    }
+
+    if (url.pathname === '/auth/v1/verify') {
+      const { email, token } = JSON.parse(body || '{}');
+      received.push({ table: 'auth:verify', method: 'POST', rows: { email, token } });
+      if (token !== LAST_CODE) return send(400, { msg: 'Token has expired or is invalid' });
+      const u = USERS[email];
+      return send(200, { access_token: tokenFor(u.uid), refresh_token: 'r', token_type: 'bearer' });
+    }
+
+    if (url.pathname === '/auth/v1/recover') {
+      const { email } = JSON.parse(body || '{}');
+      received.push({ table: 'auth:recover', method: 'POST', rows: { email } });
+      return send(200, {});     // same answer whether or not it exists
+    }
+
+    if (url.pathname === '/auth/v1/user' && req.method === 'PUT') {
+      const { password } = JSON.parse(body || '{}');
+      const tok = uidOf(req);
+      const who = Object.keys(USERS).find(e => USERS[e].uid === tok);
+      received.push({ table: 'auth:setpassword', method: 'PUT', rows: { password } });
+      if (!who) return send(401, { msg: 'Not signed in' });
+      USERS[who].pw = password;
+      return send(200, { id: tok, email: who });
     }
 
     if (url.pathname === '/auth/v1/signup') {
@@ -82,14 +123,14 @@ const srv = http.createServer((req, res) => {
                                         client_id: null, shop_id: null, active: true } : null };
       received.push({ table: 'auth:signup', method: 'POST', rows: { email } });
       // confirmation switched off in this mock, so a session comes straight back
-      return send(200, { access_token: 'tok-' + uid, refresh_token: 'r', token_type: 'bearer' });
+      return send(200, { access_token: tokenFor(uid), refresh_token: 'r', token_type: 'bearer' });
     }
 
     if (url.pathname === '/auth/v1/token') {
       const { email, password } = JSON.parse(body || '{}');
       const u = USERS[email];
       if (!u || u.pw !== password) return send(400, { error_description: 'Invalid login credentials' });
-      return send(200, { access_token: 'tok-' + u.uid, refresh_token: 'r', token_type: 'bearer' });
+      return send(200, { access_token: tokenFor(u.uid), refresh_token: 'r', token_type: 'bearer' });
     }
 
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
@@ -123,9 +164,17 @@ const srv = http.createServer((req, res) => {
     }
 
     if (url.pathname === '/rest/v1/app_users') {
-      const tok = (req.headers.authorization || '').replace('Bearer tok-', '');
-      const u = Object.values(USERS).find(x => x.uid === tok);
-      return send(200, u && u.row ? [u.row] : []);   // RLS: your own row, or nothing
+      const u = Object.values(USERS).find(x => x.uid === uidOf(req));
+      if (!u || !u.row) return send(200, []);
+      /* RLS as the database has it: an owner may read everyone in the
+         client, anybody else only themselves. Their own row is put last
+         on purpose — an unfiltered read must not be allowed to pass for
+         "me" just because something else sorted first. */
+      const visible = u.row.role === 'owner'
+        ? PEOPLE.filter(r => r.kind === 'user' && r.id !== u.uid).concat([u.row])
+        : [u.row];
+      const wanted = (url.searchParams.get('id') || '').replace(/^eq\./, '');
+      return send(200, wanted ? visible.filter(r => r.id === wanted) : visible);
     }
 
     if (url.pathname.startsWith('/rest/v1/')) {

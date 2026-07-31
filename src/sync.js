@@ -340,6 +340,75 @@ const VFSync = (function () {
     return { signedIn: false, needsConfirmation: true };
   }
 
+  /* ---------- email codes and recovery ----------
+     Owner, admin and head office have real email addresses, so Supabase
+     can do all of this itself: a six digit code to sign in, a link to
+     reset a forgotten password, and setting a new one afterwards.
+     Nothing here needs a provider account. Supabase's built-in mail is
+     rate limited though, so a real SMTP has to be configured before
+     this carries daily use. */
+
+  async function sendLoginCode(email) {
+    const r = await fetch(CFG.url + '/auth/v1/otp', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ email: email, create_user: false }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Could not send the code');
+    return true;
+  }
+
+  async function verifyLoginCode(email, code) {
+    const r = await fetch(CFG.url + '/auth/v1/verify', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ type: 'email', email: email, token: code }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'That code did not work');
+    auth = j; writeJSON(AKEY, auth);
+    return j;
+  }
+
+  async function sendRecovery(email) {
+    const r = await fetch(CFG.url + '/auth/v1/recover', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ email: email }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error_description || j.msg || j.message || 'Could not send the reset email');
+    }
+    return true;
+  }
+
+  /* The recovery link comes back with a session in the url fragment.
+     Adopting it lets the new password be set, and nothing else — the
+     app still checks app_users before letting anyone in. */
+  function adoptRecoverySession() {
+    const h = (location.hash || '').replace(/^#/, '');
+    if (!h || h.indexOf('access_token=') < 0) return null;
+    const q = new URLSearchParams(h);
+    const type = q.get('type');
+    const at = q.get('access_token');
+    if (!at) return null;
+    auth = { access_token: at, refresh_token: q.get('refresh_token') || '', token_type: 'bearer' };
+    writeJSON(AKEY, auth);
+    // strip it from the address bar so the token is not left in history
+    history.replaceState(null, '', location.pathname + location.search);
+    return type || 'recovery';
+  }
+
+  async function setOwnPassword(password) {
+    if (!signedIn()) throw new Error('This reset link has expired. Ask for a new one.');
+    const r = await fetch(CFG.url + '/auth/v1/user', {
+      method: 'PUT', headers: headers(),
+      body: JSON.stringify({ password: password }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Could not set the password');
+    return true;
+  }
+
   async function refresh() {
     if (!auth || !auth.refresh_token) return false;
     const r = await fetch(CFG.url + '/auth/v1/token?grant_type=refresh_token', {
@@ -553,10 +622,29 @@ const VFSync = (function () {
      no app_users row returns nothing, which is the intended default
      for an uninvited signup. */
 
+  /* The id Supabase signed us in as, read out of the token itself. No
+     request needed: the middle third of a JWT is the claims, and `sub`
+     is the auth user id. Only used to ask for our own row. */
+  function myUid() {
+    if (!auth || !auth.access_token) return '';
+    try {
+      const part = auth.access_token.split('.')[1];
+      if (!part) return '';
+      const claims = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+      return claims.sub || '';
+    } catch (e) { return ''; }
+  }
+
   async function whoami() {
     if (!enabled() || !signedIn()) return null;
+    /* Asked for by id. An owner may read every row in the client, so an
+       unfiltered select would hand back whoever happens to sort first and
+       the app would wear someone else's role. */
+    const uid = myUid();
+    if (!uid) return null;              // rather than guess at whose row this is
     const r = await fetch(
-      CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active',
+      CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active'
+              + '&id=eq.' + encodeURIComponent(uid),
       { headers: headers() });
     if (r.status === 401 && await refresh()) return whoami();
     if (!r.ok) throw await httpError(r, 'app_users');
@@ -622,9 +710,13 @@ const VFSync = (function () {
       r = await fetch(CFG.url + '/functions/v1/create-user', {
         method: 'POST', headers: headers(),
         body: JSON.stringify({
-          email: o.email, password: o.password, full_name: o.name || '',
+          email: o.email, password: o.password || '', full_name: o.name || '',
           role: o.role, phone: o.phone || null,
           client_id: o.clientId || null, shop_id: o.shopId || null,
+          /* no password means invite them by email instead; the link has to
+             come back to wherever this app is being served from */
+          action: o.password ? null : 'invite',
+          redirect_to: location.origin + location.pathname,
         }),
       });
     } catch (e) {
@@ -748,6 +840,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
+    sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,

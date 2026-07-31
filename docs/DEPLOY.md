@@ -84,11 +84,15 @@ browser can read.
 ## Giving your testers access
 
 They cannot sign themselves up — an account with no `app_users` row sees
-nothing. For each person:
+nothing. As owner, on Master → Users:
 
-1. In the app, as owner, add them with the role they should have
-2. Ask them to sign up at your Vercel URL with that same email or phone
-3. The trigger in `supabase/06_users.sql` links the invite and applies the role
+* **A manager, head office or another owner** — type their name and email and
+  leave the password blank. The account is created and Supabase emails them a
+  link to choose their own first password. See `docs/EMAIL.md` for the four
+  settings that have to be in place before any email actually goes out.
+* **Shop staff** — type their name and phone and set a password (the ↻ button
+  suggests one). No email is sent; the panel that appears afterwards sends the
+  login on WhatsApp. Their login id is built from their phone.
 
 Give testers `admin` rather than `owner` unless they genuinely need to see
 margins, payments and vendor bank details.

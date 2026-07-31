@@ -59,9 +59,25 @@ Deno.serve(async (req) => {
     `${SUPABASE_URL}/rest/v1/app_users?id=eq.${me.id}&select=role,active`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } },
   )
-  const rows = rowRes.ok ? await rowRes.json() : []
-  if (!rows.length || !rows[0].active || rows[0].role !== 'owner') {
-    return json({ error: 'Only an owner may create a login' }, 403)
+  // Said separately, because the three reasons need three different fixes
+  // and one flat "only an owner" sends the owner looking in the wrong place.
+  if (!rowRes.ok) {
+    const why = await rowRes.text()
+    return json({
+      error: `This function cannot read app_users (${rowRes.status}). Its service key is ` +
+             `missing or wrong — set SERVICE_ROLE_KEY in the function's secrets. ${why}`,
+    }, 500)
+  }
+  const rows = await rowRes.json()
+  if (!rows.length) {
+    return json({
+      error: `Your sign-in (${me.email ?? me.id}) has no row in app_users, so the database ` +
+             `does not know your role yet. Add one for id ${me.id}.`,
+    }, 403)
+  }
+  if (!rows[0].active) return json({ error: 'Your account has been switched off' }, 403)
+  if (rows[0].role !== 'owner') {
+    return json({ error: `Only an owner may create a login — your role is ${rows[0].role}` }, 403)
   }
 
   // ---------- what they asked for ----------
@@ -107,8 +123,17 @@ Deno.serve(async (req) => {
   const clientId = body.client_id ? String(body.client_id) : null
   const shopId = body.shop_id ? String(body.shop_id) : null
 
+  // With no password the account is created by invitation instead: Supabase
+  // emails them a link and they choose their own first password. It only
+  // reaches a real address, so shop staff whose login id is made from their
+  // phone need the owner to set one — the screen never takes this path for
+  // them, because it only invites when an address was actually typed.
+  const byInvite = body.action === 'invite' || !password
+
   if (!email) return json({ error: 'An email address is required' }, 400)
-  if (password.length < 8) return json({ error: 'Use a password of at least 8 characters' }, 400)
+  if (!byInvite && password.length < 8) {
+    return json({ error: 'Use a password of at least 8 characters' }, 400)
+  }
   if (!['owner', 'admin', 'ho', 'shop'].includes(role)) return json({ error: 'Unknown role' }, 400)
   // the same shape rules app_users enforces, so the failure is readable
   if (role === 'shop' && !shopId) return json({ error: 'A shop login needs a shop' }, 400)
@@ -118,17 +143,31 @@ Deno.serve(async (req) => {
   }
 
   // ---------- create the account ----------
-  // email_confirm: true — the owner is handing the password over in
-  // person, so there is nobody to click a confirmation link.
-  const createRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
+  // With a password: email_confirm: true, because the owner is handing it
+  // over in person and there is nobody to click a confirmation link.
+  // Without one: /invite, which creates the account and emails a link that
+  // brings them back here to choose their own first password.
+  //
+  // Supabase only follows a redirect_to that is on the project's Redirect
+  // URLs list, so a made-up one cannot be used to send the link elsewhere.
+  const redirectTo = body.redirect_to ? String(body.redirect_to) : ''
+  const createRes = await fetch(
+    byInvite
+      ? `${SUPABASE_URL}/auth/v1/invite` +
+        (redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '')
+      : `${SUPABASE_URL}/auth/v1/admin/users`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: byInvite
+        ? JSON.stringify({ email })
+        : JSON.stringify({ email, password, email_confirm: true }),
     },
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  })
+  )
   const created = await createRes.json()
   if (!createRes.ok) {
     return json({ error: created.msg ?? created.message ?? 'Could not create the account' },
@@ -166,5 +205,5 @@ Deno.serve(async (req) => {
     return json({ error: `Account rolled back: ${why}` }, 400)
   }
 
-  return json({ id: created.id, email, role })
+  return json({ id: created.id, email, role, invited: byInvite })
 })

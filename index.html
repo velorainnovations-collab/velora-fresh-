@@ -357,14 +357,17 @@ table.ibl tbody tr:hover td{background:none}
     <p class="hint" id="gateHint">Sign in to the supply desk.</p>
     <div id="gateErr"></div>
     <div class="f"><label for="gateEmail">Email</label>
-      <input id="gateEmail" type="email" autocomplete="username" required></div>
-    <div class="f"><label for="gatePass">Password</label>
-      <input id="gatePass" type="password" autocomplete="current-password" required></div>
+      <!-- not marked required: on the reset-link screen this box is hidden,
+           and a hidden required box blocks the browser from submitting at
+           all. The checks in doSignIn cover every mode instead. -->
+      <input id="gateEmail" type="email" autocomplete="username"></div>
+    <div class="f" id="gatePassWrap"><label for="gatePass">Password</label>
+      <input id="gatePass" type="password" autocomplete="current-password"></div>
+    <div class="f hidden" id="gateCodeWrap"><label for="gateCode">Six digit code</label>
+      <input id="gateCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="6" class="mono" placeholder="000000"></div>
     <button class="btn pri" id="gateBtn" type="submit" style="width:100%">Sign in</button>
-    <p class="foot" style="margin-top:12px">
-      <span id="gateSwapText">First time here?</span>
-      <a href="#" id="gateSwap" onclick="swapGateMode(event)">Create your account</a>
-    </p>
+    <p class="foot" style="margin-top:12px" id="gateLinks"></p>
     <p class="foot" style="margin-top:6px">Your access is set by the owner. Contact them if you cannot get in.</p>
   </form>
 </div>
@@ -1149,6 +1152,75 @@ const VFSync = (function () {
     return { signedIn: false, needsConfirmation: true };
   }
 
+  /* ---------- email codes and recovery ----------
+     Owner, admin and head office have real email addresses, so Supabase
+     can do all of this itself: a six digit code to sign in, a link to
+     reset a forgotten password, and setting a new one afterwards.
+     Nothing here needs a provider account. Supabase's built-in mail is
+     rate limited though, so a real SMTP has to be configured before
+     this carries daily use. */
+
+  async function sendLoginCode(email) {
+    const r = await fetch(CFG.url + '/auth/v1/otp', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ email: email, create_user: false }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Could not send the code');
+    return true;
+  }
+
+  async function verifyLoginCode(email, code) {
+    const r = await fetch(CFG.url + '/auth/v1/verify', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ type: 'email', email: email, token: code }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'That code did not work');
+    auth = j; writeJSON(AKEY, auth);
+    return j;
+  }
+
+  async function sendRecovery(email) {
+    const r = await fetch(CFG.url + '/auth/v1/recover', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ email: email }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error_description || j.msg || j.message || 'Could not send the reset email');
+    }
+    return true;
+  }
+
+  /* The recovery link comes back with a session in the url fragment.
+     Adopting it lets the new password be set, and nothing else — the
+     app still checks app_users before letting anyone in. */
+  function adoptRecoverySession() {
+    const h = (location.hash || '').replace(/^#/, '');
+    if (!h || h.indexOf('access_token=') < 0) return null;
+    const q = new URLSearchParams(h);
+    const type = q.get('type');
+    const at = q.get('access_token');
+    if (!at) return null;
+    auth = { access_token: at, refresh_token: q.get('refresh_token') || '', token_type: 'bearer' };
+    writeJSON(AKEY, auth);
+    // strip it from the address bar so the token is not left in history
+    history.replaceState(null, '', location.pathname + location.search);
+    return type || 'recovery';
+  }
+
+  async function setOwnPassword(password) {
+    if (!signedIn()) throw new Error('This reset link has expired. Ask for a new one.');
+    const r = await fetch(CFG.url + '/auth/v1/user', {
+      method: 'PUT', headers: headers(),
+      body: JSON.stringify({ password: password }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Could not set the password');
+    return true;
+  }
+
   async function refresh() {
     if (!auth || !auth.refresh_token) return false;
     const r = await fetch(CFG.url + '/auth/v1/token?grant_type=refresh_token', {
@@ -1362,10 +1434,29 @@ const VFSync = (function () {
      no app_users row returns nothing, which is the intended default
      for an uninvited signup. */
 
+  /* The id Supabase signed us in as, read out of the token itself. No
+     request needed: the middle third of a JWT is the claims, and `sub`
+     is the auth user id. Only used to ask for our own row. */
+  function myUid() {
+    if (!auth || !auth.access_token) return '';
+    try {
+      const part = auth.access_token.split('.')[1];
+      if (!part) return '';
+      const claims = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+      return claims.sub || '';
+    } catch (e) { return ''; }
+  }
+
   async function whoami() {
     if (!enabled() || !signedIn()) return null;
+    /* Asked for by id. An owner may read every row in the client, so an
+       unfiltered select would hand back whoever happens to sort first and
+       the app would wear someone else's role. */
+    const uid = myUid();
+    if (!uid) return null;              // rather than guess at whose row this is
     const r = await fetch(
-      CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active',
+      CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active'
+              + '&id=eq.' + encodeURIComponent(uid),
       { headers: headers() });
     if (r.status === 401 && await refresh()) return whoami();
     if (!r.ok) throw await httpError(r, 'app_users');
@@ -1431,9 +1522,13 @@ const VFSync = (function () {
       r = await fetch(CFG.url + '/functions/v1/create-user', {
         method: 'POST', headers: headers(),
         body: JSON.stringify({
-          email: o.email, password: o.password, full_name: o.name || '',
+          email: o.email, password: o.password || '', full_name: o.name || '',
           role: o.role, phone: o.phone || null,
           client_id: o.clientId || null, shop_id: o.shopId || null,
+          /* no password means invite them by email instead; the link has to
+             come back to wherever this app is being served from */
+          action: o.password ? null : 'invite',
+          redirect_to: location.origin + location.pathname,
         }),
       });
     } catch (e) {
@@ -1557,6 +1652,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
+    sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,
@@ -1590,20 +1686,79 @@ function showGate(msg){
 }
 function hideGate(){ const g = gateEl(); if(g) g.classList.add('hidden'); }
 
-let GATE_MODE = 'in';        /* 'in' | 'up' */
+/* ============================================================
+   The gate
+   ============================================================
+   Four things happen here, and which one depends on GATE_MODE:
 
+     in      email and password
+     code    a six digit code emailed instead of a password
+     forgot  ask for a reset email
+     set     choose a new password, after following a reset link
+     up      create an account against an invite
+
+   Owner, admin and head office have real email addresses, so Supabase
+   sends all of this itself. Shop staff do not — their login is derived
+   from their phone and the owner hands the password over on WhatsApp,
+   so the code and reset options simply will not reach them. That is
+   why the wording says "if you have an email".
+   ============================================================ */
+
+let GATE_MODE = 'in';
+let CODE_SENT_TO = '';
+
+const GATE_TEXT = {
+  in:     { hint: 'Sign in to the supply desk.',                       btn: 'Sign in' },
+  code:   { hint: 'We will email you a six digit code.',               btn: 'Email me a code' },
+  forgot: { hint: 'We will email you a link to set a new password.',   btn: 'Send the link' },
+  set:    { hint: 'Choose a new password.',                            btn: 'Save password' },
+  up:     { hint: 'Create your account with the email the owner added.',btn: 'Create account' },
+};
+
+/* the wording on the button, which for the code screen depends on
+   whether the code has gone out yet */
+function gateBtnLabel(){
+  if(GATE_MODE === 'code' && CODE_SENT_TO) return 'Sign in with the code';
+  return (GATE_TEXT[GATE_MODE] || GATE_TEXT.in).btn;
+}
+
+function setGateMode(m){
+  GATE_MODE = m;
+  const t = GATE_TEXT[m] || GATE_TEXT.in;
+  document.getElementById('gateHint').textContent = t.hint;
+  document.getElementById('gateBtn').textContent = gateBtnLabel();
+
+  const showPass = (m === 'in' || m === 'up' || m === 'set');
+  const showCode = (m === 'code' && CODE_SENT_TO);
+  document.getElementById('gatePassWrap').className = showPass ? 'f' : 'f hidden';
+  document.getElementById('gateCodeWrap').className = showCode ? 'f' : 'f hidden';
+  document.getElementById('gateEmail').parentNode.className =
+    (m === 'set') ? 'f hidden' : 'f';
+  document.getElementById('gatePass').setAttribute('autocomplete',
+    (m === 'up' || m === 'set') ? 'new-password' : 'current-password');
+
+  const links = document.getElementById('gateLinks');
+  if(m === 'set'){ links.innerHTML = ''; }
+  else if(m === 'in'){
+    links.innerHTML = '<a href="#" id="gateCodeLink" onclick="setGateMode(\'code\');return false">Email me a code instead</a>'
+      + ' &middot; <a href="#" id="gateForgot" onclick="setGateMode(\'forgot\');return false">Forgot password</a>'
+      + '<br><span style="opacity:.8">First time here?</span> '
+      + '<a href="#" id="gateSwap" onclick="setGateMode(\'up\');return false">Create your account</a>';
+  }else{
+    /* the same id, so the one link toggles both ways */
+    links.innerHTML = '<a href="#" id="gateSwap" onclick="setGateMode(\'in\');return false">Back to password sign in</a>';
+  }
+  document.getElementById('gateErr').innerHTML = '';
+}
+
+/* kept for the older call sites */
 function swapGateMode(ev){
   if(ev) ev.preventDefault();
-  GATE_MODE = (GATE_MODE === 'in') ? 'up' : 'in';
-  const up = (GATE_MODE === 'up');
-  document.getElementById('gateHint').textContent = up
-    ? 'Create your account with the email the owner added.'
-    : 'Sign in to the supply desk.';
-  document.getElementById('gateBtn').textContent = up ? 'Create account' : 'Sign in';
-  document.getElementById('gateSwapText').textContent = up ? 'Already have an account?' : 'First time here?';
-  document.getElementById('gateSwap').textContent = up ? 'Sign in' : 'Create your account';
-  document.getElementById('gatePass').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
-  document.getElementById('gateErr').innerHTML = '';
+  setGateMode(GATE_MODE === 'up' ? 'in' : 'up');
+}
+
+function gateNote(html){
+  document.getElementById('gateErr').innerHTML = '<div class="notice">' + html + '</div>';
 }
 
 async function doSignIn(ev){
@@ -1611,28 +1766,48 @@ async function doSignIn(ev){
   const btn   = document.getElementById('gateBtn');
   const email = document.getElementById('gateEmail').value.trim();
   const pass  = document.getElementById('gatePass').value;
-  const up    = (GATE_MODE === 'up');
-  const label = btn.textContent;
+  const code  = document.getElementById('gateCode').value.trim();
+  const mode  = GATE_MODE;
 
-  if(up && pass.length < 8){
-    showGate('Choose a password of at least 8 characters.');
-    return;
+  if(mode !== 'set' && !email){ showGate('Enter your email address.'); return; }
+  if((mode === 'up' || mode === 'set') && pass.length < 8){
+    showGate('Choose a password of at least 8 characters.'); return;
   }
+  if(mode === 'in' && !pass){ showGate('Enter your password.'); return; }
 
-  btn.disabled = true; btn.textContent = up ? 'Creating...' : 'Signing in...';
+  btn.disabled = true; btn.textContent = 'Please wait...';
   try{
-    if(up){
+    if(mode === 'forgot'){
+      await VFSync.sendRecovery(email);
+      /* said the same way whether or not the address exists, so this
+         cannot be used to find out who has an account */
+      setGateMode('in');
+      gateNote('If that address has an account, a reset link is on its way. '
+             + 'Shop staff have no email &mdash; ask the owner to reset yours.');
+      return;
+    }
+
+    if(mode === 'code'){
+      if(!CODE_SENT_TO){
+        await VFSync.sendLoginCode(email);
+        CODE_SENT_TO = email;
+        setGateMode('code');
+        gateNote('Code sent to ' + esc(email) + '. It is good for a few minutes.');
+        return;
+      }
+      if(!/^[0-9]{6}$/.test(code)){ showGate('Enter the six digit code from the email.'); return; }
+      await VFSync.verifyLoginCode(CODE_SENT_TO, code);
+      CODE_SENT_TO = '';
+    }else if(mode === 'set'){
+      await VFSync.setOwnPassword(pass);
+      setGateMode('in');
+      gateNote('Password saved. Sign in with it.');
+      return;
+    }else if(mode === 'up'){
       const r = await VFSync.signUp(email, pass);
       if(!r.signedIn){
-        showGate('');
-        document.getElementById('gateErr').innerHTML =
-          '<div class="notice">Account created. Check your email for the confirmation link, '
-          + 'then come back and sign in.</div>';
-        GATE_MODE = 'in'; swapGateMode(null);
-        /* swapGateMode cleared the message, so put it back */
-        document.getElementById('gateErr').innerHTML =
-          '<div class="notice">Account created. Check your email for the confirmation link, '
-          + 'then come back and sign in.</div>';
+        setGateMode('in');
+        gateNote('Account created. Check your email for the confirmation link, then sign in.');
         return;
       }
     }else{
@@ -1640,9 +1815,12 @@ async function doSignIn(ev){
     }
     await afterSignIn();
   }catch(e){
-    showGate(e.message || (up ? 'Could not create the account' : 'Could not sign in'));
+    showGate(e.message || 'That did not work');
   }finally{
-    btn.disabled = false; btn.textContent = label;
+    btn.disabled = false;
+    /* worked out again rather than remembered, because a successful
+       reset or code request has already moved us to another screen */
+    btn.textContent = gateBtnLabel();
   }
 }
 
@@ -1704,10 +1882,24 @@ function syncBadge(state, detail){
 
 if(typeof VFSync !== 'undefined' && VFSync.enabled()){
   VFSync.on(syncBadge);
-  if(VFSync.signedIn()){
+
+  /* A reset link, or the invite sent when the owner creates an account
+     without a password, lands here carrying a session in the url. It is
+     good for setting a password and nothing else — afterSignIn still
+     checks app_users before anyone gets in. */
+  const recovered = VFSync.adoptRecoverySession();
+  if(recovered === 'recovery' || recovered === 'invite' || recovered === 'signup'){
+    showGate('');
+    setGateMode('set');
+    if(recovered !== 'recovery'){
+      document.getElementById('gateHint').textContent =
+        'Welcome to Velora Fresh. Choose the password you will sign in with.';
+    }
+  }else if(VFSync.signedIn()){
     afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
   }else{
     showGate('');
+    setGateMode('in');
   }
 }
 
@@ -2193,14 +2385,16 @@ function vPeople(){
    + '<option value="owner">Owner</option></select></div>'
    + '<div id="npShopWrap" class="hidden"><label>Which shop</label>'
    + '<select id="npShop">'+shopOpts+'</select></div>'
-   + '<div><label>Password <span class="hint">(blank = invite)</span></label>'
-   + '<div class="pair"><input type="text" id="npPass" class="mono" placeholder="leave blank to invite">'
+   + '<div><label>Password <span class="hint">(blank = email them a link)</span></label>'
+   + '<div class="pair"><input type="text" id="npPass" class="mono" placeholder="leave blank to email a link">'
    + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
    + '<div class="act">'
    + '<button class="btn pri" onclick="addPerson()"'+(PEOPLE_BUSY?' disabled':'')+'>Add</button>'
    + '<p class="hintline">Type a password and the login is created straight away, already confirmed &mdash; '
-   + 'no verification email is sent. Shop staff with no email get a login id made from their phone. '
-   + 'Leave it blank and they are invited instead.</p>'
+   + 'no email is sent, so hand it over on WhatsApp. That is the way for shop staff, '
+   + 'who get a login id made from their phone. '
+   + 'Leave it blank and an email goes to the address above with a link to set their own password '
+   + '&mdash; use that for managers, head office and owners.</p>'
    + '</div></div></div></div>'
 
    /* ---- people ---- */
@@ -2346,6 +2540,15 @@ function addPerson(){
 
   PEOPLE_BUSY = true; render();
 
+  /* the edge function is not up yet — record an invite rather than
+     leaving the owner with nothing */
+  const fallback = (why)=>{
+    VFSync.invitePerson(common).then(()=>{
+      alert(why);
+      done();
+    }).catch(failed);
+  };
+
   if(pass){
     VFSync.createUser(Object.assign({}, common, {password: pass, email: loginId}))
       .then(()=>{
@@ -2354,17 +2557,30 @@ function addPerson(){
       })
       .catch(e=>{
         if(e.notDeployed){
-          /* the edge function is not up yet — fall back rather than
-             leaving the owner with nothing */
-          VFSync.invitePerson(common).then(()=>{
-            alert('Creating logins directly is not switched on for this project yet, '
-                + 'so an invite was recorded instead. They can sign up with '
-                + email + ' and choose their own password.');
-            done();
-          }).catch(failed);
+          fallback('Creating logins directly is not switched on for this project yet, '
+                 + 'so an invite was recorded instead. They can sign up with '
+                 + email + ' and choose their own password.');
+        }else failed(e);
+      });
+  }else if(email){
+    /* No password and a real address: the account is created and Supabase
+       emails them a link to choose their own first password. */
+    VFSync.createUser(Object.assign({}, common, {email: email}))
+      .then(()=>{
+        alert('Account created for ' + email + '. They have been emailed a link '
+            + 'to set their own password. It is good for 24 hours — if they miss '
+            + 'it, they can use Forgot password on the sign in screen.');
+        done();
+      })
+      .catch(e=>{
+        if(e.notDeployed){
+          fallback('Sending the invite email is not switched on for this project yet, '
+                 + 'so an invite was recorded instead. They can sign up with '
+                 + email + ' and choose their own password.');
         }else failed(e);
       });
   }else{
+    /* Nothing to email to. Recorded so the role is waiting for them. */
     VFSync.invitePerson(common).then(done).catch(failed);
   }
 }

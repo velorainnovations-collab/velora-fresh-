@@ -46,6 +46,23 @@ else
   bad "javascript syntax error"
 fi
 
+# Every button in this app calls a function by name from an onclick, and a
+# renamed function leaves a button that does nothing at all with no error
+# until somebody presses it. Cheap to check, so it is checked.
+python3 - <<'PY'
+import re, sys
+s = open('index.html').read()
+called  = set(re.findall(r'on(?:click|change|submit|input)=\\?"?\'?([A-Za-z_$][\w$]*)\s*\(', s))
+defined = set(re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', s))
+defined |= set(re.findall(r'(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()', s))
+defined |= {'VFSync'}
+missing = sorted(c for c in called if c not in defined)
+if missing:
+    print('  FAIL handler with no function: %s' % ', '.join(missing)); sys.exit(1)
+print('  ok   all %d inline handlers resolve' % len(called))
+PY
+[ $? -eq 0 ] || fail=1
+
 step "vercel.json"
 python3 - <<'PY'
 import json, sys
@@ -152,6 +169,30 @@ if node test/sync.test.js >/tmp/vf-sync.log 2>&1; then
   ok "$(tail -2 /tmp/vf-sync.log | head -1)"
 else
   bad "sync tests"; tail -20 /tmp/vf-sync.log
+fi
+
+# The rest drive a real browser against test/mock-supabase.js. Skipped
+# rather than failed where Playwright is not installed, so this script
+# still means something on a machine that only has python and node.
+if ! node -e "require('playwright')" 2>/dev/null; then
+  export NODE_PATH=/opt/node22/lib/node_modules
+fi
+if node -e "require('playwright')" 2>/dev/null; then
+  python3 -m http.server 8092 >/dev/null 2>&1 &
+  SERVE_PID=$!
+  trap 'kill $SERVE_PID 2>/dev/null' EXIT
+  sleep 2
+  for suite in login route theme product vendor people signup whatsapp emailauth; do
+    if node "test/$suite.test.js" >"/tmp/vf-$suite.log" 2>&1 &&
+       ! grep -q FAIL "/tmp/vf-$suite.log"; then
+      ok "$suite — $(grep -E 'passed,' "/tmp/vf-$suite.log" | tail -1)"
+    else
+      bad "$suite"; grep -E 'FAIL|Error' "/tmp/vf-$suite.log" | head -5
+    fi
+  done
+  kill $SERVE_PID 2>/dev/null; trap - EXIT
+else
+  printf '  --   browser suites skipped (no playwright)\n'
 fi
 
 printf '\n'

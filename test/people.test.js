@@ -158,6 +158,7 @@ function check(label, got, want) {
   received.length = 0;
   await p.fill('#npName', 'Shop Person');
   await p.fill('#npPhone', '9000011111');
+  await p.fill('#npEmail', '');          // no address, so this is an invite row
   await p.selectOption('#npShop', 'MBK');
   await p.click('button:has-text("Add")');
   await p.waitForTimeout(900);
