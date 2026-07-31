@@ -1414,6 +1414,9 @@ async function afterSignIn(){
   }
   ME = me;
   ROLE = me.appRole;
+  /* now that the role is known, honour what the url asked for */
+  if(BOOT_TAB && tabsFor().filter(t=>t.id===BOOT_TAB).length) TAB = BOOT_TAB;
+  BOOT_TAB = null;
   try{
     const cat = await VFSync.fetchCatalogue();
     mergeCatalogue(cat);
@@ -1467,7 +1470,8 @@ if(typeof VFSync !== 'undefined' && VFSync.enabled()){
 /* ---------- session ---------- */
 let ROLE = 'admin';        /* 'owner' | 'admin' | shopId */
 let DATE = todayISO();
-let TAB  = '';
+let TAB  = '';   /* set from the url on boot, see readHash() */
+let BOOT_TAB = null;   /* what the url asked for, before the role is known */
 
 function todayISO(){
   const d = new Date();
@@ -1542,8 +1546,42 @@ function windowState(){
 
 /* ---------- shell ---------- */
 function setRole(r){ ROLE = r; TAB = tabsFor()[0].id; render(); }
-function setDate(d){ DATE = d; render(); }
-function go(t){ TAB = t; toggleSide(false); render(); }
+function setDate(d){ DATE = d; writeHash(); render(); }
+/* The screen lives in the address bar, so a refresh comes back to the
+   same place, back and forward work, and a link can be shared. The date
+   rides along when it is not today, because "the rates I was looking
+   at" usually means a particular day. */
+function go(t, keepHash){
+  TAB = t;
+  toggleSide(false);
+  if(!keepHash) writeHash();
+  render();
+}
+
+function writeHash(){
+  const d = (DATE && DATE !== todayISO()) ? '/' + DATE : '';
+  const want = '#' + TAB + d;
+  if(location.hash !== want){
+    /* replace, not push: switching screens should not stack up entries
+       the back button has to walk through */
+    history.replaceState(null, '', want);
+  }
+}
+
+function readHash(){
+  const raw = (location.hash || '').replace(/^#/, '');
+  if(!raw) return null;
+  const bits = raw.split('/');
+  const tab  = bits[0];
+  const date = bits[1];
+  if(date && /^\d{4}-\d{2}-\d{2}$/.test(date)) DATE = date;
+  return tab || null;
+}
+
+window.addEventListener('hashchange', function(){
+  const t = readHash();
+  if(t && t !== TAB){ TAB = t; render(); }
+});
 
 /* ============================================================
    Sidebar menu
@@ -2121,8 +2159,10 @@ function render(){
   document.getElementById('anyChk').checked = !!DB.settings.anytime;
 
   const tabs = tabsFor();
+  /* a tab this role has no claim to falls back to its first screen */
   if(!tabs.filter(t=>t.id===TAB).length) TAB = tabs[0].id;
   drawSide();
+  writeHash();
 
   const m = document.getElementById('main');
   const fn = {
@@ -2335,7 +2375,7 @@ function vBoard(){
    + '<div><div class="lb">Fill rate</div><div class="vl mono">'+fill+'%</div></div>'
    + '</div><div class="grid">'+tiles+'</div>';
 }
-function openShop(id){ TAB = 'pack'; PACKSHOP = id; render(); }
+function openShop(id){ PACKSHOP = id; go('pack'); }
 
 /* ============================================================
    ADMIN — indents (cut & accept)
@@ -2986,7 +3026,15 @@ function tick(){
   const el = document.getElementById('clock');
   if(el) el.textContent = lbl + ' · ' + String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
 }
-TAB = tabsFor()[0].id;
+/* Restore the screen from the address bar, so a refresh comes back
+   where you were instead of the first tab. This has to run after the
+   declarations above: an assignment to TAB before `let TAB` throws. */
+/* Held until the role is known: the first render happens before
+   whoami() answers, and a screen this role cannot reach would be
+   redirected away and the url rewritten before sign-in completes. */
+BOOT_TAB = readHash();
+if(BOOT_TAB) TAB = BOOT_TAB;
+if(!TAB) TAB = tabsFor()[0].id;
 render();
 tick();
 setInterval(tick, 30000);
