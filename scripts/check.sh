@@ -70,6 +70,43 @@ print('  ok   valid, and no keys Vercel would reject')
 PY
 [ $? -ne 0 ] && fail=1
 
+step "app and database agree"
+# The seed was written from the shop names rather than the codes in the
+# app, so two of five were wrong (MMB/HIR instead of MBK/HRN). Every
+# write for those shops was rejected by a foreign key.
+python3 - <<'PY'
+import pathlib, re, sys
+
+tpl = pathlib.Path('src/template.html').read_text(encoding='utf-8')
+block = re.search(r'const SHOPS = \[(.*?)\];', tpl, re.S)
+if not block:
+    print('  FAIL could not find SHOPS in src/template.html'); sys.exit(1)
+app = {m.group(1) for m in re.finditer(r"id:\s*'([^']+)'", block.group(1))}
+
+sql = pathlib.Path('supabase/05_production.sql').read_text(encoding='utf-8')
+ins = re.search(r'insert into shops[^;]+;', sql, re.S)
+if not ins:
+    print('  FAIL could not find the shops insert in 05_production.sql'); sys.exit(1)
+db = {m.group(1) for m in re.finditer(r"\('([A-Z]{2,4})',\s*'KPN'", ins.group(0))}
+
+if app != db:
+    print('  FAIL shop codes differ')
+    print('       app only: %s' % (sorted(app - db) or 'none'))
+    print('       sql only: %s' % (sorted(db - app) or 'none'))
+    sys.exit(1)
+print('  ok   %d shop codes match the app: %s' % (len(app), ', '.join(sorted(app))))
+
+# the app also carries a bill prefix per shop; a mismatch would put the
+# wrong code on a printed bill
+pref_app = dict(re.findall(r"id:'([^']+)'[^}]*prefix:'([^']+)'", block.group(1)))
+pref_sql = dict(re.findall(r"\('([A-Z]{2,4})',\s*'KPN',\s*'[^']*',\s*'([^']+)'\)", ins.group(0)))
+diff = {k for k in pref_app if pref_app[k] != pref_sql.get(k)}
+if diff:
+    print('  FAIL bill prefix differs for: %s' % ', '.join(sorted(diff))); sys.exit(1)
+print('  ok   bill prefixes match')
+PY
+[ $? -ne 0 ] && fail=1
+
 step "secrets"
 # The word service_role appears legitimately in comments warning against
 # it. What matters is a real key, so every JWT in the tree is decoded and

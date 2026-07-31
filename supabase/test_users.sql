@@ -67,7 +67,7 @@ select login(:OWNER);
 select t2('owner can invite a manager',
   try($$select invite_person('admin','New Manager','9222222222')$$), 'ok');
 select t2('owner can invite a shopkeeper',
-  try($$select invite_person('shop','Mambakkam Mgr','9333333333',null,'KPN','MMB')$$), 'ok');
+  try($$select invite_person('shop','Mambakkam Mgr','9333333333',null,'KPN','MBK')$$), 'ok');
 select t2('owner can invite another owner',
   try($$select invite_person('owner','Second Owner',null,'owner2@velora.example')$$), 'ok');
 

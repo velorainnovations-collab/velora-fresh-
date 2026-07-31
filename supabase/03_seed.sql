@@ -13,8 +13,8 @@ insert into shops (id, client_id, name, prefix) values
   ('KLP', 'KPN', 'Kilpauk',      'VF/KLP'),
   ('NGB', 'KPN', 'Nungambakkam', 'VF/NGB'),
   ('SHN', 'KPN', 'Shenoy Nagar', 'VF/SHN'),
-  ('MMB', 'KPN', 'Mambakkam',    'VF/MMB'),
-  ('HIR', 'KPN', 'Hiranandani',  'VF/HIR');
+  ('MBK', 'KPN', 'Mambakkam',    'VF/MBK'),
+  ('HRN', 'KPN', 'Hiranandani',  'VF/HRN');
 
 insert into products (code, name, tamil, unit, unit_weight_kg) values
   ('1',   'Lemon',           'லெமன்',            'kg',  1),

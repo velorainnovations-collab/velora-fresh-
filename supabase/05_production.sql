@@ -24,8 +24,8 @@ insert into shops (id, client_id, name, prefix) values
   ('KLP', 'KPN', 'Kilpauk',      'VF/KLP'),
   ('NGB', 'KPN', 'Nungambakkam', 'VF/NGB'),
   ('SHN', 'KPN', 'Shenoy Nagar', 'VF/SHN'),
-  ('MMB', 'KPN', 'Mambakkam',    'VF/MMB'),
-  ('HIR', 'KPN', 'Hiranandani',  'VF/HIR')
+  ('MBK', 'KPN', 'Mambakkam',    'VF/MBK'),
+  ('HRN', 'KPN', 'Hiranandani',  'VF/HRN')
 on conflict (id) do update set name   = excluded.name,
                                prefix = excluded.prefix;
 
@@ -33,7 +33,7 @@ on conflict (id) do update set name   = excluded.name,
 -- 4% for every shop today. Change a single shop here without touching
 -- the others; bills already raised keep the rate frozen on the line.
 insert into margin_comm (shop_id, pct) values
-  ('KLP', 4), ('NGB', 4), ('SHN', 4), ('MMB', 4), ('HIR', 4)
+  ('KLP', 4), ('NGB', 4), ('SHN', 4), ('MBK', 4), ('HRN', 4)
 on conflict (shop_id) do update set pct = excluded.pct;
 
 -- ---------- settings ----------
