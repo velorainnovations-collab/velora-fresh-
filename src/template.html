@@ -314,8 +314,18 @@ function load(){
   SHOPS.forEach(s=>{ if(DB.master.comm[s.id]===undefined) DB.master.comm[s.id] = s.comm; });
   return DB;
 }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} }
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){}
+  /* Local write already done above, so the app never waits on the
+     network. This only queues the changed rows. No-op when the sync
+     layer is absent or unconfigured. */
+  try{ if(typeof VFSync !== 'undefined' && VFSync.enabled()) VFSync.record(DB); }catch(e){}
+}
 load();
+
+/* ---------- Supabase sync (inlined by src/build.py) ---------- */
+@@SYNC@@
+
 
 /* ---------- session ---------- */
 let ROLE = 'admin';        /* 'owner' | 'admin' | shopId */

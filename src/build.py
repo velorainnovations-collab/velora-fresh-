@@ -15,6 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "src" / "template.html"
 PRODUCTS = ROOT / "data" / "products.txt"
 GROUPS = ROOT / "data" / "groups.txt"
+SYNC = ROOT / "src" / "sync.js"
 OUTPUT = ROOT / "index.html"
 
 
@@ -22,6 +23,9 @@ def main() -> int:
     html = TEMPLATE.read_text(encoding="utf-8")
     html = html.replace("@@PRODUCTS@@", PRODUCTS.read_text(encoding="utf-8").strip())
     html = html.replace("@@GROUPS@@", GROUPS.read_text(encoding="utf-8").strip())
+    # Optional: the app runs unchanged with no sync layer at all.
+    if "@@SYNC@@" in html:
+        html = html.replace("@@SYNC@@", SYNC.read_text(encoding="utf-8"))
     if "@@" in html:
         print("ERROR: a placeholder was left unsubstituted", file=sys.stderr)
         return 1

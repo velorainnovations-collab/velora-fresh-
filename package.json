@@ -2,12 +2,14 @@
   "name": "velora-fresh",
   "version": "0.1.0",
   "private": true,
-  "description": "Velora Fresh supply desk — indent to invoice for fruit and vegetable supply to supermarket chains",
+  "description": "Velora Fresh supply desk \u2014 indent to invoice for fruit and vegetable supply to supermarket chains",
   "scripts": {
     "build": "python3 src/build.py",
     "import": "python3 src/import_sheets.py data/Vendor_Group.xlsx",
-    "test": "node test/smoke.js",
-    "serve": "python3 -m http.server 8080"
+    "test": "node test/smoke.js && node test/sync.test.js",
+    "serve": "python3 -m http.server 8080",
+    "test:db": "supabase/run_tests.sh",
+    "seed": "python3 src/gen_seed.py"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"
