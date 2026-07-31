@@ -344,13 +344,23 @@ begin
   end if;
 end $$;
 
-grant usage on schema public, auth to anon, authenticated;
+grant usage on schema public to anon, authenticated;
 
 -- anon gets nothing but the ability to attempt a login. Every table is
 -- reachable only after authenticating, and then only through RLS.
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
-grant execute on function auth.uid() to anon, authenticated;
+
+-- On Supabase the auth schema belongs to supabase_auth_admin and these
+-- grants are already in place, so a permission error here is expected
+-- and harmless. Locally they are needed.
+do $$
+begin
+  execute 'grant usage on schema auth to anon, authenticated';
+  execute 'grant execute on function auth.uid() to anon, authenticated';
+exception when insufficient_privilege or dependent_privilege_descriptors_still_exist then
+  raise notice 'auth schema grants skipped (already managed by Supabase)';
+end $$;
 
 -- bill_serial is never touched directly — next_bill_no() owns it
 revoke insert, update, delete on bill_serial from authenticated;
