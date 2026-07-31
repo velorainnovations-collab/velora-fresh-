@@ -364,25 +364,43 @@ const VFSync = (function () {
         const r = await fetch(CFG.url + '/rest/v1/' + table + '?' + qs, {
           method: 'DELETE', headers: headers(),
         });
-        if (!r.ok && r.status !== 404) throw await httpError(r);
+        if (!r.ok && r.status !== 404) throw await httpError(r, table);
       }
       return;
     }
+    // Postgres refuses to let ON CONFLICT DO UPDATE touch the same row
+    // twice in one statement — it raises cardinality_violation, which
+    // PostgREST returns as 409. collapse() dedupes by operation key,
+    // which is not always the same thing as the database conflict key,
+    // so the payload is deduped again here on the columns that actually
+    // decide the conflict. Later rows win, matching last-write-wins.
+    const byKey = new Map();
+    rows.forEach(row => byKey.set(keyCols.map(c => String(row[c])).join('\u0000'), row));
+    const unique = Array.from(byKey.values());
+
     const r = await fetch(
       CFG.url + '/rest/v1/' + table + '?on_conflict=' + encodeURIComponent(keyCols.join(',')),
       {
         method: 'POST',
         headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify(rows),
+        body: JSON.stringify(unique),
       });
-    if (!r.ok) throw await httpError(r);
+    if (!r.ok) throw await httpError(r, table);
   }
 
-  async function httpError(r) {
-    let body = '';
-    try { body = JSON.stringify(await r.json()); } catch (e) { body = r.statusText; }
-    const e = new Error('HTTP ' + r.status + ' ' + body);
+  async function httpError(r, table) {
+    let body = null;
+    try { body = await r.json(); } catch (e) { /* empty or non-JSON */ }
+    // PostgREST puts the real cause in message/details/hint; without it a
+    // failure is just a number and cannot be diagnosed from a screenshot
+    const detail = body
+      ? [body.message, body.details, body.hint].filter(Boolean).join(' — ')
+      : r.statusText;
+    const e = new Error((table ? table + ': ' : '') + 'HTTP ' + r.status + ' ' + detail);
     e.status = r.status;
+    e.table = table;
+    e.body = body;
+    if (typeof console !== 'undefined') console.error('[VFSync]', e.message, body || '');
     return e;
   }
 
@@ -428,7 +446,7 @@ const VFSync = (function () {
   async function get(table, select) {
     const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*'),
                           { headers: headers() });
-    if (!r.ok) throw await httpError(r);
+    if (!r.ok) throw await httpError(r, table);
     return r.json();
   }
 
@@ -525,7 +543,7 @@ const VFSync = (function () {
       CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active',
       { headers: headers() });
     if (r.status === 401 && await refresh()) return whoami();
-    if (!r.ok) throw await httpError(r);
+    if (!r.ok) throw await httpError(r, 'app_users');
     const rows = await r.json();
     const me = rows.filter(u => u.active)[0];
     if (!me) return null;
@@ -544,7 +562,7 @@ const VFSync = (function () {
       method: 'POST', headers: headers(),
       body: JSON.stringify({ p_shop: shopId, p_date: date }),
     });
-    if (!r.ok) throw await httpError(r);
+    if (!r.ok) throw await httpError(r, 'next_bill_no');
     return r.json();
   }
 

@@ -195,6 +195,60 @@ check('child deleted before its parent',
   sorted.findIndex(o => o.table === 'indent_lines') <
   sorted.findIndex(o => o.table === 'indents'), true);
 
+/* ---------------- one row per conflict key ---------------- */
+// Postgres refuses to let ON CONFLICT DO UPDATE touch the same row twice
+// in one statement; PostgREST returns that as 409. A batch must therefore
+// never carry two rows sharing the conflict key. This is checked here
+// because it cost a live 409 on margin_comm.
+console.log('\nbatch uniqueness');
+const CONFLICT_COLS = {
+  indents: ['trade_date', 'shop_id'],
+  indent_lines: ['trade_date', 'shop_id', 'product_code'],
+  day_rates: ['trade_date', 'product_code'],
+  packed: ['trade_date', 'shop_id', 'product_code'],
+  shipments: ['trade_date', 'shop_id'],
+  vendor_orders: ['trade_date', 'group_name'],
+  invoices: ['trade_date', 'shop_id'],
+  invoice_lines: ['invoice_id', 'line_no'],
+  payments: ['id'],
+  vendors: ['group_name'],
+  vendor_bank: ['group_name'],
+  margin_comm: ['shop_id'],
+  margin_selling: ['shop_id', 'product_code'],
+  settings: ['client_id'],
+};
+
+function dupKeys(table, rows) {
+  const cols = CONFLICT_COLS[table];
+  const seen = new Set(), dups = [];
+  rows.forEach(r => {
+    const k = cols.map(c => String(r[c])).join('|');
+    if (seen.has(k)) dups.push(k);
+    seen.add(k);
+  });
+  return dups;
+}
+
+// every table flatten produces, checked for colliding conflict keys
+let collisions = [];
+Object.keys(F).forEach(t => {
+  const d = dupKeys(t, Object.values(F[t]));
+  if (d.length) collisions.push(t + ':' + d.join(','));
+});
+check('no two rows share a conflict key', collisions, []);
+
+// and a queue that legitimately holds repeats must still collapse to one
+const repeated = [
+  { table: 'margin_comm', op: 'upsert', key: 'KLP', row: { shop_id: 'KLP', pct: 4 } },
+  { table: 'margin_comm', op: 'upsert', key: 'KLP', row: { shop_id: 'KLP', pct: 5 } },
+  { table: 'margin_comm', op: 'upsert', key: 'NGB', row: { shop_id: 'NGB', pct: 4 } },
+];
+const collapsed = S._collapse(repeated);
+check('repeat edits collapse to one row per shop',
+  dupKeys('margin_comm', collapsed.map(o => o.row)), []);
+check('collapsed keeps the latest value',
+  collapsed.find(o => o.row.shop_id === 'KLP').row.pct, 5);
+
 /* ---------------- every table is reachable ---------------- */
 console.log('\ncoverage');
 const empty = S._flatten({});
