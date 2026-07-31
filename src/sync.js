@@ -600,7 +600,48 @@ const VFSync = (function () {
   });
 
   /* ============================================================
-     9. Bill numbers — issued by the database, never locally
+     9. Catalogue
+     ============================================================
+     The 241 products are compiled into index.html, which is the right
+     default: the app opens fully stocked with no network. But a product
+     added later must outlive a reload and reach every device, so the
+     database is the truth and the build is only the seed.             */
+
+  async function addProduct(p) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/products?on_conflict=code', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ code: p.code, name: p.name, tamil: p.tamil || '',
+                              unit: p.unit, unit_weight_kg: p.wt || null,
+                              alias: p.alias || '' }]),
+    });
+    if (r.status === 401 && await refresh()) return addProduct(p);
+    if (!r.ok) throw await httpError(r, 'products');
+
+    // the group mapping is a second row, and the product must exist first
+    const g = await fetch(CFG.url + '/rest/v1/product_groups?on_conflict=product_code', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ product_code: p.code, group_name: p.group }]),
+    });
+    if (!g.ok) throw await httpError(g, 'product_groups');
+    return true;
+  }
+
+  /* Everything the catalogue is made of, for merging over the build. */
+  async function fetchCatalogue() {
+    if (!enabled() || !signedIn()) return null;
+    const [products, groups, mapping] = await Promise.all([
+      get('products', 'code,name,tamil,unit,unit_weight_kg,alias').catch(() => []),
+      get('vendor_groups', 'name,manual,sort_ord').catch(() => []),
+      get('product_groups', 'product_code,group_name').catch(() => []),
+    ]);
+    return { products: products, groups: groups, mapping: mapping };
+  }
+
+  /* ============================================================
+     10. Bill numbers — issued by the database, never locally
      ============================================================ */
 
   async function nextBillNo(shopId, date) {
@@ -622,7 +663,7 @@ const VFSync = (function () {
     enabled, signIn, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, setPersonRole, setPersonActive, cancelInvite,
-    addShop,
+    addShop, addProduct, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },

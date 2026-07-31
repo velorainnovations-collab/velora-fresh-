@@ -462,6 +462,10 @@ async function afterSignIn(){
   }
   ME = me;
   ROLE = me.appRole;
+  try{
+    const cat = await VFSync.fetchCatalogue();
+    mergeCatalogue(cat);
+  }catch(e){ /* offline: the compiled catalogue still stands */ }
   try{ await VFSync.pull(DB); }catch(e){ /* offline: carry on with local data */ }
   hideGate();
   const so = document.getElementById('signOutBtn');
@@ -678,6 +682,49 @@ let OPENGRP = null;
 /* ============================================================
    Product list  —  the catalogue, read-only
    ============================================================ */
+/* Fold what the server holds over the compiled catalogue. The build is
+   the seed; anything added later lives only in the database, so without
+   this a new product would vanish on reload and never reach anyone
+   else's device. */
+function mergeCatalogue(cat){
+  if(!cat) return 0;
+  let added = 0;
+  (cat.products || []).forEach(r=>{
+    const known = !!CAT[r.code];
+    CAT[r.code] = {
+      code: r.code, name: r.name, tamil: r.tamil || '',
+      full: r.name + (r.tamil ? ' / ' + r.tamil : ''),
+      unit: r.unit || 'kg',
+      wt: parseFloat(r.unit_weight_kg) || 0,
+      margin: known ? CAT[r.code].margin : null,
+      alias: r.alias || '',
+    };
+    if(r.alias) ALIAS[String(r.alias).toUpperCase()] = r.code;
+    if(!known){ CODES.push(r.code); added++; }
+  });
+  (cat.groups || []).forEach(g=>{ if(!GROUPS[g.name]) GROUPS[g.name] = []; });
+  (cat.mapping || []).forEach(m=>{
+    const was = CODE2GROUP[m.product_code];
+    if(was === m.group_name) return;
+    if(was && GROUPS[was]){
+      const i = GROUPS[was].indexOf(m.product_code);
+      if(i > -1) GROUPS[was].splice(i, 1);
+    }
+    CODE2GROUP[m.product_code] = m.group_name;
+    (GROUPS[m.group_name] = GROUPS[m.group_name] || []).push(m.product_code);
+  });
+  /* keep the menu order stable and put anything unmapped in Manual order */
+  GROUPNAMES.length = 0;
+  Object.keys(GROUPS).forEach(g=> GROUPNAMES.push(g));
+  CODES.forEach(c=>{
+    if(!CODE2GROUP[c]){
+      CODE2GROUP[c] = UNGROUPED;
+      (GROUPS[UNGROUPED] = GROUPS[UNGROUPED] || []).push(c);
+    }
+  });
+  return added;
+}
+
 let PRODQ = '';
 function vProducts(){
   const q = PRODQ.trim().toLowerCase();
@@ -717,6 +764,7 @@ function vProducts(){
    + '</div>'
    + (missing ? '<div class="note">'+missing+' box or tray product(s) have no unit weight on file. '
        + 'Invoices containing them are blocked rather than billed at zero.</div>' : '')
+   + (cost ? addProductForm() : '')
    + '<div class="bar"><div class="srch">'
    + '<input type="text" id="prodQ" placeholder="Search product, Tamil name or code" value="'+esc(PRODQ)+'" '
    + 'oninput="PRODQ=this.value;afterRender=focusProdQ;render()"></div>'
@@ -728,6 +776,78 @@ function vProducts(){
    + (rows || '<tr><td colspan="5"><div class="empty">Nothing matched that search.</div></td></tr>')
    + '</tbody></table></div></div>';
 }
+function addProductForm(){
+  let gopts = '';
+  GROUPNAMES.forEach(g=> gopts += '<option value="'+esc(g)+'"'
+    + (g===UNGROUPED?' selected':'')+'>'+esc(g)+'</option>');
+  let uopts = '';
+  ['kg','g','piece','bunch','box','tray'].forEach(u=> uopts += '<option value="'+u+'">'+u+'</option>');
+
+  return '<div class="card"><h3>Add a product</h3><div style="padding:14px 16px">'
+   + '<div class="bar" style="margin:0">'
+   + '<div style="flex:0 0 100px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Code</label>'
+   + '<input type="text" id="npCode" placeholder="242"></div>'
+   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Name (English)</label>'
+   + '<input type="text" id="npPName" placeholder="Cauliflower"></div>'
+   + '<div style="flex:1 1 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Tamil</label>'
+   + '<input type="text" id="npTamil" placeholder="காலிஃபிளவர்"></div>'
+   + '<div style="flex:0 0 110px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unit</label>'
+   + '<select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select></div>'
+   + '<div style="flex:0 0 130px" id="npWtWrap" class="hidden">'
+   + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Weight per box (kg)</label>'
+   + '<input type="number" id="npWt" step="any" min="0" placeholder="20"></div>'
+   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Vendor group</label>'
+   + '<select id="npGroup">'+gopts+'</select></div>'
+   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addProduct()">Add product</button></div>'
+   + '</div>'
+   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
+   + 'A box or tray needs its weight in kg, or the invoice cannot price it and generation is blocked. '
+   + 'kg, piece and bunch are billed as one unit each.</p>'
+   + '</div></div>';
+}
+
+function npUnitChanged(){
+  const u = document.getElementById('npUnit').value;
+  document.getElementById('npWtWrap').className = (u==='box'||u==='tray') ? '' : 'hidden';
+}
+
+function addProduct(){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may add a product.'); return; }
+  const code  = document.getElementById('npCode').value.trim();
+  const name  = document.getElementById('npPName').value.trim();
+  const tamil = document.getElementById('npTamil').value.trim();
+  const unit  = document.getElementById('npUnit').value;
+  const group = document.getElementById('npGroup').value;
+  const wt    = parseFloat(document.getElementById('npWt').value) || 0;
+
+  if(!code){ alert('Enter a product code.'); return; }
+  if(CAT[code]){ alert('Code '+code+' is already used by '+CAT[code].name+'.'); return; }
+  if(!name){ alert('Enter the English name.'); return; }
+  if((unit==='box'||unit==='tray') && !wt){
+    alert('A '+unit+' needs its weight in kg, otherwise the invoice cannot price it.'); return;
+  }
+
+  const prod = {code:code, name:name, tamil:tamil, unit:unit, wt:wt, alias:'', group:group};
+
+  const apply = ()=>{
+    CAT[code] = {code:code, name:name, tamil:tamil,
+                 full:name+(tamil?' / '+tamil:''), unit:unit, wt:wt, margin:null, alias:''};
+    CODES.push(code);
+    CODE2GROUP[code] = group;
+    (GROUPS[group] = GROUPS[group] || []).push(code);
+    PRODQ = '';
+    render();
+  };
+
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.addProduct(prod).then(()=>{ apply(); })
+      .catch(e=> alert('Could not add the product: ' + (e.message || e)));
+  }else{
+    /* no server configured — the app still works, but only here */
+    apply();
+  }
+}
+
 function focusProdQ(){
   const i = document.getElementById('prodQ');
   if(i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); }

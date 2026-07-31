@@ -15,6 +15,10 @@ const USERS = {
 
 const received = [];          // every write the app sent
 
+// products the "server" holds beyond the compiled catalogue
+const EXTRA_PRODUCTS = [];
+const EXTRA_MAPPING  = [];
+
 // what list_people() returns; mutated by the rpc handlers below
 const PEOPLE = [
   { kind: 'user', id: 'aaaa0000-0000-0000-0000-00000000000a', phone: null,
@@ -86,7 +90,18 @@ const srv = http.createServer((req, res) => {
 
     if (url.pathname.startsWith('/rest/v1/')) {
       const table = url.pathname.slice('/rest/v1/'.length);
+      if (req.method === 'GET' && table.startsWith('products')) return send(200, EXTRA_PRODUCTS);
+      if (req.method === 'GET' && table.startsWith('product_groups')) return send(200, EXTRA_MAPPING);
+      if (req.method === 'GET' && table.startsWith('vendor_groups'))
+        return send(200, [{ name: 'Ooty', manual: false, sort_ord: 1 },
+                          { name: 'Manual order', manual: true, sort_ord: 9 }]);
       if (req.method === 'POST' || req.method === 'DELETE') {
+        if (table.startsWith('products')) {
+          (body ? JSON.parse(body) : []).forEach(r => EXTRA_PRODUCTS.push(r));
+        }
+        if (table.startsWith('product_groups')) {
+          (body ? JSON.parse(body) : []).forEach(r => EXTRA_MAPPING.push(r));
+        }
         received.push({ table, method: req.method, rows: body ? JSON.parse(body) : null });
         return send(201, {});
       }

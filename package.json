@@ -12,7 +12,8 @@
     "seed": "python3 src/gen_seed.py",
     "test:login": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/login.test.js; kill %1",
     "check": "scripts/check.sh",
-    "test:people": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/people.test.js; kill %1"
+    "test:people": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/people.test.js; kill %1",
+    "test:product": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/product.test.js; kill %1"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"
