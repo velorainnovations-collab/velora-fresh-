@@ -10,7 +10,8 @@
     "serve": "python3 -m http.server 8080",
     "test:db": "supabase/run_tests.sh",
     "seed": "python3 src/gen_seed.py",
-    "test:login": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/login.test.js; kill %1"
+    "test:login": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/login.test.js; kill %1",
+    "check": "scripts/check.sh"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"

@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# ============================================================
+# Everything that must hold before a push.
+#
+#   npm run check
+#
+# Exists because a "//" comment key in vercel.json reached production
+# and failed the build, and because a stray NUL byte in src/sync.js
+# made the file read as binary. Both were invisible to the tests.
+# ============================================================
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+fail=0
+step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+ok()   { printf '  ok   %s\n' "$1"; }
+bad()  { printf '  FAIL %s\n' "$1"; fail=1; }
+
+step "build"
+if python3 src/build.py >/dev/null 2>&1; then ok "index.html regenerated"
+else bad "src/build.py failed"; python3 src/build.py; fi
+
+if git diff --quiet -- index.html 2>/dev/null; then
+  ok "committed index.html matches the template"
+else
+  bad "index.html is out of date — commit the rebuild"
+fi
+
+step "source hygiene"
+# a NUL byte makes git treat the file as binary and grep stop working
+if grep -qlP '\x00' src/*.js src/*.html src/*.py 2>/dev/null; then
+  bad "NUL byte in: $(grep -lP '\x00' src/*.js src/*.html src/*.py 2>/dev/null | tr '\n' ' ')"
+else
+  ok "no NUL bytes in source"
+fi
+
+if grep -q '@@' index.html 2>/dev/null; then
+  bad "unsubstituted placeholder left in index.html"
+else
+  ok "no placeholders left in the build"
+fi
+
+if node --check src/sync.js 2>/dev/null && node --check src/config.js 2>/dev/null; then
+  ok "javascript parses"
+else
+  bad "javascript syntax error"
+fi
+
+step "vercel.json"
+python3 - <<'PY'
+import json, sys
+try:
+    cfg = json.load(open('vercel.json'))
+except Exception as e:
+    print('  FAIL invalid JSON: %s' % e); sys.exit(1)
+# Vercel validates strictly and rejects anything it does not know,
+# including a "//" used as a comment
+allowed = {
+  '$schema', 'buildCommand', 'outputDirectory', 'installCommand',
+  'devCommand', 'framework', 'cleanUrls', 'trailingSlash',
+  'headers', 'redirects', 'rewrites', 'regions', 'public',
+  'ignoreCommand', 'github', 'crons', 'functions', 'images',
+}
+bad = sorted(set(cfg) - allowed)
+if bad:
+    print('  FAIL Vercel will reject these keys: %s' % ', '.join(bad)); sys.exit(1)
+if cfg.get('outputDirectory') != '.':
+    print('  FAIL outputDirectory must be "." for a root-level app'); sys.exit(1)
+print('  ok   valid, and no keys Vercel would reject')
+PY
+[ $? -ne 0 ] && fail=1
+
+step "secrets"
+# The word service_role appears legitimately in comments warning against
+# it. What matters is a real key, so every JWT in the tree is decoded and
+# its role claim checked: anon is meant to ship, service_role never is.
+python3 - <<'PY'
+import base64, json, pathlib, re, sys
+
+JWT = re.compile(rb'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}')
+bad = []
+for p in pathlib.Path('.').rglob('*'):
+    if not p.is_file() or '.git/' in str(p) or 'node_modules' in str(p):
+        continue
+    try:
+        blob = p.read_bytes()
+    except Exception:
+        continue
+    for m in JWT.finditer(blob):
+        payload = m.group().split(b'.')[1]
+        payload += b'=' * (-len(payload) % 4)
+        try:
+            role = json.loads(base64.urlsafe_b64decode(payload)).get('role')
+        except Exception:
+            continue
+        if role and role != 'anon':
+            bad.append('%s: a %s key' % (p, role))
+
+if bad:
+    for b in bad:
+        print('  FAIL ' + b)
+    sys.exit(1)
+print('  ok   every key in the tree is an anon key')
+PY
+[ $? -ne 0 ] && fail=1
+
+step "tests"
+if node test/smoke.js >/tmp/vf-smoke.log 2>&1; then
+  ok "$(tail -2 /tmp/vf-smoke.log | head -1)"
+else
+  bad "smoke tests"; tail -20 /tmp/vf-smoke.log
+fi
+
+if node test/sync.test.js >/tmp/vf-sync.log 2>&1; then
+  ok "$(tail -2 /tmp/vf-sync.log | head -1)"
+else
+  bad "sync tests"; tail -20 /tmp/vf-sync.log
+fi
+
+printf '\n'
+if [ "$fail" -eq 0 ]; then
+  printf '\033[32mall checks passed\033[0m\n'
+else
+  printf '\033[31mchecks FAILED — do not push\033[0m\n'
+fi
+exit $fail

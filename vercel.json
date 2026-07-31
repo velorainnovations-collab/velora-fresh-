@@ -1,11 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "//": "index.html is generated, and Vercel has python3, so it is rebuilt on every deploy rather than trusting the committed copy. The app is one file at the repository root, so outputDirectory is '.' — without it Vercel looks for a public/ folder and the build fails.",
   "buildCommand": "python3 src/build.py",
   "outputDirectory": ".",
   "installCommand": "npm install --no-audit --no-fund",
-
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [

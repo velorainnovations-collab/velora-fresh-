@@ -41,6 +41,27 @@ jobs:
       - name: Smoke and sync tests
         run: npm test
 
+      - name: Validate vercel.json
+        # Vercel validates this schema strictly and rejects unknown keys.
+        # A "//" comment key failed a production build once; JSON has no
+        # comments, so explanations belong in docs/DEPLOY.md.
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          cfg = json.load(open('vercel.json'))
+          allowed = {
+            '$schema', 'buildCommand', 'outputDirectory', 'installCommand',
+            'devCommand', 'framework', 'cleanUrls', 'trailingSlash',
+            'headers', 'redirects', 'rewrites', 'regions', 'public',
+            'ignoreCommand', 'github', 'crons', 'functions', 'images',
+          }
+          bad = sorted(set(cfg) - allowed)
+          if bad:
+              print('::error::vercel.json has keys Vercel will reject: ' + ', '.join(bad))
+              sys.exit(1)
+          print('vercel.json keys are all valid')
+          PY
+
       - name: Warn if the anon key is missing
         run: |
           if grep -q "anonKey: ''" src/config.js; then

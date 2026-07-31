@@ -38,6 +38,23 @@ Authentication → URL Configuration:
 Password sign-in works without this, but password resets and any future email
 link will not.
 
+## vercel.json
+
+```json
+"buildCommand": "python3 src/build.py",
+"outputDirectory": "."
+```
+
+Vercel's image has python3, so `index.html` is rebuilt on every deploy rather
+than trusting the committed copy, and cannot go stale. The app is one file at
+the repository root, so the output directory is `.` — without that line Vercel
+looks for a `public/` folder and the build fails.
+
+**Do not put comments in that file.** JSON has none, and Vercel validates the
+schema strictly: a `"//"` key fails the build with *"should NOT have additional
+property"*. Explanations go here instead. `.github/workflows/ci.yml` rejects
+unknown top-level keys so the mistake is caught before it reaches a deploy.
+
 ## The one rule
 
 `index.html` is **generated**. Edit `src/template.html`, then:
