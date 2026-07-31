@@ -1,0 +1,130 @@
+/*
+ * WhatsApp links.
+ *
+ *   npm run test:whatsapp
+ *
+ * A wa.me link opens WhatsApp with the number and message ready. The
+ * number matters more than it looks: a bare Indian mobile without 91
+ * opens a chat with nobody, silently, and the order is simply never
+ * sent. So the formatting is checked hard.
+ */
+const { chromium } = require('playwright');
+require('./mock-supabase.js');
+
+let pass = 0, fail = 0;
+function check(label, got, want) {
+  const ok = String(got) === String(want);
+  console.log((ok ? '  ok   ' : '  FAIL ') + label + '  ->  ' + got + (ok ? '' : '   (expected ' + want + ')'));
+  ok ? pass++ : fail++;
+}
+
+(async () => {
+  const b = await chromium.launch();
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 950 },
+                                   permissions: ['clipboard-read', 'clipboard-write'] });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => console.log('PAGEERROR:', e.message));
+  await p.route('**://*.supabase.co/**', async route => {
+    const req = route.request(); const u = new URL(req.url());
+    const r = await fetch('http://127.0.0.1:8123' + u.pathname + u.search, {
+      method: req.method(), headers: req.headers(),
+      body: ['GET', 'HEAD'].includes(req.method()) ? undefined : req.postData(),
+    });
+    await route.fulfill({ status: r.status, headers: { 'content-type': 'application/json' },
+                          body: await r.text() });
+  });
+  await p.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+  await p.fill('#gateEmail', 'owner@velora.example');
+  await p.fill('#gatePass', 'right');
+  await p.click('#gateBtn');
+  await p.waitForTimeout(1200);
+
+  console.log('\nthe number');
+  const n = sel => p.evaluate(v => waNumber(v), sel);
+  check('bare Indian mobile gains 91', await n('9840000001'), '919840000001');
+  check('leading zero dropped',        await n('09840000001'), '919840000001');
+  check('already prefixed left alone', await n('919840000001'), '919840000001');
+  check('spaces and dashes stripped',  await n('98400 00001'), '919840000001');
+  check('+91 handled',                 await n('+91 98400 00001'), '919840000001');
+  check('empty stays empty',           await n(''), '');
+  check('rubbish stays empty',         await n('   '), '');
+
+  console.log('\nthe link');
+  // catch the popup rather than actually opening WhatsApp
+  await p.evaluate(() => { window.__opened = null;
+                           window.open = (u) => { window.__opened = u; return {}; }; });
+  await p.evaluate(() => waOpen('9840000001', 'hello there'));
+  const url = await p.evaluate(() => window.__opened);
+  check('goes to wa.me', /^https:\/\/wa\.me\/919840000001\?text=/.test(url), true);
+  check('message is encoded', /hello%20there/.test(url), true);
+
+  console.log('\nan order');
+  await p.evaluate(() => {
+    setAnytime(true);
+    const ind = indentOf(VF.DATE, 'KLP');
+    ind.lines = { '1': 12, '2': 50 };
+    ind.status = 'accepted';
+    save();
+    DB.vendors['Others'] = DB.vendors['Others'] || {};
+    DB.vendors['Others'].phone = '9840000009';
+    DB.vendors['Others'].manual = false;
+    DB.vendors['Others'].name = 'Others Vendor';
+    save();
+    window.__opened = null;
+    go('orders');
+  });
+  await p.waitForTimeout(400);
+  await p.evaluate(() => sendOrder('Others'));
+  await p.waitForTimeout(300);
+  const orderUrl = await p.evaluate(() => window.__opened);
+  check('order opens WhatsApp', /wa\.me\/919840000009/.test(orderUrl || ''), true);
+  check('order names a product',
+        /Lemon/.test(decodeURIComponent(orderUrl || '')), true);
+  check('marked as sent', await p.evaluate(() => !!dayOf(VF.DATE).sent['Others']), true);
+
+  console.log('\na vendor ordered by hand');
+  await p.evaluate(() => {
+    DB.vendors['Manual order'] = DB.vendors['Manual order'] || {};
+    DB.vendors['Manual order'].manual = true;
+    save();
+    window.__opened = null;
+    window.__alert = null;
+    window.alert = m => { window.__alert = m; };
+  });
+  await p.evaluate(() => sendOrder('Manual order'));
+  await p.waitForTimeout(300);
+  check('no WhatsApp opened for a manual vendor',
+        await p.evaluate(() => window.__opened), 'null');
+  check('told it was copied',
+        /copied/.test(await p.evaluate(() => window.__alert) || ''), true);
+
+  console.log('\na vendor with no number');
+  await p.evaluate(() => {
+    DB.vendors['Ooty'] = DB.vendors['Ooty'] || {};
+    DB.vendors['Ooty'].phone = '';
+    DB.vendors['Ooty'].manual = false;
+    save();
+    window.__opened = null; window.__alert = null;
+  });
+  await p.evaluate(() => sendOrder('Ooty'));
+  await p.waitForTimeout(300);
+  check('nothing opened', await p.evaluate(() => window.__opened), 'null');
+  check('told no number is saved',
+        /No WhatsApp number saved/.test(await p.evaluate(() => window.__alert) || ''), true);
+
+  console.log('\nshop numbers');
+  await p.evaluate(() => go('shops'));
+  await p.waitForTimeout(400);
+  check('a WhatsApp column exists',
+        /WhatsApp/.test(await p.locator('#main thead').textContent()), true);
+  await p.evaluate(() => { setShopPhone('KLP', '98400 12345'); });
+  check('saved without spaces',
+        await p.evaluate(() => shopById('KLP').phone), '9840012345');
+  check('kept for next time',
+        await p.evaluate(() => DB.shopPhones['KLP']), '9840012345');
+
+  console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
+  await ctx.close();
+  await b.close();
+  process.exit(fail ? 1 : 0);
+})();

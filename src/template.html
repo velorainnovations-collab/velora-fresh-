@@ -325,7 +325,7 @@ const GROUP_LIST = `
 /* ---------- shops ----------
    id, name, bill prefix, commission % (goes into the per-kg rate) */
 const SHOPS = [
-  {id:'KLP', name:'Kilpauk',      prefix:'VF/KLP', comm:4},
+  {id:'KLP', name:'Kilpauk',      prefix:'VF/KLP', comm:4, phone:''},
   {id:'NGB', name:'Nungambakkam', prefix:'VF/NGB', comm:4},
   {id:'SHN', name:'Shenoy Nagar', prefix:'VF/SHN', comm:4},
   {id:'MBK', name:'Mambakkam',    prefix:'VF/MBK', comm:4},
@@ -401,6 +401,8 @@ function load(){
   });
   DB.payments = DB.payments || [];   /* [{id,date,amount,mode,ref}] chain-level, oldest-bill-first */
   SHOPS.forEach(s=>{ if(DB.master.comm[s.id]===undefined) DB.master.comm[s.id] = s.comm; });
+  DB.shopPhones = DB.shopPhones || {};
+  SHOPS.forEach(s=>{ if(DB.shopPhones[s.id]) s.phone = DB.shopPhones[s.id]; });
   return DB;
 }
 function save(){
@@ -1144,6 +1146,12 @@ function vShops(){
     rows += '<tr><td class="mono" style="width:74px">'+esc(sh.id)+'</td>'
       + '<td>'+esc(sh.name)+'</td>'
       + '<td class="mono" style="color:var(--ink-3)">'+esc(sh.prefix)+'</td>'
+      + '<td style="width:190px">'
+        + (owner || ROLE==='admin'
+           ? '<input type="text" class="mono" style="font-size:13px" value="'+esc(sh.phone||'')+'" '
+             + 'placeholder="919840000000" onchange="setShopPhone(\''+sh.id+'\',this.value)">'
+           : '<span class="mono" style="color:var(--ink-3)">'+esc(sh.phone||'&mdash;')+'</span>')
+      + '</td>'
       + (owner ? '<td class="c mono" style="width:110px">'+num(comm,2)+'%</td>' : '')
       + '</tr>';
   });
@@ -1169,12 +1177,23 @@ function vShops(){
   return '<h2>Shops</h2><p class="sub">'+esc(CLIENT)+' &middot; '+SHOPS.length+' branches.</p>'
    + add
    + '<div class="card"><h3>Branches</h3><div class="twrap"><table><thead><tr><th>Code</th><th>Shop</th>'
-   + '<th>Bill prefix</th>'+(owner?'<th class="c">Commission</th>':'')
+   + '<th>Bill prefix</th><th>WhatsApp</th>'+(owner?'<th class="c">Commission</th>':'')
    + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>'
    + (owner ? '<div class="note">A shop added here exists for everyone as soon as it syncs. '
             + 'Give its manager a login under <b>Master &rarr; Users</b>, choosing the '
             + 'Shop role and this branch &mdash; they will then see only their own indent, '
             + 'deliveries and bills.</div>' : '');
+}
+
+/* The number the pack list and the bill go to. Kept on the shop rather
+   than the person, because managers change and the shop's number does
+   not. */
+function setShopPhone(id, v){
+  const sh = shopById(id); if(!sh) return;
+  sh.phone = String(v || '').replace(/\s+/g,'');
+  DB.shopPhones = DB.shopPhones || {};
+  DB.shopPhones[id] = sh.phone;
+  save();
 }
 
 function addShop(){
@@ -1656,7 +1675,18 @@ function markOut(shopId){
   const day = dayOf(DATE);
   day.ship[shopId] = 'out';
   save(); render();
-  alert('Out for delivery.\n\nA WhatsApp with the pack list and weights would be sent to the '+shopById(shopId).name+' manager here.');
+  const sh = shopById(shopId);
+  const packed = day.packed[shopId] || {};
+  let t = 'Velora Fresh \u00b7 out for delivery\n'
+        + sh.name + ' \u00b7 ' + fmtDate(DATE) + '\n'
+        + '--------------------\n';
+  Object.keys(packed).forEach(c=>{
+    const q = packed[c]; if(!q) return;              /* skipped on quality */
+    const e = CAT[c]; if(!e) return;
+    t += e.name + '  ' + num(q,2) + ' ' + e.unit + '\n';
+  });
+  t += '--------------------\nPlease check against the crates and confirm.';
+  waSend(sh.phone, t, sh.name + ' manager');
 }
 
 /* ============================================================
@@ -1773,15 +1803,27 @@ function vInvoiceOne(shopId){
    + '<div class="isign"><div>Party\'s Signature</div><div style="text-align:right">For VELORA FRESH<br><br><br>Authorised Signatory</div></div>'
    + '</div>';
 }
+function invoiceText(inv, shop){
+  let t = 'Velora Fresh\n'
+        + 'Invoice ' + inv.no + '\n'
+        + shop.name + ' \u00b7 ' + fmtDate(inv.date) + '\n'
+        + '--------------------\n';
+  inv.lines.forEach(l=>{
+    t += l.name + '  ' + num(l.qty,2) + ' ' + l.unit
+       + '  @ ' + money(l.rate) + '  = ' + money(l.amount) + '\n';
+  });
+  t += '--------------------\n'
+     + 'Total  Rs ' + money(Math.round(inv.total + (inv.roundOff||0))) + '\n';
+  return t;
+}
+
 function waInvoice(shopId){
   const inv = DB.invoices[DATE][shopId];
-  const s = shopById(shopId);
-  alert('WhatsApp template would go to the '+s.name+' owner and manager:\n\n'
-   + 'Velora Fresh — invoice '+inv.no+'\n'
-   + 'Date '+fmtDate(inv.date)+'\n'
-   + inv.lines.length+' items\n'
-   + 'Amount Rs '+money(Math.round(inv.total))+'\n'
-   + '(PDF attached)');
+  const sh = shopById(shopId);
+  const text = invoiceText(inv, sh);
+  /* Shops are people, not vendors, so there is no number on file yet —
+     the clipboard fallback covers it until shop contacts are added. */
+  if(!waSend(sh.phone, text, sh.name + ' manager')) return;
 }
 
 /* amount in words, Indian system */
@@ -1888,13 +1930,81 @@ function vOrders(){
    + '<p class="sub">One order per vendor group, already split shop-wise for packing. '
    + (pend? pend+' still to place.' : 'All placed.')+'</p>' + html;
 }
+/* ============================================================
+   WhatsApp
+   ============================================================
+   A wa.me link, not the Cloud API. It opens WhatsApp with the number
+   and the message already typed; a person presses send. No Meta
+   account, no approved templates, no per-message cost, and it works on
+   a phone and on desktop WhatsApp alike.
+
+   The trade is that it is not automatic. When the order format has
+   settled, the Cloud API can replace waOpen() alone — every caller
+   builds its text the same way and would not need to change.
+   ============================================================ */
+
+/* India is +91. A number saved as 9840000001 has to become 919840000001
+   or wa.me silently opens a chat with nobody. */
+function waNumber(raw){
+  let n = String(raw || '').replace(/[^0-9]/g, '');
+  if(!n) return '';
+  if(n.length === 10) n = '91' + n;              /* bare Indian mobile */
+  else if(n.length === 11 && n.charAt(0) === '0') n = '91' + n.slice(1);
+  else if(n.length === 12 && n.slice(0,2) === '91') { /* already right */ }
+  return n;
+}
+
+function waOpen(number, text){
+  const n = waNumber(number);
+  const url = 'https://wa.me/' + n + '?text=' + encodeURIComponent(text);
+  /* opened in a new tab so a half-finished screen is never lost */
+  const w = window.open(url, '_blank');
+  if(!w) alert('Your browser blocked the WhatsApp window. Allow pop-ups for this site and try again.');
+  return !!w;
+}
+
+/* Falls back to the clipboard when there is no number on file, so the
+   message is never simply lost. */
+function waSend(number, text, who){
+  if(!waNumber(number)){
+    copyText(text);
+    alert('No WhatsApp number saved for ' + who + '.\n\n'
+        + 'The message has been copied — paste it into WhatsApp, and add their '
+        + 'number under Contacts > Vendors so next time it opens directly.');
+    return false;
+  }
+  return waOpen(number, text);
+}
+
+function copyText(t){
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t); return true; }
+  }catch(e){}
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    return true;
+  }catch(e){ return false; }
+}
+
 function markSent(g){ const day=dayOf(DATE); day.sent=day.sent||{}; day.sent[g]=true; save(); render(); }
 function sendOrder(g){
   const gr = groupedRequirement(DATE);
   const v = DB.vendors[g]||{name:g,phone:''};
+  const text = orderText(DATE, g, gr.groups[g]||[], gr.need);
+
+  /* Marked as sent either way: a manual group is placed by phone, and a
+     vendor with no number saved still had its order copied out. */
+  if(v.manual){
+    copyText(text);
+    alert('This vendor is set to order by hand.\n\nThe order has been copied — '
+        + 'read it out or paste it wherever you place it.');
+  }else{
+    waSend(v.phone, text, (v.name || g));
+  }
   markSent(g);
-  alert('WhatsApp to '+(v.name||g)+(v.phone?' ('+v.phone+')':' — no number saved yet')+':\n\n'
-    + orderText(DATE, g, gr.groups[g]||[], gr.need));
 }
 
 /* ============================================================

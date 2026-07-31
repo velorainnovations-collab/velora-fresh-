@@ -16,7 +16,8 @@
     "test:product": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/product.test.js; kill %1",
     "test:route": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/route.test.js; kill %1",
     "test:vendor": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/vendor.test.js; kill %1",
-    "test:signup": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/signup.test.js; kill %1"
+    "test:signup": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/signup.test.js; kill %1",
+    "test:whatsapp": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/whatsapp.test.js; kill %1"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"
