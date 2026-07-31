@@ -49,7 +49,11 @@ create type app_role as enum ('owner','admin','ho','shop');
 -- attached to whoever entered them (docs/ROADMAP.md, "Real logins").
 create table app_users (
   id         uuid primary key,                       -- auth.users.id on Supabase
-  phone      text not null unique,
+  -- Nullable: shop staff sign in by phone, but owner and admin sign in
+  -- with email and password, so a phone would be noise on those rows.
+  -- Unique still holds for the rows that have one — Postgres allows
+  -- many nulls in a unique index.
+  phone      text unique,
   full_name  text not null default '',
   role       app_role not null,
   client_id  text references clients(id) on delete restrict,
@@ -63,7 +67,9 @@ create table app_users (
   created_at timestamptz not null default now(),
 
   constraint shop_role_has_shop check (role <> 'shop' or shop_id is not null),
-  constraint client_roles_have_client check (role in ('owner','admin') or client_id is not null)
+  constraint client_roles_have_client check (role in ('owner','admin') or client_id is not null),
+  -- shop staff sign in by phone, so that row must carry one
+  constraint shop_role_has_phone check (role <> 'shop' or phone is not null)
 );
 create index on app_users (client_id);
 
