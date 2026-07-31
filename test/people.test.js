@@ -84,16 +84,59 @@ function check(label, got, want) {
   check('a password is suggested', suggested.length, 10);
   check('no easily confused characters', /[lIO01]/.test(suggested), false);
 
-  let shown = '';
-  p.once('dialog', async d => { shown = d.message(); await d.accept(); });
   await p.click('button:has-text("Add")');
-  await p.waitForTimeout(900);
+  await p.waitForTimeout(1200);
   const made = received.find(r => r.table === 'fn:create-user');
   check('the edge function was called', !!made, true);
   check('password sent', made && made.rows.password, suggested);
   check('role sent', made && made.rows.role, 'admin');
-  check('owner is shown the credentials', /made@velora.example/.test(shown), true);
-  check('and the password', shown.indexOf(suggested) > -1, true);
+
+  const panel = await p.locator('#main').textContent();
+  check('credentials shown on screen', /Login created for/.test(panel), true);
+  check('the login id is shown', /made@velora.example/.test(panel), true);
+  check('the password is shown', panel.indexOf(suggested) > -1, true);
+  check('a copy button is offered',
+        await p.locator('button:has-text("Copy")').count(), 1);
+  await p.click('button:has-text("Done")');
+  await p.waitForTimeout(400);
+  check('panel clears once done',
+        /Login created for/.test(await p.locator('#main').textContent()), false);
+
+  console.log('\na shop person with no email');
+  received.length = 0;
+  await p.selectOption('#npRole', 'shop');
+  await p.waitForTimeout(200);
+  await p.fill('#npName', 'Kilpauk Evening');
+  await p.fill('#npPhone', '98400 55555');
+  await p.fill('#npEmail', '');
+  await p.selectOption('#npShop', 'KLP');
+  await p.click('button[title="Suggest one"]');
+  const shopPass = await p.inputValue('#npPass');
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(1200);
+  const shopMade = received.find(r => r.table === 'fn:create-user');
+  check('created without an email being typed', !!shopMade, true);
+  check('login id built from the phone',
+        shopMade && shopMade.rows.email, 'klp.9840055555@shop.velorafresh.in');
+  check('the phone is kept too', shopMade && shopMade.rows.phone, '9840055555');
+  check('shop id sent', shopMade && shopMade.rows.shop_id, 'KLP');
+  const shopPanel = await p.locator('#main').textContent();
+  check('credentials shown', /klp.9840055555/.test(shopPanel), true);
+  check('WhatsApp offered, since a phone is on file',
+        await p.locator('button:has-text("Send on WhatsApp")').count(), 1);
+
+  await p.evaluate(() => { window.__opened = null; window.open = u => { window.__opened = u; return {}; }; });
+  await p.click('button:has-text("Send on WhatsApp")');
+  await p.waitForTimeout(300);
+  const waUrl = await p.evaluate(() => window.__opened);
+  check('sent to their number', /wa\.me\/919840055555/.test(waUrl || ''), true);
+  const waText = decodeURIComponent(waUrl || '');
+  check('message carries the login', waText.indexOf('klp.9840055555') > -1, true);
+  check('message carries the password', waText.indexOf(shopPass) > -1, true);
+  await p.click('button:has-text("Done")');
+  await p.waitForTimeout(300);
+  await p.selectOption('#npRole', 'admin');
+  await p.fill('#npPhone', '');
 
   console.log('\na short password never reaches the server');
   received.length = 0;

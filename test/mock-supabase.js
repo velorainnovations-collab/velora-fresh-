@@ -147,6 +147,13 @@ const srv = http.createServer((req, res) => {
   });
 });
 
+// Each suite requires this file, so a leftover instance from a previous
+// run would otherwise crash the next one with EADDRINUSE. If something
+// is already serving on the port, use it rather than failing.
+srv.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') console.log('mock supabase already running on 8123');
+  else throw e;
+});
 srv.listen(8123, () => console.log('mock supabase on 8123'));
 process.on('message', m => { if (m === 'dump') process.send(received); });
 global.__received = received;

@@ -23,6 +23,60 @@
   --sh:0 1px 2px rgba(18,16,14,.05);
   --sh-2:0 2px 4px rgba(18,16,14,.05),0 6px 16px rgba(18,16,14,.06);
 }
+
+/* ---------- dark ----------
+   Only the tokens change; every component reads them, so nothing else
+   needs a dark rule. Two exceptions below: the invoice stays on white
+   because it is printed, and the sign-in gate is already dark.
+   Follows the system unless the owner has chosen, and the choice is
+   remembered per device. */
+:root[data-theme="dark"]{
+  --ink:#f0ece6; --ink-2:#cfc8bf; --ink-3:#a49c92; --ink-4:#7d766d;
+  --line:#332f2b; --line-2:#282522;
+  --bg:#141210; --surface:#1c1917; --surface-2:#232019;
+  --brand:#3fa877; --brand-dark:#2f8a5f; --brand-soft:#1b3229;
+  --blue:#8ab4e8; --blue-soft:#1a2836;
+  --amber:#e0b169; --amber-soft:#332a18;
+  --red:#e58b84; --red-soft:#3a201e;
+  --green:#5cbb8c; --green-soft:#17301f;
+  --sh:0 1px 2px rgba(0,0,0,.5);
+  --sh-2:0 2px 4px rgba(0,0,0,.5),0 6px 16px rgba(0,0,0,.45);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#f0ece6; --ink-2:#cfc8bf; --ink-3:#a49c92; --ink-4:#7d766d;
+    --line:#332f2b; --line-2:#282522;
+    --bg:#141210; --surface:#1c1917; --surface-2:#232019;
+    --brand:#3fa877; --brand-dark:#2f8a5f; --brand-soft:#1b3229;
+    --blue:#8ab4e8; --blue-soft:#1a2836;
+    --amber:#e0b169; --amber-soft:#332a18;
+    --red:#e58b84; --red-soft:#3a201e;
+    --green:#5cbb8c; --green-soft:#17301f;
+    --sh:0 1px 2px rgba(0,0,0,.5);
+    --sh-2:0 2px 4px rgba(0,0,0,.5),0 6px 16px rgba(0,0,0,.45);
+  }
+}
+/* form controls follow the theme rather than the OS default */
+:root[data-theme="dark"], :root[data-theme="light"]{ color-scheme: light dark; }
+:root[data-theme="dark"]{ color-scheme: dark; }
+:root[data-theme="light"]{ color-scheme: light; }
+
+/* A bill is printed on white paper. Dark ink on a dark card would be
+   unreadable on screen and wrong on paper, so the invoice opts out. */
+:root[data-theme="dark"] #inv{ background:#fff; color:#1a1a1a; }
+:root[data-theme="dark"] #inv *{ color:#1a1a1a; }
+:root[data-theme="dark"] table.ibl th{ background:#f4f4f2; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) #inv{ background:#fff; color:#1a1a1a; }
+  :root:not([data-theme="light"]) #inv *{ color:#1a1a1a; }
+  :root:not([data-theme="light"]) table.ibl th{ background:#f4f4f2; }
+}
+
+#themeBtn{background:none;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;
+  cursor:pointer;color:var(--ink-2);display:grid;place-items:center;flex:none;padding:0}
+#themeBtn:hover{background:var(--surface-2)}
+#themeBtn svg{width:16px;height:16px}
+
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -166,6 +220,19 @@ tbody tr.skipped:hover td{background:#f7dedc}
 .note{background:var(--amber-soft);border:1px solid #f0dcb0;border-left:3px solid #d9a441;
   border-radius:var(--r);padding:11px 14px;font-size:13.5px;color:#6d4a08;margin-bottom:15px}
 .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:15px}
+
+/* Add forms. A flex row let the inputs stretch and squeezed the button
+   against the right edge; a grid gives every field the same width and
+   puts the action on its own line, so it reads the same at any size. */
+.addform{display:grid;gap:13px 14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.addform label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 5px}
+.addform .hint{font-weight:400;color:var(--ink-4)}
+.addform .act{grid-column:1/-1;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+  border-top:1px solid var(--line-2);padding-top:13px;margin-top:2px}
+.addform .act .hintline{font-size:12.5px;color:var(--ink-3);margin:0;flex:1 1 240px}
+.addform .chk{display:flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;white-space:nowrap}
+.addform .chk input{width:auto}
+.addform .pair{display:flex;gap:6px}
 .srch{position:relative;max-width:360px;flex:1;min-width:200px}
 .sug{position:absolute;left:0;right:0;top:100%;background:var(--surface);border:1px solid var(--line);
   border-radius:0 0 var(--r) var(--r);max-height:260px;overflow:auto;z-index:30;display:none;box-shadow:var(--sh-2)}
@@ -270,6 +337,7 @@ table.ibl tbody tr:hover td{background:none}
   <label id="anyBox" class="hidden" style="font-size:12.5px;color:#6b6b66;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore the 6–9 pm indent window
   </label>
+  <button id="themeBtn" type="button" onclick="toggleTheme()" aria-label="Light or dark"></button>
   <span id="syncState" class="syncdot hidden"><i></i><span></span></span>
   <button id="signOutBtn" class="btn sm hidden" type="button" onclick="doSignOut()">Sign out</button>
   <span id="clock" class="mono" style="font-size:13px;color:#6b6b66"></span>
@@ -660,6 +728,50 @@ function save(){
   try{ if(typeof VFSync !== 'undefined' && VFSync.enabled()) VFSync.record(DB); }catch(e){}
 }
 load();
+
+/* ============================================================
+   Light or dark
+   ============================================================
+   Runs before the first render so the page never flashes the wrong
+   one. No stored choice means follow the operating system. */
+(function(){
+  try{
+    const saved = localStorage.getItem('VF_THEME');
+    if(saved === 'dark' || saved === 'light')
+      document.documentElement.setAttribute('data-theme', saved);
+  }catch(e){}
+})();
+
+function currentTheme(){
+  const set = document.documentElement.getAttribute('data-theme');
+  if(set) return set;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    ? 'dark' : 'light';
+}
+
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  try{ localStorage.setItem('VF_THEME', t); }catch(e){}
+  paintThemeButton();
+}
+
+function toggleTheme(){ applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); }
+
+function paintThemeButton(){
+  const b = document.getElementById('themeBtn');
+  if(!b) return;
+  const dark = currentTheme() === 'dark';
+  /* shows what you would switch to, not what you are on */
+  b.innerHTML = dark
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+      + 'stroke-linecap="round"><circle cx="12" cy="12" r="4"/>'
+      + '<path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4'
+      + 'M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+      + 'stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  b.title = dark ? 'Switch to light' : 'Switch to dark';
+}
 
 /* ---------- deployment config (inlined by src/build.py) ---------- */
 /* ============================================================
@@ -1894,27 +2006,20 @@ function addProductForm(){
   let uopts = '';
   ['kg','g','piece','bunch','box','tray'].forEach(u=> uopts += '<option value="'+u+'">'+u+'</option>');
 
-  return '<div class="card"><h3>Add a product</h3><div style="padding:14px 16px">'
-   + '<div class="bar" style="margin:0">'
-   + '<div style="flex:0 0 100px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Code</label>'
-   + '<input type="text" id="npCode" placeholder="242"></div>'
-   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Name (English)</label>'
-   + '<input type="text" id="npPName" placeholder="Cauliflower"></div>'
-   + '<div style="flex:1 1 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Tamil</label>'
-   + '<input type="text" id="npTamil" placeholder="காலிஃபிளவர்"></div>'
-   + '<div style="flex:0 0 110px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unit</label>'
-   + '<select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select></div>'
-   + '<div style="flex:0 0 130px" id="npWtWrap" class="hidden">'
-   + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Weight per box (kg)</label>'
+  return '<div class="card"><h3>Add a product</h3><div style="padding:15px 16px">'
+   + '<div class="addform">'
+   + '<div><label>Code</label><input type="text" id="npCode" placeholder="242"></div>'
+   + '<div><label>Name (English)</label><input type="text" id="npPName" placeholder="Cauliflower"></div>'
+   + '<div><label>Tamil</label><input type="text" id="npTamil" placeholder="\u0b95\u0bbe\u0bb2\u0bbf"></div>'
+   + '<div><label>Unit</label><select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select></div>'
+   + '<div id="npWtWrap" class="hidden"><label>Weight per box (kg)</label>'
    + '<input type="number" id="npWt" step="any" min="0" placeholder="20"></div>'
-   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Vendor group</label>'
-   + '<select id="npGroup">'+gopts+'</select></div>'
-   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addProduct()">Add product</button></div>'
-   + '</div>'
-   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
-   + 'A box or tray needs its weight in kg, or the invoice cannot price it and generation is blocked. '
+   + '<div><label>Vendor group</label><select id="npGroup">'+gopts+'</select></div>'
+   + '<div class="act">'
+   + '<button class="btn pri" onclick="addProduct()">Add product</button>'
+   + '<p class="hintline">A box or tray needs its weight in kg, or the invoice cannot price it. '
    + 'kg, piece and bunch are billed as one unit each.</p>'
-   + '</div></div>';
+   + '</div></div></div></div>';
 }
 
 function npUnitChanged(){
@@ -1976,6 +2081,10 @@ function focusProdQ(){
    ============================================================ */
 
 let PEOPLE = null;          /* null = not fetched yet */
+/* Shown once, after a login is created. Kept on screen rather than in an
+   alert so the owner can read it out, copy it, or send it — an alert is
+   gone the moment it is dismissed. */
+let NEWLOGIN = null;
 let PEOPLE_ERR = '';
 let PEOPLE_BUSY = false;
 
@@ -2015,8 +2124,8 @@ function vPeople(){
     const where = u.role === 'shop' ? (shopById(u.shop_id) || {}).name || u.shop_id
                 : u.role === 'ho'   ? esc(CLIENT) : 'Velora';
     rows += '<tr'+(u.active?'':' style="opacity:.5"')+'>'
-      + '<td>'+esc(u.full_name || '&mdash;')+(me?' <span class="pill p-green">you</span>':'')+'</td>'
-      + '<td class="mono" style="color:var(--ink-3)">'+esc(u.phone || '&mdash;')+'</td>'
+      + '<td>'+(u.full_name ? esc(u.full_name) : '&mdash;')+(me?' <span class="pill p-green">you</span>':'')+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+(u.phone ? esc(u.phone) : '&mdash;')+'</td>'
       + '<td>'+roleSelect(u, me)+'</td>'
       + '<td style="color:var(--ink-3)">'+where+'</td>'
       + '<td class="c">'+(u.active?'<span class="pill p-green">Active</span>'
@@ -2028,8 +2137,8 @@ function vPeople(){
 
   let inv = '';
   invites.forEach(i=>{
-    inv += '<tr><td>'+esc(i.full_name || '&mdash;')+'</td>'
-      + '<td class="mono" style="color:var(--ink-3)">'+esc(i.phone || '&mdash;')+'</td>'
+    inv += '<tr><td>'+(i.full_name ? esc(i.full_name) : '&mdash;')+'</td>'
+      + '<td class="mono" style="color:var(--ink-3)">'+(i.phone ? esc(i.phone) : '&mdash;')+'</td>'
       + '<td><span class="pill p-blue">'+esc(ROLE_NAME[i.role] || i.role)+'</span></td>'
       + '<td style="color:var(--ink-3)">'+(i.shop_id ? esc(i.shop_id) : (i.client_id ? esc(i.client_id) : 'Velora'))+'</td>'
       + '<td class="r"><button class="btn sm" onclick="dropInvite(\''+i.id+'\')">Cancel</button></td></tr>';
@@ -2043,37 +2152,31 @@ function vPeople(){
    + users.length+' user'+(users.length===1?'':'s')
    + (invites.length ? ' &middot; '+invites.length+' waiting to sign up' : '')+'.</p>'
    + (PEOPLE_ERR ? '<div class="note">'+esc(PEOPLE_ERR)+'</div>' : '')
+   + newLoginPanel()
 
    /* ---- add ---- */
-   + '<div class="card"><h3>Add a person</h3><div style="padding:14px 16px">'
-   + '<div class="bar" style="margin:0">'
-   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Name</label>'
-   + '<input type="text" id="npName" placeholder="Full name"></div>'
-   + '<div style="flex:1 1 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Phone</label>'
-   + '<input type="text" id="npPhone" placeholder="98400 00000"></div>'
-   + '<div style="flex:1 1 190px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Email</label>'
+   + '<div class="card"><h3>Add a person</h3><div style="padding:15px 16px">'
+   + '<div class="addform">'
+   + '<div><label>Name</label><input type="text" id="npName" placeholder="Full name"></div>'
+   + '<div><label>Phone</label><input type="text" id="npPhone" placeholder="98400 00000"></div>'
+   + '<div><label>Email <span class="hint">(optional for shop staff)</span></label>'
    + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
-   + '<div style="flex:1 1 170px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Password '
-   + '<span style="font-weight:400;color:var(--ink-4)">(you choose it)</span></label>'
-   + '<div style="display:flex;gap:6px"><input type="text" id="npPass" class="mono" placeholder="leave blank to invite">'
-   + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
-   + '<div style="flex:1 1 160px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Role</label>'
-   + '<select id="npRole" onchange="npRoleChanged()">'
+   + '<div><label>Role</label><select id="npRole" onchange="npRoleChanged()">'
    + '<option value="admin">Manager</option>'
    + '<option value="shop">Shop</option>'
    + '<option value="ho">Head office</option>'
    + '<option value="owner">Owner</option></select></div>'
-   + '<div style="flex:1 1 150px" id="npShopWrap" class="hidden">'
-   + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Which shop</label>'
+   + '<div id="npShopWrap" class="hidden"><label>Which shop</label>'
    + '<select id="npShop">'+shopOpts+'</select></div>'
-   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addPerson()"'
-   + (PEOPLE_BUSY?' disabled':'')+'>Add</button></div>'
-   + '</div>'
-   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
-   + 'Type a password and the login is created straight away &mdash; hand it to them and '
-   + 'they can sign in at once. Leave it blank and they are invited instead: nothing exists '
-   + 'until they sign up themselves with that email.</p>'
-   + '</div></div>'
+   + '<div><label>Password <span class="hint">(blank = invite)</span></label>'
+   + '<div class="pair"><input type="text" id="npPass" class="mono" placeholder="leave blank to invite">'
+   + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
+   + '<div class="act">'
+   + '<button class="btn pri" onclick="addPerson()"'+(PEOPLE_BUSY?' disabled':'')+'>Add</button>'
+   + '<p class="hintline">Type a password and the login is created straight away, already confirmed &mdash; '
+   + 'no verification email is sent. Shop staff with no email get a login id made from their phone. '
+   + 'Leave it blank and they are invited instead.</p>'
+   + '</div></div></div></div>'
 
    /* ---- people ---- */
    + '<div class="card"><h3>People</h3><div class="twrap"><table><thead><tr>'
@@ -2096,6 +2199,50 @@ function vPeople(){
    + 'attached to whoever entered them.</div>';
 }
 
+function newLoginPanel(){
+  if(!NEWLOGIN) return '';
+  const n = NEWLOGIN;
+  const msg = 'Velora Fresh \u2014 your login\n\n'
+            + 'Open: ' + location.origin + location.pathname + '\n'
+            + 'Email: ' + n.login + '\n'
+            + 'Password: ' + n.pass + '\n\n'
+            + 'Sign in with these. Keep them safe.';
+  return '<div class="card" style="border-color:#c9e8d3;background:var(--brand-soft)">'
+   + '<h3 style="background:none;border-bottom:1px solid #c9e8d3">Login created for '+esc(n.name)+'</h3>'
+   + '<div style="padding:14px 16px">'
+   + '<p style="margin:0 0 10px;font-size:13px;color:var(--ink-2)">'
+   + 'Shown once. Send it now &mdash; it cannot be read again.</p>'
+   + '<div class="mono" style="background:#fff;border:1px solid #c9e8d3;border-radius:8px;'
+   + 'padding:11px 13px;font-size:13.5px;line-height:1.7">'
+   + 'Email &nbsp;&nbsp;&nbsp;<b>'+esc(n.login)+'</b><br>'
+   + 'Password <b>'+esc(n.pass)+'</b></div>'
+   + '<div class="bar" style="margin:12px 0 0">'
+   + (n.phone
+      ? '<button class="btn pri" onclick="waNewLogin()">Send on WhatsApp</button>'
+      : '<span class="muted" style="font-size:12.5px;color:var(--ink-3)">'
+        + 'No phone saved, so it cannot be sent &mdash; copy it instead.</span>')
+   + '<button class="btn" onclick="copyNewLogin()">Copy</button>'
+   + '<button class="btn" onclick="NEWLOGIN=null;render()">Done</button>'
+   + '</div></div></div>';
+}
+
+function newLoginMessage(){
+  const n = NEWLOGIN; if(!n) return '';
+  return 'Velora Fresh \u2014 your login\n\n'
+       + 'Open: ' + location.origin + location.pathname + '\n'
+       + 'Email: ' + n.login + '\n'
+       + 'Password: ' + n.pass + '\n\n'
+       + 'Sign in with these. Keep them safe.';
+}
+function waNewLogin(){
+  if(!NEWLOGIN) return;
+  waSend(NEWLOGIN.phone, newLoginMessage(), NEWLOGIN.name);
+}
+function copyNewLogin(){
+  copyText(newLoginMessage());
+  alert('Copied. Paste it wherever you like.');
+}
+
 function roleSelect(u, isMe){
   if(isMe) return '<span class="pill p-green">Owner</span>';
   let h = '<select onchange="changeRole(\''+u.id+'\',this.value)" style="width:auto;font-size:13px">';
@@ -2107,6 +2254,17 @@ function roleSelect(u, isMe){
        + ROLE_NAME[r]+'</option>';
   });
   return h + '</select>';
+}
+
+/* Supabase signs people in by email, and phone sign-in needs an SMS
+   provider nobody has set up. Shop staff often have no email at all, so
+   one is derived from their phone. It is a username, not an address:
+   nothing is ever sent to it, and the account is created already
+   confirmed. */
+function loginIdFor(role, phone, shopId){
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  const who = (role === 'shop' && shopId) ? shopId.toLowerCase() : role;
+  return who + '.' + digits + '@shop.velorafresh.in';
 }
 
 function suggestPass(){
@@ -2136,11 +2294,18 @@ function addPerson(){
 
   if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
   if(role === 'shop' && !phone){ alert('A shop login needs a phone number.'); return; }
-  if(pass && !email){ alert('Creating the login needs an email address. Leave the password blank to invite by phone instead.'); return; }
   if(pass && pass.length < 8){ alert('Use a password of at least 8 characters.'); return; }
 
+  /* No email typed but a password given: derive a login id from the
+     phone rather than refusing. Nothing is emailed to it. */
+  let loginId = email;
+  if(pass && !loginId){
+    if(!phone){ alert('Enter a phone number, or an email address.'); return; }
+    loginId = loginIdFor(role, phone, shop);
+  }
+
   const common = {
-    role: role, name: name, phone: phone || null, email: email || null,
+    role: role, name: name, phone: phone || null, email: (email || null),
     clientId: (role === 'shop' || role === 'ho') ? VF_CONFIG.clientId : null,
     shopId:   (role === 'shop') ? shop : null,
   };
@@ -2155,11 +2320,9 @@ function addPerson(){
   PEOPLE_BUSY = true; render();
 
   if(pass){
-    VFSync.createUser(Object.assign({password: pass}, common))
+    VFSync.createUser(Object.assign({}, common, {password: pass, email: loginId}))
       .then(()=>{
-        alert('Login created.\n\n' + email + '\n' + pass
-            + '\n\nHand these over — they can sign in straight away. '
-            + 'This password is not shown again.');
+        NEWLOGIN = {name: name || loginId, login: loginId, pass: pass, phone: phone};
         done();
       })
       .catch(e=>{
@@ -2213,7 +2376,7 @@ function vShops(){
         + (owner || ROLE==='admin'
            ? '<input type="text" class="mono" style="font-size:13px" value="'+esc(sh.phone||'')+'" '
              + 'placeholder="919840000000" onchange="setShopPhone(\''+sh.id+'\',this.value)">'
-           : '<span class="mono" style="color:var(--ink-3)">'+esc(sh.phone||'&mdash;')+'</span>')
+           : '<span class="mono" style="color:var(--ink-3)">'+(sh.phone ? esc(sh.phone) : '&mdash;')+'</span>')
       + '</td>'
       + (owner ? '<td class="c mono" style="width:110px">'+num(comm,2)+'%</td>' : '')
       + '</tr>';
@@ -2221,20 +2384,16 @@ function vShops(){
 
   let add = '';
   if(owner){
-    add = '<div class="card"><h3>Add a shop</h3><div style="padding:14px 16px">'
-      + '<div class="bar" style="margin:0">'
-      + '<div style="flex:0 0 110px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Code</label>'
-      + '<input type="text" id="nsCode" maxlength="4" placeholder="MBK" style="text-transform:uppercase"></div>'
-      + '<div style="flex:1 1 200px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Shop name</label>'
-      + '<input type="text" id="nsName" placeholder="Mambakkam"></div>'
-      + '<div style="flex:0 0 150px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Commission %</label>'
-      + '<input type="number" id="nsComm" step="any" min="0" value="4"></div>'
-      + '<div style="align-self:flex-end"><button class="btn pri" onclick="addShop()">Add shop</button></div>'
-      + '</div>'
-      + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
-      + 'The code goes on every bill for this shop &mdash; 2 to 4 letters, and it cannot be '
-      + 'changed later without reissuing bill numbers. The bill prefix becomes VF/&lt;code&gt;.</p>'
-      + '</div></div>';
+    add = '<div class="card"><h3>Add a shop</h3><div style="padding:15px 16px">'
+      + '<div class="addform">'
+      + '<div><label>Code</label><input type="text" id="nsCode" maxlength="4" placeholder="MBK" style="text-transform:uppercase"></div>'
+      + '<div><label>Shop name</label><input type="text" id="nsName" placeholder="Mambakkam"></div>'
+      + '<div><label>Commission %</label><input type="number" id="nsComm" step="any" min="0" value="4"></div>'
+      + '<div class="act">'
+      + '<button class="btn pri" onclick="addShop()">Add shop</button>'
+      + '<p class="hintline">The code goes on every bill for this shop &mdash; 2 to 4 letters, and it '
+      + 'cannot be changed later without reissuing bill numbers.</p>'
+      + '</div></div></div></div>';
   }
 
   return '<h2>Shops</h2><p class="sub">'+esc(CLIENT)+' &middot; '+SHOPS.length+' branches.</p>'
@@ -3080,7 +3239,7 @@ function vVendors(){
   GROUPNAMES.forEach(g=>{
     const v = DB.vendors[g];
     rows += '<tr><td>'+esc(v.name||g)+'<span class="tam">group: '+esc(g)+'</span></td>'
-      + '<td class="mono">'+esc(v.phone||'&mdash;')+'</td>'
+      + '<td class="mono">'+(v.phone ? esc(v.phone) : '&mdash;')+'</td>'
       + '<td class="c mono">'+(GROUPS[g]||[]).length+'</td>'
       + '<td>'+(v.manual?'<span class="pill p-amber">Manual order</span>':'<span class="pill p-blue">WhatsApp</span>')+'</td>'
       + '<td class="r"><button class="btn sm" onclick="VENDOROPEN=\''+g.replace(/'/g,"\\'")+'\';render()">Edit</button></td></tr>';
@@ -3095,25 +3254,17 @@ function vVendors(){
    into that group from the product list, not here — a vendor is added
    once, products move between vendors often. */
 function addVendorForm(){
-  return '<div class="card"><h3>Add a vendor</h3><div style="padding:14px 16px">'
-   + '<div class="bar" style="margin:0">'
-   + '<div style="flex:1 1 180px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Group name</label>'
-   + '<input type="text" id="nvGroup" placeholder="Ooty"></div>'
-   + '<div style="flex:1 1 180px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Vendor name</label>'
-   + '<input type="text" id="nvName" placeholder="Ooty Vegetables"></div>'
-   + '<div style="flex:1 1 160px"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">WhatsApp number</label>'
-   + '<input type="text" id="nvPhone" placeholder="919342011780"></div>'
-   + '<div style="flex:0 0 auto;align-self:flex-end;padding-bottom:8px">'
-   + '<label style="font-size:13px;display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap">'
-   + '<input type="checkbox" id="nvManual" style="width:auto"> Order by hand</label></div>'
-   + '<div style="align-self:flex-end"><button class="btn pri" onclick="addVendor()">Add vendor</button></div>'
-   + '</div>'
-   + '<p class="sub" style="margin:12px 0 0;font-size:12.5px">'
-   + 'The <b>group name</b> is what the rate screen and the order screen show, so keep it short &mdash; '
-   + 'the vendor name is what appears on their details. Put products into this vendor from '
-   + '<b>Product &rarr; Product list</b>. Tick <b>order by hand</b> if you place their order by phone '
-   + 'rather than WhatsApp.</p>'
-   + '</div></div>';
+  return '<div class="card"><h3>Add a vendor</h3><div style="padding:15px 16px">'
+   + '<div class="addform">'
+   + '<div><label>Group name</label><input type="text" id="nvGroup" placeholder="Ooty"></div>'
+   + '<div><label>Vendor name</label><input type="text" id="nvName" placeholder="Ooty Vegetables"></div>'
+   + '<div><label>WhatsApp number</label><input type="text" id="nvPhone" placeholder="919342011780"></div>'
+   + '<div class="act">'
+   + '<label class="chk"><input type="checkbox" id="nvManual"> Order by hand</label>'
+   + '<button class="btn pri" onclick="addVendor()">Add vendor</button>'
+   + '<p class="hintline">The group name is what the rate and order screens show, so keep it short. '
+   + 'Products are put into this vendor from Product &rarr; Product list.</p>'
+   + '</div></div></div></div>';
 }
 
 function addVendor(){
@@ -3245,7 +3396,7 @@ function vAccounts(){
 
   let payRows='';
   DB.payments.slice().sort((a,b)=>a.date<b.date?1:-1).forEach(p=>{
-    payRows += '<tr><td>'+fmtDate(p.date)+'</td><td>'+esc(p.mode)+'</td><td class="mono">'+esc(p.ref||'&mdash;')+'</td>'
+    payRows += '<tr><td>'+fmtDate(p.date)+'</td><td>'+esc(p.mode)+'</td><td class="mono">'+(p.ref ? esc(p.ref) : '&mdash;')+'</td>'
       + '<td class="r mono">&#8377;'+money(p.amount)+'</td>'
       + (canEdit?'<td class="r"><button class="rm" onclick="delPay(\''+p.id+'\')">&times;</button></td>':'') + '</tr>';
   });
@@ -3366,6 +3517,7 @@ function tick(){
 BOOT_TAB = readHash();
 if(BOOT_TAB) TAB = BOOT_TAB;
 if(!TAB) TAB = tabsFor()[0].id;
+paintThemeButton();
 render();
 tick();
 setInterval(tick, 30000);
