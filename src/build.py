@@ -16,6 +16,7 @@ TEMPLATE = ROOT / "src" / "template.html"
 PRODUCTS = ROOT / "data" / "products.txt"
 GROUPS = ROOT / "data" / "groups.txt"
 SYNC = ROOT / "src" / "sync.js"
+CONFIG = ROOT / "src" / "config.js"
 OUTPUT = ROOT / "index.html"
 
 
@@ -24,6 +25,8 @@ def main() -> int:
     html = html.replace("@@PRODUCTS@@", PRODUCTS.read_text(encoding="utf-8").strip())
     html = html.replace("@@GROUPS@@", GROUPS.read_text(encoding="utf-8").strip())
     # Optional: the app runs unchanged with no sync layer at all.
+    if "@@CONFIG@@" in html:
+        html = html.replace("@@CONFIG@@", CONFIG.read_text(encoding="utf-8"))
     if "@@SYNC@@" in html:
         html = html.replace("@@SYNC@@", SYNC.read_text(encoding="utf-8"))
     if "@@" in html:

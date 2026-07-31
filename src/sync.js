@@ -511,7 +511,31 @@ const VFSync = (function () {
   }
 
   /* ============================================================
-     7. Bill numbers — issued by the database, never locally
+     7. Who is signed in
+     ============================================================
+     The role comes from the database, never from the browser. The
+     read_self policy returns exactly one row — the caller's own — so
+     nobody can ask for somebody else's tag. A signed-in account with
+     no app_users row returns nothing, which is the intended default
+     for an uninvited signup. */
+
+  async function whoami() {
+    if (!enabled() || !signedIn()) return null;
+    const r = await fetch(
+      CFG.url + '/rest/v1/app_users?select=id,full_name,role,client_id,shop_id,active',
+      { headers: headers() });
+    if (r.status === 401 && await refresh()) return whoami();
+    if (!r.ok) throw await httpError(r);
+    const rows = await r.json();
+    const me = rows.filter(u => u.active)[0];
+    if (!me) return null;
+    // the app's own notion of a role: a shop user *is* their shop
+    me.appRole = me.role === 'shop' ? me.shop_id : me.role;
+    return me;
+  }
+
+  /* ============================================================
+     8. Bill numbers — issued by the database, never locally
      ============================================================ */
 
   async function nextBillNo(shopId, date) {
@@ -531,7 +555,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signOut, signedIn, refresh, pull, push, record,
-    nextBillNo, on, queueLength: () => queue.length,
+    whoami, nextBillNo, on, queueLength: () => queue.length,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },

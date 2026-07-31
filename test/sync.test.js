@@ -29,8 +29,18 @@ const S = w.VFSync;
 
 console.log('\nwiring');
 check('sync layer present', typeof S, 'object');
-check('disabled without config', S.enabled(), false);
-check('record is a no-op when disabled', S.record(w.VF.DB), 0);
+
+// The build may or may not carry an anon key. Either is valid; what
+// must hold is that the layer is inert exactly when it is unconfigured,
+// so an unconfigured build never reaches for the network.
+const configured = !!(w.VF_CONFIG && w.VF_CONFIG.anonKey);
+check('enabled tracks the config', S.enabled(), configured);
+if (!configured) {
+  check('record is a no-op when disabled', S.record(w.VF.DB), 0);
+} else {
+  check('gate is present when configured', !!w.document.getElementById('gate'), true);
+  check('signed out until a real sign in', S.signedIn(), false);
+}
 
 /* ---------------- flatten ---------------- */
 console.log('\nflatten');
