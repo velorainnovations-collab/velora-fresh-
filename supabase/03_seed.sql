@@ -41,12 +41,18 @@ insert into product_groups (product_code, group_name) values
   ('280', 'Manual order'),
   ('303', 'Manual order');
 
-insert into vendors (group_name, name, phone) values
-  ('Nellai Traders', 'Nellai Traders', '9840000001'),
-  ('SUK(Tomoto)',    'SUK Traders',    '9840000002');
+-- No phone numbers on purpose. A made-up number here looks real in the
+-- app, and pressing Send opens a WhatsApp chat with nobody — silently.
+-- Enter real ones in the app: Contacts > Vendors > Edit.
+insert into vendors (group_name, name) values
+  ('Nellai Traders', 'Nellai Traders'),
+  ('SUK(Tomoto)',    'SUK Traders');
 
+-- Owner-only access to this table is what the security tests check, so
+-- one row has to exist. The values are obvious nonsense, not a number
+-- anyone could mistake for a real account.
 insert into vendor_bank (group_name, ac_name, ac_no, ifsc, upi) values
-  ('Nellai Traders', 'Nellai Traders', '918273645500', 'HDFC0000123', 'nellai@upi');
+  ('Nellai Traders', 'TEST ONLY', 'TEST-ACCOUNT', 'TEST0000000', 'test@test');
 
 insert into margin_comm (shop_id, pct) values ('KLP', 4), ('NGB', 4);
 insert into margin_selling (shop_id, product_code, pct) values
