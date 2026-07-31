@@ -594,6 +594,27 @@ const VFSync = (function () {
      the person to sign up. Runs in an edge function because it needs the
      service_role key. Throws NOT_DEPLOYED if the function is not there,
      so the caller can fall back to an invite. */
+  /* A new password for someone who forgot theirs. Same function, same
+     owner check — shop staff have no email, so there is no reset link
+     to send them and the owner hands the new one over instead. */
+  async function resetPassword(userId, password) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    let r;
+    try {
+      r = await fetch(CFG.url + '/functions/v1/create-user', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ action: 'reset', user_id: userId, password: password }),
+      });
+    } catch (e) {
+      const err = new Error('NOT_DEPLOYED'); err.notDeployed = true; throw err;
+    }
+    if (r.status === 404) { const e = new Error('NOT_DEPLOYED'); e.notDeployed = true; throw e; }
+    if (r.status === 401 && await refresh()) return resetPassword(userId, password);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || ('Could not reset (' + r.status + ')'));
+    return body;
+  }
+
   async function createUser(o) {
     if (!enabled() || !signedIn()) throw new Error('Not signed in');
     let r;
@@ -728,7 +749,7 @@ const VFSync = (function () {
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
     whoami, nextBillNo, on, queueLength: () => queue.length,
-    listPeople, invitePerson, createUser, setPersonRole, setPersonActive, cancelInvite,
+    listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,

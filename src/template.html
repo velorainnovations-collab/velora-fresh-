@@ -1112,9 +1112,13 @@ function vPeople(){
       + '<td style="color:var(--ink-3)">'+where+'</td>'
       + '<td class="c">'+(u.active?'<span class="pill p-green">Active</span>'
                                   :'<span class="pill p-grey">Off</span>')+'</td>'
-      + '<td class="r">'+(me ? '<span class="muted" style="font-size:12px;color:var(--ink-4)">&mdash;</span>'
-          : '<button class="btn sm" onclick="togglePerson(\''+u.id+'\','+(!u.active)+')">'
-            + (u.active?'Deactivate':'Reactivate')+'</button>')+'</td></tr>';
+      + '<td class="r" style="white-space:nowrap">'
+        + (me ? '<span class="muted" style="font-size:12px;color:var(--ink-4)">&mdash;</span>'
+              : '<button class="btn sm" onclick="resetFor(\''+u.id+'\')" '
+                + 'style="margin-right:6px">Reset password</button>'
+                + '<button class="btn sm" onclick="togglePerson(\''+u.id+'\','+(!u.active)+')">'
+                + (u.active?'Deactivate':'Reactivate')+'</button>')
+      + '</td></tr>';
   });
 
   let inv = '';
@@ -1190,7 +1194,8 @@ function newLoginPanel(){
             + 'Password: ' + n.pass + '\n\n'
             + 'Sign in with these. Keep them safe.';
   return '<div class="card" style="border-color:#c9e8d3;background:var(--brand-soft)">'
-   + '<h3 style="background:none;border-bottom:1px solid #c9e8d3">Login created for '+esc(n.name)+'</h3>'
+   + '<h3 style="background:none;border-bottom:1px solid #c9e8d3">'
++ (n.reset ? 'New password for ' : 'Login created for ')+esc(n.name)+'</h3>'
    + '<div style="padding:14px 16px">'
    + '<p style="margin:0 0 10px;font-size:13px;color:var(--ink-2)">'
    + 'Shown once. Send it now &mdash; it cannot be read again.</p>'
@@ -1210,11 +1215,12 @@ function newLoginPanel(){
 
 function newLoginMessage(){
   const n = NEWLOGIN; if(!n) return '';
-  return 'Velora Fresh \u2014 your login\n\n'
+  return 'Velora Fresh \u2014 ' + (n.reset ? 'new password' : 'your login') + '\n\n'
        + 'Open: ' + location.origin + location.pathname + '\n'
        + 'Email: ' + n.login + '\n'
        + 'Password: ' + n.pass + '\n\n'
-       + 'Sign in with these. Keep them safe.';
+       + (n.reset ? 'Your old password no longer works. Use this one.'
+                  : 'Sign in with these. Keep them safe.');
 }
 function waNewLogin(){
   if(!NEWLOGIN) return;
@@ -1328,6 +1334,41 @@ function changeRole(id, role){
   VFSync.setPersonRole(id, role)
     .then(()=>{ PEOPLE = null; loadPeople(); })
     .catch(e=>{ alert(e.message || e); PEOPLE = null; loadPeople(); });
+}
+
+/* Shop staff have no email, so there is no reset link to send. The owner
+   sets a new password and sends it the same way the first one went. */
+function resetFor(id){
+  const u = (PEOPLE || []).filter(p=>p.id === id)[0];
+  if(!u) return;
+  if(!confirm('Set a new password for ' + (u.full_name || 'this person') + '?\n\n'
+            + 'Their old one stops working straight away.')) return;
+
+  const a = 'abcdefghjkmnpqrstuvwxyz', A = 'ABCDEFGHJKMNPQRSTUVWXYZ', d = '23456789';
+  const pool = a + A + d;
+  const r = new Uint32Array(10);
+  (window.crypto || window.msCrypto).getRandomValues(r);
+  let pass = '';
+  for(let i=0;i<10;i++) pass += pool.charAt(r[i] % pool.length);
+
+  PEOPLE_BUSY = true; render();
+  VFSync.resetPassword(id, pass)
+    .then(res=>{
+      NEWLOGIN = {
+        name: u.full_name || 'this person',
+        login: (res && res.email) || u.phone || '(their usual login)',
+        pass: pass, phone: u.phone, reset: true,
+      };
+      PEOPLE = null; loadPeople();
+    })
+    .catch(e=>{
+      PEOPLE_BUSY = false;
+      alert(e.notDeployed
+        ? 'Resetting needs the create-user function deployed in Supabase. '
+          + 'Until then, change the password from Supabase > Authentication > Users.'
+        : ('Could not reset: ' + (e.message || e)));
+      render();
+    });
 }
 
 function togglePerson(id, active){

@@ -72,6 +72,33 @@ Deno.serve(async (req) => {
     return json({ error: 'Bad request' }, 400)
   }
 
+  // ---------- resetting an existing password ----------
+  // Shop staff have no email, so there is no reset link to send them.
+  // The owner sets a new password and hands it over on WhatsApp, which
+  // is how they got the first one.
+  if (body.action === 'reset') {
+    const userId = String(body.user_id ?? '')
+    const newPassword = String(body.password ?? '')
+    if (!userId) return json({ error: 'Which user?' }, 400)
+    if (newPassword.length < 8) return json({ error: 'Use a password of at least 8 characters' }, 400)
+
+    const upd = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: newPassword, email_confirm: true }),
+    })
+    const updated = await upd.json()
+    if (!upd.ok) {
+      return json({ error: updated.msg ?? updated.message ?? 'Could not reset the password' },
+                   upd.status)
+    }
+    return json({ id: userId, email: updated.email ?? null, reset: true })
+  }
+
   const email = String(body.email ?? '').trim().toLowerCase()
   const password = String(body.password ?? '')
   const fullName = String(body.full_name ?? '').trim()

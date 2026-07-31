@@ -165,6 +165,29 @@ function check(label, got, want) {
   check('shop id sent', inv2 && inv2.rows.p_shop_id, 'MBK');
   check('client id sent', inv2 && inv2.rows.p_client_id, 'KPN');
 
+  console.log('\nresetting a forgotten password');
+  received.length = 0;
+  p.once('dialog', async d => { await d.accept(); });   // confirm
+  await p.click('button:has-text("Reset password")');
+  await p.waitForTimeout(1200);
+  const reset = received.find(r => r.table === 'fn:create-user' && r.rows.action === 'reset');
+  check('reset called', !!reset, true);
+  check('a user id was sent', !!(reset && reset.rows.user_id), true);
+  check('a fresh password was generated',
+        reset && reset.rows.password && reset.rows.password.length, 10);
+  check('no confusable characters', /[lIO01]/.test(reset ? reset.rows.password : 'l'), false);
+  const rPanel = await p.locator('#main').textContent();
+  check('shown as a reset, not a new login', /New password for/.test(rPanel), true);
+  check('the new password is on screen',
+        rPanel.indexOf(reset.rows.password) > -1, true);
+  await p.click('button:has-text("Done")');
+  await p.waitForTimeout(400);
+
+  console.log('\nthe owner cannot reset their own');
+  check('no reset button on your own row',
+        await p.locator('#main tbody tr', { hasText: 'you' })
+               .locator('button:has-text("Reset password")').count(), 0);
+
   console.log('\ndeactivating');
   received.length = 0;
   await p.click('button:has-text("Deactivate")');

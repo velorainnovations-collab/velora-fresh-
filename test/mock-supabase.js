@@ -49,6 +49,14 @@ const srv = http.createServer((req, res) => {
     if (url.pathname === '/functions/v1/create-user') {
       const a = JSON.parse(body || '{}');
       received.push({ table: 'fn:create-user', method: 'POST', rows: a });
+      if (a.action === 'reset') {
+        if (!a.user_id) return send(400, { error: 'Which user?' });
+        if (!a.password || a.password.length < 8)
+          return send(400, { error: 'Use a password of at least 8 characters' });
+        const who = Object.keys(USERS).find(e => USERS[e].uid === a.user_id);
+        if (who) USERS[who].pw = a.password;
+        return send(200, { id: a.user_id, email: who || null, reset: true });
+      }
       if (!a.email) return send(400, { error: 'An email address is required' });
       if (!a.password || a.password.length < 8)
         return send(400, { error: 'Use a password of at least 8 characters' });
