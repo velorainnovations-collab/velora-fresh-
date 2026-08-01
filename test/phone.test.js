@@ -119,6 +119,24 @@ const box = (p, sel) => p.evaluate(s => {
   check('and the first column stays put while it does',
         await p.evaluate(() => getComputedStyle(
           document.querySelector('#main .twrap td:first-child')).position), 'sticky');
+  check('a soft edge says there is more to the right',
+        await p.locator('#main .tscroll.more').count() > 0, true);
+  await p.evaluate(() => {
+    const w = document.querySelector('#main .twrap');
+    w.scrollLeft = w.scrollWidth;
+    w.dispatchEvent(new Event('scroll'));
+  });
+  await p.waitForTimeout(250);
+  check('and it goes at the end of the run',
+        await p.locator('#main .tscroll.more').count(), 0);
+
+  console.log('\na form on a phone stacks its button and the line under it');
+  await p.evaluate(() => go('acct'));
+  await p.waitForTimeout(600);
+  const btn  = await box(p, '#main .addform .act .btn');
+  const hint = await box(p, '#main .addform .act .hintline');
+  check('the button takes the width', btn.w > 250, true);
+  check('the line sits under it, not beside it', hint.top >= btn.bottom - 1, true);
   await ctx.close();
 
   console.log('\non a desk they are back in the bar');

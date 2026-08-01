@@ -20,6 +20,7 @@
   --red:#96241f; --red-soft:#fbeae9;
   --green:#14653f; --green-soft:#e6f4ec;
   --r:9px; --r-lg:13px;
+  --hover:#fcfbf8;
   /* the three measurements the frame is built from: the sidebar's width,
      the gutter the screen is written in, and the header's height. The
      header lines up with them rather than being spaced by eye — the
@@ -45,6 +46,7 @@
   --amber:#e0b169; --amber-soft:#332a18;
   --red:#e58b84; --red-soft:#3a201e;
   --green:#5cbb8c; --green-soft:#17301f;
+  --hover:#232019;
   --sh:0 1px 2px rgba(0,0,0,.5);
   --sh-2:0 2px 4px rgba(0,0,0,.5),0 6px 16px rgba(0,0,0,.45);
 }
@@ -58,6 +60,7 @@
     --amber:#e0b169; --amber-soft:#332a18;
     --red:#e58b84; --red-soft:#3a201e;
     --green:#5cbb8c; --green-soft:#17301f;
+    --hover:#232019;
     --sh:0 1px 2px rgba(0,0,0,.5);
     --sh-2:0 2px 4px rgba(0,0,0,.5),0 6px 16px rgba(0,0,0,.45);
   }
@@ -203,11 +206,23 @@ input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0
 
 /* ---------- table ---------- */
 .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:0 0 var(--r-lg) var(--r-lg)}
+/* the soft edge that says there is more to the right — see wrapTables */
+.tscroll{position:relative}
+.tscroll.more::after{content:'';position:absolute;top:0;bottom:0;right:0;width:24px;
+  pointer-events:none;border-radius:0 0 var(--r-lg) 0;
+  background:linear-gradient(to right,rgba(0,0,0,0),var(--surface))}
 table{width:100%;border-collapse:collapse}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-4);text-align:left;
   padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);font-weight:650;white-space:nowrap}
 td{padding:9px 12px;border-bottom:1px solid var(--line-2);font-size:14px;vertical-align:middle}
-tbody tr:hover td{background:#fcfbf8}
+/* Only where there is a pointer to hover with. On a phone the highlight
+   used to latch onto the last row touched and stay there, and it was a
+   light colour with no dark counterpart, so in dark mode that row went
+   white — white text on white. */
+@media (hover:hover){
+  tbody tr:hover td{background:var(--hover)}
+  tbody tr:hover td:first-child{background:var(--hover)}
+}
 tr:last-child td{border-bottom:none}
 .r{text-align:right}.c{text-align:center}
 .tam{font-size:11.5px;color:var(--ink-4);display:block;margin-top:1px}
@@ -216,7 +231,7 @@ tr:last-child td{border-bottom:none}
 .vgrp td{border-bottom:1px solid #d3e6dc}
 tbody tr.vgrp:hover td{background:var(--brand-soft)}
 .skipped td{background:var(--red-soft);color:var(--red)}
-tbody tr.skipped:hover td{background:#f7dedc}
+tbody tr.skipped:hover td{background:var(--red-soft)}
 .row-inp{width:86px;text-align:center;padding:6px 6px;font-variant-numeric:tabular-nums}
 
 /* ---------- pills ---------- */
@@ -388,6 +403,12 @@ table.ibl tbody tr:hover td{background:none}
 
   /* the search box and whatever sits beside it get a line each */
   .srch{max-width:none;width:100%;flex:1 1 100%}
+
+  /* the button and the line explaining it were sharing a row and the
+     sentence wrapped around the button; one under the other reads */
+  .addform .act{flex-direction:column;align-items:stretch;gap:10px}
+  .addform .act .btn{width:100%}
+  .addform .act .hintline{flex:1 1 auto}
 
   #inv{padding:16px 14px}
   .iband{flex-direction:column}
@@ -1979,6 +2000,25 @@ function wrapTables(root){
     p.insertBefore(w, t);
     w.appendChild(t);
   }
+  /* A table wider than the screen looked cut off rather than
+     scrollable, which is the same thing as broken to whoever is holding
+     the phone. Anything that can still be scrolled to the right is
+     given a soft edge, and the edge goes away at the end of the run. */
+  const wraps = root.querySelectorAll('.twrap');
+  for(let i = 0; i < wraps.length; i++){
+    const w = wraps[i];
+    let outer = w.parentNode;
+    if(!outer || (outer.className || '').indexOf('tscroll') < 0){
+      outer = document.createElement('div');
+      outer.className = 'tscroll';
+      w.parentNode.insertBefore(outer, w);
+      outer.appendChild(w);
+    }
+    const mark = () => outer.classList.toggle('more',
+      w.scrollWidth - w.clientWidth - w.scrollLeft > 2);
+    w.onscroll = mark;
+    mark();
+  }
 }
 
 function render(){
@@ -2919,14 +2959,19 @@ function vAccounts(){
    + '<tbody>'+shopRows+'</tbody></table></div>'
    + '<div class="card"><h3>Bills this week</h3><table><thead><tr><th>Bill no</th><th>Date</th><th>Shop</th><th class="r">Amount</th><th>Status</th></tr></thead>'
    + '<tbody>'+(billRows||'<tr><td colspan="5" class="empty">No bills raised in this week.</td></tr>')+'</tbody></table></div>'
-   + (canEdit ? '<div class="card noprint"><h3>Record a payment</h3><div style="padding:12px 14px">'
-       + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
-       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Date</div><input type="date" id="pDate" value="'+DATE+'"></div>'
-       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Amount</div><input type="number" id="pAmt" min="0" step="any" placeholder="0.00"></div>'
-       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Mode</div><select id="pMode"><option>NEFT</option><option>RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div>'
-       + '<div><div class="lb" style="font-size:12px;color:#7a7a74;margin-bottom:4px">Reference</div><input type="text" id="pRef" placeholder="UTR / cheque no"></div>'
-       + '</div><div style="margin-top:11px"><button class="btn pri" onclick="addPay()">Record payment</button>'
-       + '<span class="sub" style="margin:0 0 0 12px">Applied to the oldest unpaid bill first.</span></div></div></div>' : '')
+   /* the same form furniture as every other screen, rather than inline
+      styles of its own: labels that follow the theme, boxes that line
+      up, and a button that takes the width on a phone instead of having
+      the sentence beside it wrap around it */
+   + (canEdit ? '<div class="card noprint"><h3>Record a payment</h3><div style="padding:15px 16px">'
+       + '<div class="addform">'
+       + '<div><label>Date</label><input type="date" id="pDate" value="'+DATE+'"></div>'
+       + '<div><label>Amount</label><input type="number" id="pAmt" min="0" step="any" placeholder="0.00"></div>'
+       + '<div><label>Mode</label><select id="pMode"><option>NEFT</option><option>RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div>'
+       + '<div><label>Reference</label><input type="text" id="pRef" placeholder="UTR / cheque no"></div>'
+       + '<div class="act"><button class="btn pri" onclick="addPay()">Record payment</button>'
+       + '<p class="hintline">Applied to the oldest unpaid bill first.</p></div>'
+       + '</div></div></div>' : '')
    + '<div class="card"><h3>Payments received</h3><table><thead><tr><th>Date</th><th>Mode</th><th>Reference</th><th class="r">Amount</th>'
    + (canEdit?'<th></th>':'')+'</tr></thead>'
    + '<tbody>'+(payRows||'<tr><td colspan="'+(canEdit?5:4)+'" class="empty">Nothing received yet.</td></tr>')+'</tbody></table></div>';

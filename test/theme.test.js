@@ -49,6 +49,18 @@ const check=(l,g,w)=>{const ok=String(g)===String(w);
     await p.evaluate(()=>getComputedStyle(document.querySelector('#main h2')).color), 'rgb(240, 236, 230)');
   await p.screenshot({path:'/tmp/velora-shots/dark.png', clip:{x:0,y:0,width:1440,height:600}});
 
+  console.log('\na row under the pointer stays readable');
+  /* the highlight was a light colour with no dark counterpart, so in
+     dark mode the row went white — and its text is white too */
+  await p.evaluate(()=>go('people')); await p.waitForTimeout(700);
+  await p.locator('#main tbody tr').first().hover();
+  await p.waitForTimeout(200);
+  const hov = await p.evaluate(()=>getComputedStyle(
+    document.querySelector('#main tbody tr td')).backgroundColor);
+  const lum = (hov.match(/\d+/g) || []).slice(0,3).reduce((a,n)=>a+ +n, 0);
+  check('the hovered row is dark, not white', lum < 240, true);
+  check('it did change though', hov !== 'rgba(0, 0, 0, 0)', true);
+
   console.log('\nremembered');
   await p.reload({waitUntil:'networkidle'}); await p.waitForTimeout(1200);
   check('still dark after a refresh',
