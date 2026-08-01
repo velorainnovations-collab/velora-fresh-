@@ -113,19 +113,25 @@ header select,header input[type=date]{width:auto;max-width:100%;min-width:0;back
 #whoami{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);min-width:0}
 #whoami b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 
-/* the same controls once the drawer has them, stacked and full width */
-#sideTop{padding:13px 16px 15px;border-bottom:1px solid var(--line);
-  display:flex;flex-direction:column;align-items:stretch;gap:11px}
+/* the same controls once the drawer has them. The drawer is a column:
+   who you are at the top, the menu in the middle taking the scroll, the
+   way out held at the bottom. */
+#side{display:flex;flex-direction:column}
+#sideNav{flex:1 1 auto;overflow-y:auto}
+#sideTop{padding:12px 16px 13px;border-bottom:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:flex-start;gap:9px;flex:none}
 #sideTop>*{margin:0}
-#sideTop select,#sideTop input[type=date],#sideTop .btn,#sideTop #themeBtn{width:100%;height:36px}
-#sideTop #whoami{font-size:13.5px}
-#sideTop #whoami b{max-width:none}
-/* room for words here, unlike the bar it came from */
-#sideTop #themeBtn{display:flex;align-items:center;justify-content:center;gap:8px;
-  font:inherit;font-size:13.5px;color:var(--ink-2)}
-#sideTop #themeBtn::after{content:'Light or dark'}
-#sideTop #clock{font-size:12px;color:var(--ink-4)}
-#sideTop label{font-size:12.5px}
+/* the day sits beside the name, always on the one line: min-width:0 lets
+   a long name give way rather than push the date under it */
+#sideWho{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;width:100%}
+#sideWho #whoami{font-size:13.5px;flex:1 1 auto;min-width:0}
+#sideWho #whoami b{max-width:none}
+#sideWho select,#sideWho input[type=date]{width:auto;flex:0 0 auto;height:32px;
+  font-size:12.5px;padding:5px 7px}
+#sideFoot{border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;align-items:stretch;gap:8px;flex:none;background:var(--surface)}
+#sideFoot .btn{width:100%;height:38px}
+#sideFoot #clock{font-size:11.5px;color:var(--ink-4);text-align:center}
 
 /* ---------- nav ---------- */
 /* ---------- sidebar ---------- */
@@ -343,7 +349,7 @@ table.ibl tbody tr:hover td{background:none}
   /* no sidebar to line up with once it becomes a drawer */
   .brand{font-size:15px;flex:0 1 auto;margin-right:0;min-width:0}
   .brand>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #side{width:min(84vw,300px)}
+  #side{width:min(88vw,332px)}
   header select,header input[type=date]{font-size:13px;padding:6px 8px}
   #burger{display:grid}
   #side{transform:translateX(-100%);box-shadow:var(--sh-2)}
@@ -355,7 +361,34 @@ table.ibl tbody tr:hover td{background:none}
   .kpi .vl{font-size:20px}
   .grid{grid-template-columns:1fr}
   .card{border-radius:var(--r)}
-  th,td{padding:8px 10px}
+
+  /* ---- tables on a phone ----
+     A four column list — shop, lines, status, the button — was running
+     a few pixels past the edge, so the button on the right was cut off
+     and looked broken rather than scrollable. Everything in a row is
+     tightened here so those lists fit the screen outright. The genuinely
+     wide ones, packing and rates, still scroll sideways, and for those
+     the first column is pinned so you can always see which product a
+     figure belongs to. */
+  th,td{padding:7px 7px}
+  td{font-size:13px}
+  th{font-size:10px;letter-spacing:.04em;padding-top:8px;padding-bottom:8px}
+  /* light or dark is the phone's own setting, and the bar is for the
+     menu and the name of the business */
+  #themeBtn{display:none}
+  .pill{font-size:10.5px;padding:2px 8px}
+  td .btn,td .btn.sm{padding:5px 9px;font-size:12px}
+  .tam{font-size:10.5px}
+  .row-inp{width:64px;padding:5px 4px}
+  .twrap table td:first-child,.twrap table th:first-child{position:sticky;left:0;z-index:1}
+  .twrap table td:first-child{background:var(--surface)}
+  .twrap table th:first-child{background:var(--surface-2)}
+  .vgrp td:first-child{background:var(--brand-soft)}
+  .skipped td:first-child{background:var(--red-soft)}
+
+  /* the search box and whatever sits beside it get a line each */
+  .srch{max-width:none;width:100%;flex:1 1 100%}
+
   #inv{padding:16px 14px}
   .iband{flex-direction:column}
   .iband .lft{border-right:none;border-bottom:1px solid #1a1a1a}
@@ -365,6 +398,8 @@ table.ibl tbody tr:hover td{background:none}
 /* ---------- print ---------- */
 @media print{
   body{background:#fff}
+  /* nothing scrolls on paper: a wrapper must not clip a wide table */
+  .twrap{overflow:visible}
   header,nav,.noprint{display:none!important}
   main{padding:0;max-width:none}
   #inv{border:none;border-radius:0;padding:0;box-shadow:none}
@@ -394,7 +429,11 @@ table.ibl tbody tr:hover td{background:none}
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
      itself is redrawn on every render and must not take them with it -->
-<aside id="side"><div id="sideTop" class="hidden"></div><div id="sideNav"></div></aside>
+<!-- sideTop and sideFoot hold whatever the header hands over on a phone;
+     the menu between them is redrawn on every render and must not take
+     them with it -->
+<aside id="side"><div id="sideTop" class="hidden"><div id="sideWho"></div></div><div id="sideNav"></div>
+  <div id="sideFoot" class="hidden"></div></aside>
 <div id="scrim" onclick="toggleSide(false)"></div>
 <main id="main"></main>
 
@@ -3037,22 +3076,40 @@ function toggleGrp(name){
 const PHONE = window.matchMedia ? window.matchMedia('(max-width:720px)') : null;
 function onPhone(){ return PHONE ? PHONE.matches : (window.innerWidth <= 720); }
 const HEADER_ORDER = Array.prototype.slice.call(document.querySelector('header').children);
-const HEADER_MOVES = ['whoami','roleSel','dateSel','anyBox','themeBtn','syncState','signOutBtn','clock'];
+/* who you are and the day you are working on belong together at the top;
+   the way out belongs at the bottom, under the menu, where it cannot be
+   pressed by accident. Light or dark stays in the header on a desk and
+   is left out of the drawer — the phone follows its own setting. */
+const SIDE_WHO  = ['whoami','roleSel','dateSel'];   /* one line, together */
+const SIDE_TOP  = ['anyBox','syncState'];
+const SIDE_FOOT = ['signOutBtn','clock'];
 
 function placeHeaderControls(){
-  const top = document.getElementById('sideTop');
+  const top  = document.getElementById('sideTop');
+  const who  = document.getElementById('sideWho');
+  const foot = document.getElementById('sideFoot');
   const head = document.querySelector('header');
   if(onPhone()){
-    HEADER_MOVES.forEach(id=>{
+    SIDE_WHO.forEach(id=>{
+      const el = document.getElementById(id);
+      if(el && el.parentNode !== who) who.appendChild(el);
+    });
+    SIDE_TOP.forEach(id=>{
       const el = document.getElementById(id);
       if(el && el.parentNode !== top) top.appendChild(el);
     });
+    SIDE_FOOT.forEach(id=>{
+      const el = document.getElementById(id);
+      if(el && el.parentNode !== foot) foot.appendChild(el);
+    });
     top.classList.remove('hidden');
+    foot.classList.remove('hidden');
   }else{
     /* appendChild moves rather than copies, so walking the original list
        puts every one of them back in the order it was written in */
     HEADER_ORDER.forEach(el=> head.appendChild(el));
     top.classList.add('hidden');
+    foot.classList.add('hidden');
   }
 }
 if(PHONE && PHONE.addEventListener) PHONE.addEventListener('change', placeHeaderControls);
@@ -3064,6 +3121,24 @@ function toggleSide(force){
   const open = force===undefined ? !side.classList.contains('open') : force;
   side.classList.toggle('open', open);
   sc.classList.toggle('on', open);
+}
+
+/* Every table gets something that can scroll around it.
+   Most screens wrote their own, but sixteen did not, and on a phone one
+   of those — packing, which is nine columns wide — pushed the whole
+   page sideways instead of scrolling inside its card: the right hand
+   column looked cut off rather than reachable. Done here rather than at
+   sixteen call sites, so a table added later is covered too. */
+function wrapTables(root){
+  const tables = root.querySelectorAll('table');
+  for(let i = 0; i < tables.length; i++){
+    const t = tables[i], p = t.parentNode;
+    if(!p || (p.className || '').indexOf('twrap') > -1) continue;
+    const w = document.createElement('div');
+    w.className = 'twrap';
+    p.insertBefore(w, t);
+    w.appendChild(t);
+  }
 }
 
 function render(){
@@ -3100,6 +3175,7 @@ function render(){
     people:vPeople
   }[TAB];
   m.innerHTML = fn ? fn() : '';
+  wrapTables(m);
   /* the add-person form paints itself for whatever role is selected */
   if(TAB === 'people' && document.getElementById('npRole')) npRoleChanged();
   if(afterRender){ const f = afterRender; afterRender = null; f(); }

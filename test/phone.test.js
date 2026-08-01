@@ -62,18 +62,28 @@ const box = (p, sel) => p.evaluate(s => {
   check('nor the sign out button',    await p.locator('header > #signOutBtn').count(), 0);
 
   console.log('\nthe drawer has them instead');
-  check('all eight moved', await p.locator('#sideTop > *').count(), 8);
+  check('light or dark is not in the bar on a phone',
+        await p.locator('#themeBtn').isVisible(), false);
   const side = await box(p, '#side');
   check('the drawer starts exactly under the header', Math.round(side.top), Math.round(head.bottom));
 
   await p.evaluate(() => toggleSide(true));
   await p.waitForTimeout(350);
-  check('who is signed in, in the drawer', await p.locator('#sideTop #whoami').isVisible(), true);
-  check('the date too',      await p.locator('#sideTop #dateSel').isVisible(), true);
-  check('and the way out',   await p.locator('#sideTop #signOutBtn').isVisible(), true);
-  const dt = await box(p, '#sideTop #dateSel');
-  const so = await box(p, '#sideTop #signOutBtn');
-  check('they are one width', Math.round(dt.w), Math.round(so.w));
+  check('who is signed in, at the top', await p.locator('#sideWho #whoami').isVisible(), true);
+  check('the date beside it',           await p.locator('#sideWho #dateSel').isVisible(), true);
+  const nm = await box(p, '#sideWho #whoami');
+  const dt = await box(p, '#sideWho #dateSel');
+  const mid = r => Math.round((r.top + r.bottom) / 2);
+  check('on the one line, not stacked', mid(nm), mid(dt));
+  check('the date is to the right of the name', dt.left > nm.left, true);
+  check('the indent window switch under them',
+        await p.locator('#sideTop #anyBox').isVisible(), true);
+
+  console.log('\nand the way out is at the bottom');
+  const so = await box(p, '#sideFoot #signOutBtn');
+  const menu = await box(p, '#sideNav');
+  check('sign out is below the whole menu', so.top >= menu.bottom - 1, true);
+  check('the clock is with it', await p.locator('#sideFoot #clock').isVisible(), true);
 
   console.log('\nnothing in the menu is hidden behind the header');
   const first = await box(p, '#sideNav .grp:first-child button');
@@ -81,24 +91,41 @@ const box = (p, sel) => p.evaluate(s => {
   check('and it really is the first screen',
         (await p.locator('#sideNav .grp:first-child button').textContent()).trim(), 'Day board');
 
-  console.log('\nthe page itself');
+  console.log('\nno screen runs off the side of the phone');
+  /* every screen, not a sample: one table without something to scroll
+     it took the whole page with it, and that is what a shop sees */
+  await p.evaluate(() => toggleSide(false));
+  const SCREENS = ['board','indents','rates','pack','ship','inv','orders','vendors',
+                   'acct','master','products','shops','people'];
+  for (const t of SCREENS) {
+    await p.evaluate(s => go(s), t);
+    await p.waitForTimeout(320);
+    const r = await p.evaluate(() => ({
+      over: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      loose: Array.prototype.slice.call(document.querySelectorAll('#main table'))
+               .filter(el => !(el.parentNode.className || '').match(/twrap/)).length,
+    }));
+    check(t + ' fits the width', r.over <= 1, true);
+    check(t + ' has every table inside something that scrolls', r.loose, 0);
+  }
+
   await p.evaluate(() => go('products'));
-  await p.waitForTimeout(600);
-  const doc = await p.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    client: document.documentElement.clientWidth,
-  }));
-  check('the page does not scroll sideways', doc.scroll <= doc.client + 1, true);
-  check('a wide table scrolls inside its own card',
+  await p.waitForTimeout(500);
+  check('a wide table scrolls inside its own card instead',
         await p.evaluate(() => {
           const w = document.querySelector('#main .twrap');
           return !!w && w.scrollWidth > w.clientWidth;
         }), true);
+  check('and the first column stays put while it does',
+        await p.evaluate(() => getComputedStyle(
+          document.querySelector('#main .twrap td:first-child')).position), 'sticky');
   await ctx.close();
 
   console.log('\non a desk they are back in the bar');
   ({ ctx, p } = await signedIn(b, DESK));
-  check('nothing was left in the drawer', await p.locator('#sideTop > *').count(), 0);
+  check('nothing was left in the drawer',
+        await p.locator('#sideWho > *, #sideTop > #anyBox, #sideFoot > *').count(), 0);
+  check('light or dark is back',    await p.locator('header > #themeBtn').isVisible(), true);
   check('the date is in the bar',    await p.locator('header > #dateSel').count(), 1);
   check('the sign out button too',   await p.locator('header > #signOutBtn').count(), 1);
   check('and in the order they were written',
@@ -109,10 +136,12 @@ const box = (p, sel) => p.evaluate(s => {
   console.log('\nand they follow the width as it changes');
   await p.setViewportSize(PHONE);
   await p.waitForTimeout(400);
-  check('narrowed: the drawer takes them', await p.locator('#sideTop > *').count(), 8);
+  check('narrowed: the drawer takes them',
+        await p.locator('#sideWho > #dateSel, #sideFoot > #signOutBtn').count(), 2);
   await p.setViewportSize(DESK);
   await p.waitForTimeout(400);
-  check('widened: the bar takes them back', await p.locator('#sideTop > *').count(), 0);
+  check('widened: the bar takes them back',
+        await p.locator('#sideWho > *, #sideFoot > *').count(), 0);
   check('the screen still works',
         await p.evaluate(() => { go('rates'); return TAB; }), 'rates');
   await ctx.close();
