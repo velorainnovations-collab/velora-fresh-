@@ -92,8 +92,17 @@ A `null` role means that sign-in has no row, and the fix is to give it one:
 
 ```sql
 insert into app_users (id, full_name, role)
-select id, 'Your name', 'owner' from auth.users where email = 'you@example.com'
+select id, '<< type your own name here >>', 'owner'
+from auth.users where email = 'you@example.com'
 on conflict (id) do update set role = 'owner', active = true;
+```
+
+Both quoted bits are yours to replace. Pasted as they stand, the name is what
+the Users list will show for you from then on. To correct one afterwards:
+
+```sql
+update app_users set full_name = 'Real Name'
+where id = (select id from auth.users where email = 'you@example.com');
 ```
 
 Rows in `app_users` whose id matches nothing in `auth.users` are leftovers from

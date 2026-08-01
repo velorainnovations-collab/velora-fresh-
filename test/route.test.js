@@ -89,6 +89,66 @@ async function ctxFor(b) {
   // rather than walking a long trail — check the app did not break
   check('still on vendors', await p.evaluate(() => TAB), 'vendors');
 
+  console.log('\nthe menu keeps one group open');
+  const openNames = () => p.locator('#side .grp.open>button').allTextContents();
+  await p.evaluate(() => go('rates'));
+  await p.waitForTimeout(300);
+  let open = await openNames();
+  check('the screen you are on opens its group', open.length, 1);
+  check('and it is the right one', /Purchase/.test(open[0]), true);
+
+  await p.locator('#side .grp>button', { hasText: 'Delivery' }).click();
+  await p.waitForTimeout(300);
+  open = await openNames();
+  check('opening another closes the first', open.length, 1);
+  check('the new one is open', /Delivery/.test(open[0]), true);
+  check('the screen did not move', await p.evaluate(() => TAB), 'rates');
+
+  await p.locator('#side .grp>button', { hasText: 'Delivery' }).click();
+  await p.waitForTimeout(300);
+  check('a second press closes it again', (await openNames()).length, 0);
+
+  await p.evaluate(() => go('orders'));
+  await p.waitForTimeout(300);
+  open = await openNames();
+  check('going somewhere opens that group', open.length, 1);
+  check('and only that one', /Purchase/.test(open[0]), true);
+
+  console.log('\nrefreshing does not flash the day board first');
+  /* whoami is held back on purpose: the gap it opens is the one the
+     screen used to fill with the first tab this role can reach. */
+  const slow = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  await slow.route('**://*.supabase.co/**', async route => {
+    const req = route.request(); const u = new URL(req.url());
+    if (/app_users/.test(u.pathname)) await new Promise(r => setTimeout(r, 1200));
+    const r = await fetch('http://127.0.0.1:8123' + u.pathname + u.search, {
+      method: req.method(), headers: req.headers(),
+      body: ['GET', 'HEAD'].includes(req.method()) ? undefined : req.postData(),
+    });
+    await route.fulfill({ status: r.status, headers: { 'content-type': 'application/json' },
+                          body: await r.text() });
+  });
+  const ps = await slow.newPage();
+  await ps.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+  await ps.evaluate(() => setGateWho('admin'));
+  await ps.fill('#gateEmail', 'owner@velora.example');
+  await ps.fill('#gatePass', 'right');
+  await ps.click('#gateBtn');
+  await ps.waitForTimeout(2200);
+  await ps.evaluate(() => go('rates'));
+  await ps.waitForTimeout(300);
+
+  await ps.reload({ waitUntil: 'domcontentloaded' });
+  await ps.waitForTimeout(500);           // whoami still in flight
+  const mid = await ps.locator('#main').textContent();
+  check('held while the session is checked', /Opening your screen/.test(mid), true);
+  check('the day board is not shown on the way', /Day board/.test(mid), false);
+  await ps.waitForTimeout(2000);
+  check('lands on the screen it was left on', await ps.evaluate(() => TAB), 'rates');
+  check('and really drew it', /Market rate|Rates/i.test(
+        await ps.locator('#main h2').textContent()), true);
+  await slow.close();
+
   console.log('\na url the role may not have');
   await ctx.close();
   const ctx2 = await ctxFor(b);

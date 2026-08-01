@@ -157,9 +157,10 @@ async function fresh(b, url) {
   await p.waitForTimeout(700);
 
   received.length = 0;
+  await p.selectOption('#npRole', 'admin');
+  await p.waitForTimeout(200);
   await p.fill('#npName', 'New Manager');
   await p.fill('#npEmail', 'newmgr@velora.example');
-  await p.selectOption('#npRole', 'admin');
   await p.fill('#npPass', '');
   await p.click('button:has-text("Add")');
   await p.waitForTimeout(1100);

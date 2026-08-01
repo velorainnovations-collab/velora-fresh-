@@ -66,11 +66,25 @@ function check(label, got, want) {
     await p.locator('#main .pill.p-green', { hasText: 'you' }).count(), 1);
   await p.screenshot({ path: dir + 'people.png', fullPage: true });
 
+  console.log('\nthe form waits for the role');
+  check('only the role is asked at first',
+        await p.locator('#npName').isVisible(), false);
+  check('and no email box either',  await p.locator('#npEmail').isVisible(), false);
+  check('nothing to press yet',     await p.locator('#npAddBtn').isVisible(), false);
+  check('says what to do',
+        /Choose the role first/.test(await p.locator('#npHint').textContent()), true);
+  await p.selectOption('#npRole', 'admin');
+  await p.waitForTimeout(200);
+  check('the rest arrives once answered',
+        await p.locator('#npName').isVisible(), true);
+  check('and the button with it', await p.locator('#npAddBtn').isVisible(), true);
+  check('the role itself is marked required',
+        await p.locator('#npRole').locator('xpath=../label/b[@class="req"]').count(), 1);
+
   console.log('\nadding a person');
   received.length = 0;
   await p.fill('#npName', 'Test Friend');
   await p.fill('#npPhone', '9876543210');
-  await p.selectOption('#npRole', 'admin');
   await p.click('button:has-text("Add")');
   await p.waitForTimeout(900);
   const inv = received.find(r => r.table === 'rpc:invite_person');
@@ -82,9 +96,10 @@ function check(label, got, want) {
 
   console.log('\ncreating a login with a password');
   received.length = 0;
+  await p.selectOption('#npRole', 'admin');
+  await p.waitForTimeout(200);
   await p.fill('#npName', 'Made Manager');
   await p.fill('#npEmail', 'made@velora.example');
-  await p.selectOption('#npRole', 'admin');
   await p.click('button[title="Suggest one"]');
   const suggested = await p.inputValue('#npPass');
   check('a password is suggested', suggested.length, 10);
@@ -150,6 +165,7 @@ function check(label, got, want) {
   await p.click('button:has-text("Done")');
   await p.waitForTimeout(300);
   await p.selectOption('#npRole', 'admin');
+  await p.waitForTimeout(200);
   await p.fill('#npPhone', '');
 
   console.log('\na short password never reaches the server');
@@ -164,6 +180,17 @@ function check(label, got, want) {
   check('refused locally', /at least 8/.test(refused), true);
   check('nothing sent', received.filter(r => r.table === 'fn:create-user').length, 0);
   await p.fill('#npPass', '');
+
+  console.log('\nand nobody is added without a name');
+  received.length = 0;
+  refused = '';
+  p.once('dialog', async d => { refused = d.message(); await d.accept(); });
+  await p.fill('#npName', '');
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(500);
+  check('asked for the name', /name/i.test(refused), true);
+  check('nothing sent', received.length, 0);
+  await p.fill('#npEmail', '');
 
   console.log('\nshop role requires a shop');
   await p.selectOption('#npRole', 'shop');

@@ -20,6 +20,12 @@
   --red:#96241f; --red-soft:#fbeae9;
   --green:#14653f; --green-soft:#e6f4ec;
   --r:9px; --r-lg:13px;
+  /* the three measurements the frame is built from: the sidebar's width,
+     the gutter the screen is written in, and the header's height. The
+     header lines up with them rather than being spaced by eye — the
+     brand ends where the sidebar ends, and what follows it starts where
+     the writing on the screen starts. */
+  --side:236px; --pad:24px; --hdr:53px;
   --sh:0 1px 2px rgba(18,16,14,.05);
   --sh-2:0 2px 4px rgba(18,16,14,.05),0 6px 16px rgba(18,16,14,.06);
 }
@@ -84,13 +90,20 @@ body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
 .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 
 /* ---------- header ---------- */
-header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px 20px;
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:var(--sh)}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:9px var(--pad);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:var(--sh);
+  min-height:var(--hdr);box-sizing:border-box}
+/* one height for everything in the bar, so the row is a straight line
+   and the header is exactly --hdr tall for the sidebar to hang off */
+header select,header input[type=date],header .btn,#themeBtn{height:34px}
 #burger{background:none;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;
   cursor:pointer;font-size:15px;color:var(--ink-2);display:none;place-items:center;flex:none}
 #burger:hover{background:var(--surface-2)}
+/* the brand fills the sidebar's column exactly; the margin plus the
+   header's own gap put whatever comes next on the screen's left edge */
 .brand{font-size:16px;font-weight:650;letter-spacing:-.2px;line-height:1.15;
-  display:flex;align-items:center;gap:9px;padding-right:4px}
+  display:flex;align-items:center;gap:9px;
+  flex:0 0 calc(var(--side) - var(--pad));margin-right:calc(var(--pad) - 12px)}
 .brand .mk{width:31px;height:31px;border-radius:8px;flex:none;display:grid;place-items:center;
   background:linear-gradient(145deg,#2f9163,var(--brand));color:#fff;font-size:15px;font-weight:700}
 .brand small{display:block;font-size:9.5px;font-weight:500;color:var(--ink-4);
@@ -102,7 +115,7 @@ header select,header input[type=date]{width:auto;max-width:100%;min-width:0;back
 
 /* ---------- nav ---------- */
 /* ---------- sidebar ---------- */
-#side{position:fixed;top:52px;left:0;bottom:0;width:236px;background:var(--surface);
+#side{position:fixed;top:var(--hdr);left:0;bottom:0;width:var(--side);background:var(--surface);
   border-right:1px solid var(--line);overflow-y:auto;z-index:18;padding:8px 0 24px;
   transition:transform .22s ease}
 #side::-webkit-scrollbar{width:6px}
@@ -135,7 +148,7 @@ header select,header input[type=date]{width:auto;max-width:100%;min-width:0;back
 /* ---------- page ---------- */
 /* Fill whatever is left of the window. A max-width here left a wide
    screen half empty, and the tables are the point of every screen. */
-main{padding:22px 24px 72px;margin-left:236px}
+main{padding:22px var(--pad) 72px;margin-left:var(--side)}
 h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
 .sub{color:var(--ink-3);font-size:13px;margin:0 0 18px}
 
@@ -227,8 +240,15 @@ tbody tr.skipped:hover td{background:#f7dedc}
 /* Add forms. A flex row let the inputs stretch and squeezed the button
    against the right edge; a grid gives every field the same width and
    puts the action on its own line, so it reads the same at any size. */
-.addform{display:grid;gap:13px 14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+/* end, not stretch: a label that wraps to two lines used to push its own
+   box a line lower than the rest of the row. Sitting them on a common
+   bottom edge keeps every box level whatever the labels do. */
+.addform{display:grid;gap:13px 14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  align-items:end}
 .addform label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 5px}
+.addform .req{color:var(--red);font-weight:700}
+/* the suggest button beside the password must not shorten the box */
+.addform .pair input{flex:1 1 auto;min-width:0}
 .addform .hint{font-weight:400;color:var(--ink-4)}
 .addform .act{grid-column:1/-1;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
   border-top:1px solid var(--line-2);padding-top:13px;margin-top:2px}
@@ -294,8 +314,8 @@ table.ibl tbody tr:hover td{background:none}
 
 /* ---------- tablet ---------- */
 @media (max-width:1080px) and (min-width:721px){
-  #side{width:196px}
-  main{margin-left:196px;padding:20px 18px 64px}
+  :root{--side:196px; --pad:18px}
+  main{padding-top:20px;padding-bottom:64px}
   .grp>button{padding:10px 13px;font-size:13.5px}
   .kids button{padding-left:40px;font-size:13px}
 }
@@ -303,7 +323,8 @@ table.ibl tbody tr:hover td{background:none}
 /* ---------- mobile ---------- */
 @media (max-width:720px){
   header{padding:8px 13px;gap:9px;row-gap:7px}
-  .brand{font-size:15px}
+  /* no sidebar to line up with once it becomes a drawer */
+  .brand{font-size:15px;flex:0 1 auto;margin-right:0}
   header select,header input[type=date]{font-size:13px;padding:6px 8px}
   #burger{display:grid}
   #side{transform:translateX(-100%);box-shadow:var(--sh-2)}
@@ -809,11 +830,14 @@ async function afterSignIn(known){
   const me = known || await VFSync.whoami();
   if(!me){
     VFSync.signOut();
+    BOOTING = false;
     showGate('Your account works, but the owner has not given it access yet. Ask them to add this email under Master > Users.');
+    render();
     return;
   }
   ME = me;
   ROLE = me.appRole;
+  BOOTING = false;   /* the role is known: the right screen can be drawn */
   /* now that the role is known, honour what the url asked for */
   if(BOOT_TAB && tabsFor().filter(t=>t.id===BOOT_TAB).length) TAB = BOOT_TAB;
   BOOT_TAB = null;
@@ -856,6 +880,13 @@ function syncBadge(state, detail){
   else if(state === 'error'){ el.classList.add('bad'); label.textContent = 'Sync problem'; }
 }
 
+/* True from the moment the page opens with a session already stored,
+   until whoami() has answered. The screen is held blank for that
+   moment: the role is not known yet, so the first render would paint
+   the dashboard — a tab every role can reach — and then jump to where
+   you actually were as soon as the answer came back. */
+let BOOTING = false;
+
 if(typeof VFSync !== 'undefined' && VFSync.enabled()){
   VFSync.on(syncBadge);
 
@@ -872,7 +903,12 @@ if(typeof VFSync !== 'undefined' && VFSync.enabled()){
         'Welcome to Velora Fresh. Choose the password you will sign in with.';
     }
   }else if(VFSync.signedIn()){
-    afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
+    BOOTING = true;
+    afterSignIn().catch(() => {
+      BOOTING = false;
+      showGate('Could not reach the server. Sign in again.');
+      render();
+    });
   }else{
     showGate('');
     setGateWho('');
@@ -967,6 +1003,10 @@ function setDate(d){ DATE = d; writeHash(); render(); }
    at" usually means a particular day. */
 function go(t, keepHash){
   TAB = t;
+  /* the menu follows where you went, so a screen reached from anywhere
+     else — a link, a button, the address bar — shows under its group */
+  const holds = grpHolding(t);
+  if(holds) OPENGRP = holds;
   toggleSide(false);
   if(!keepHash) writeHash();
   render();
@@ -1350,26 +1390,33 @@ function vPeople(){
    /* ---- add ---- */
    + '<div class="card"><h3>Add a person</h3><div style="padding:15px 16px">'
    + '<div class="addform">'
-   + '<div><label>Name</label><input type="text" id="npName" placeholder="Full name"></div>'
-   + '<div><label>Phone</label><input type="text" id="npPhone" placeholder="98400 00000"></div>'
-   /* Role comes second, because everything after it depends on the
-      answer: a shop has no email and must have a shop and a password,
-      and everyone else is the other way round. npRoleChanged() does the
-      showing and hiding. */
-   + '<div><label>Role</label><select id="npRole" onchange="npRoleChanged()">'
+   /* Role is asked first and alone, because every other box depends on
+      the answer: a shop has no email and must have a shop, a phone and
+      a password, and everyone else is the other way round. Asking for a
+      name and then taking the email box away under it read as a
+      glitch. npRoleChanged() does the showing and hiding. */
+   + '<div><label>Role <b class="req">*</b></label><select id="npRole" onchange="npRoleChanged()">'
+   + '<option value="">Select</option>'
    + '<option value="admin">Manager</option>'
    + '<option value="shop">Shop</option>'
    + '<option value="ho">Head office</option>'
    + '<option value="owner">Owner</option></select></div>'
-   + '<div id="npShopWrap" class="hidden"><label>Which shop</label>'
+   + '<div id="npNameWrap" class="hidden"><label>Name <b class="req">*</b></label>'
+   + '<input type="text" id="npName" placeholder="Full name"></div>'
+   + '<div id="npPhoneWrap" class="hidden"><label>Phone <b class="req hidden" id="npPhoneReq">*</b></label>'
+   + '<input type="text" id="npPhone" placeholder="98400 00000"></div>'
+   + '<div id="npShopWrap" class="hidden"><label>Which shop <b class="req">*</b></label>'
    + '<select id="npShop">'+shopOpts+'</select></div>'
-   + '<div id="npEmailWrap"><label>Email</label>'
+   + '<div id="npEmailWrap" class="hidden"><label>Email</label>'
    + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
-   + '<div><label>Password <span class="hint" id="npPassHint">(blank = email them a link)</span></label>'
+   + '<div id="npPassWrap" class="hidden"><label>Password <b class="req hidden" id="npPassReq">*</b></label>'
    + '<div class="pair"><input type="text" id="npPass" class="mono" placeholder="leave blank to email a link">'
    + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
+   /* the row itself stays, so the line telling them to pick a role has
+      somewhere to sit; only the button waits for the answer */
    + '<div class="act">'
-   + '<button class="btn pri" onclick="addPerson()"'+(PEOPLE_BUSY?' disabled':'')+'>Add</button>'
+   + '<button class="btn pri hidden" id="npAddBtn" onclick="addPerson()"'
+   + (PEOPLE_BUSY?' disabled':'')+'>Add</button>'
    + '<p class="hintline" id="npHint"></p>'
    + '</div></div></div></div>'
 
@@ -1491,14 +1538,29 @@ function suggestPass(){
    follows who is signing in. A shop cannot be emailed anything, so the
    email box is not there to be filled in by mistake. */
 function npRoleChanged(){
-  const shop = document.getElementById('npRole').value === 'shop';
-  document.getElementById('npShopWrap').className  = shop ? '' : 'hidden';
-  document.getElementById('npEmailWrap').className = shop ? 'hidden' : '';
-  document.getElementById('npPassHint').textContent =
-    shop ? '(required)' : '(blank = email them a link)';
+  const role   = document.getElementById('npRole').value;
+  const chosen = !!role;
+  const shop   = role === 'shop';
+  const set = (id, yes, cls) => {
+    const el = document.getElementById(id);
+    if(el) el.className = yes ? (cls || '') : ((cls ? cls + ' ' : '') + 'hidden');
+  };
+  set('npNameWrap',  chosen);
+  set('npPhoneWrap', chosen);
+  set('npShopWrap',  chosen && shop);
+  set('npEmailWrap', chosen && !shop);
+  set('npPassWrap',  chosen);
+  set('npAddBtn',    chosen, 'btn pri');
+  /* starred only where it is genuinely refused without: a shop signs in
+     with its phone and password, an office login can be recorded as an
+     invite against either an email or a phone */
+  set('npPhoneReq', shop, 'req');
+  set('npPassReq',  shop, 'req');
   document.getElementById('npPass').placeholder =
     shop ? 'set one and send it' : 'leave blank to email a link';
-  document.getElementById('npHint').innerHTML = shop
+  document.getElementById('npHint').innerHTML = !chosen
+    ? 'Choose the role first &mdash; what is asked for next depends on it.'
+    : shop
     ? 'They sign in with the three things you type here &mdash; <b>name</b>, <b>phone</b> '
       + 'and <b>password</b>. Nothing is emailed; the panel that appears next sends them '
       + 'on WhatsApp. Use the name exactly as you want them to type it.'
@@ -1518,11 +1580,16 @@ function addPerson(){
 
   const pass = document.getElementById('npPass').value.trim();
 
+  if(!role){ alert('Choose the role first.'); return; }
+  /* a nameless row is unreadable in the list afterwards, and for a shop
+     the name is one of the three things they type to get in */
+  if(!name){
+    alert(role === 'shop' ? 'A shop login needs a name — they sign in with it.'
+                          : 'Enter the person’s name.');
+    return;
+  }
   if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
   if(role === 'shop' && !phone){ alert('A shop login needs a phone number.'); return; }
-  /* the name is one of the three things a shop types to get in, so it
-     cannot be left out and it has to be the name they will be told */
-  if(role === 'shop' && !name){ alert('A shop login needs a name — they sign in with it.'); return; }
   if(pass && pass.length < 8){ alert('Use a password of at least 8 characters.'); return; }
 
   /* No email typed but a password given: derive a login id from the
@@ -1739,21 +1806,26 @@ function addShop(){
 
 
 
+/* which group a screen sits under, '' for the ones that stand alone */
+function grpHolding(t){
+  const g = menuFor().filter(g=>!g.id && (g.kids||[]).some(k=>k.id===t))[0];
+  return g ? g.t : '';
+}
+
 function drawSide(){
   const groups = menuFor();
-  /* open the group holding the current screen */
-  groups.forEach(g=>{
-    if((g.kids||[]).some(k=>k.id===TAB)) OPENGRP = OPENGRP===null ? g.t : OPENGRP;
-  });
+  /* first draw of the day: open the group holding the current screen */
+  if(OPENGRP === null) OPENGRP = grpHolding(TAB);
   let h = '';
   groups.forEach(g=>{
-    const holds = (g.kids||[]).some(k=>k.id===TAB);
     if(g.id){
       h += '<div class="grp solo"><button class="'+(TAB===g.id?'on':'')+'" onclick="go(\''+g.id+'\')">'
          + icon(g.ic)+g.t+'</button></div>';
       return;
     }
-    const open = (OPENGRP===g.t) || holds;
+    /* only the one: opening Delivery shuts Purchase, even while a
+       Purchase screen is the one on show */
+    const open = (OPENGRP===g.t);
     h += '<div class="grp'+(open?' open':'')+'">'
        + '<button onclick="toggleGrp(\''+g.t.replace(/'/g,"\\'")+'\')">'
        + icon(g.ic)+g.t+'<span class="cv">&#9654;</span></button>'
@@ -1778,6 +1850,12 @@ function toggleSide(force){
 }
 
 function render(){
+  /* held while the session is being checked — see BOOTING */
+  if(BOOTING){
+    document.getElementById('main').innerHTML =
+      '<div class="card"><div class="empty">Opening your screen&hellip;</div></div>';
+    return;
+  }
   const rs = document.getElementById('roleSel');
   if(!rs.options.length){
     let h = '<option value="owner">Owner — Velora Fresh</option><option value="admin">Admin — Velora Fresh</option>'
