@@ -6,6 +6,17 @@ const USERS = {
   'owner@velora.example':   { pw: 'right', uid: 'aaaa0000-0000-0000-0000-00000000000a',
                               row: { id: 'aaaa0000-0000-0000-0000-00000000000a', full_name: 'Velora Owner',
                                      role: 'owner', client_id: null, shop_id: null, active: true } },
+  // a shop login as the app makes one: id derived from the phone, and the
+  // name on the row is the third thing they have to type
+  'p9000000004@shop.velorafresh.in':
+                            { pw: 'shoppass1', uid: 'dddd0000-0000-0000-0000-00000000000d',
+                              row: { id: 'dddd0000-0000-0000-0000-00000000000d', full_name: 'Kilpauk Mgr',
+                                     role: 'shop', client_id: 'KPN', shop_id: 'KLP', active: true } },
+  // and one made under the older shape, which must still open
+  'ngb.9000000005@shop.velorafresh.in':
+                            { pw: 'oldshape1', uid: 'eeee0000-0000-0000-0000-00000000000e',
+                              row: { id: 'eeee0000-0000-0000-0000-00000000000e', full_name: 'Nungambakkam Mgr',
+                                     role: 'shop', client_id: 'KPN', shop_id: 'NGB', active: true } },
   'shop@velora.example':    { pw: 'right', uid: 'dddd0000-0000-0000-0000-00000000000d',
                               row: { id: 'dddd0000-0000-0000-0000-00000000000d', full_name: 'Kilpauk Mgr',
                                      role: 'shop', client_id: 'KPN', shop_id: 'KLP', active: true } },

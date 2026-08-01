@@ -34,6 +34,12 @@ function check(label, got, want) {
                           body: await r.text() });
   });
   await p.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+  /* Everyone below signs in with an email, and the gate opens on the
+     Shop tab. Pick Office first, as a person at a desk would. Skipped on
+     the reset-password screen, which has no tabs. */
+  await p.evaluate(() => {
+    if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('office');
+  });
   await p.fill('#gateEmail', 'owner@velora.example');
   await p.fill('#gatePass', 'right');
   await p.click('#gateBtn');

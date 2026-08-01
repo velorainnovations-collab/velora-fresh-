@@ -38,6 +38,12 @@ async function ctxFor(b) {
   p.on('pageerror', e => console.log('PAGEERROR:', e.message));
 
   await p.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+  /* Everyone below signs in with an email, and the gate opens on the
+     Shop tab. Pick Office first, as a person at a desk would. Skipped on
+     the reset-password screen, which has no tabs. */
+  await p.evaluate(() => {
+    if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('office');
+  });
   await p.fill('#gateEmail', 'owner@velora.example');
   await p.fill('#gatePass', 'right');
   await p.click('#gateBtn');
@@ -88,6 +94,7 @@ async function ctxFor(b) {
   const ctx2 = await ctxFor(b);
   const p2 = await ctx2.newPage();
   await p2.goto('http://127.0.0.1:8092/index.html#master', { waitUntil: 'networkidle' });
+  await p2.evaluate(() => setGateWho('office'));
   await p2.fill('#gateEmail', 'shop@velora.example');
   await p2.fill('#gatePass', 'right');
   await p2.click('#gateBtn');

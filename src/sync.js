@@ -324,6 +324,33 @@ const VFSync = (function () {
     return j;
   }
 
+  /* Shop staff sign in with a phone number, not an address. The login id
+     is built from the phone the same way it was built when the account
+     was created, so nothing has to be looked up first — which matters,
+     because nothing can be looked up before signing in.
+
+     Older accounts carry the shop code or the role in front of the
+     digits. Those shapes are tried in turn if the plain one is refused,
+     so a login made last week still opens. */
+  function shopLoginIds(phone, shopIds) {
+    const d = String(phone || '').replace(/[^0-9]/g, '');
+    const at = '@shop.velorafresh.in';
+    const ids = ['p' + d + at];
+    (shopIds || []).forEach(s => ids.push(String(s).toLowerCase() + '.' + d + at));
+    ['shop', 'admin', 'ho', 'owner'].forEach(r => ids.push(r + '.' + d + at));
+    return ids;
+  }
+
+  async function signInShop(phone, password, shopIds) {
+    const ids = shopLoginIds(phone, shopIds);
+    for (let i = 0; i < ids.length; i++) {
+      try { return await signIn(ids[i], password); }
+      catch (e) { /* wrong shape or wrong password — try the next shape */ }
+    }
+    throw new Error('That phone number and password do not match. '
+                  + 'Check them, or ask the office to reset your password.');
+  }
+
   /* Creating the account. Safe to leave open: an account with no
      invite gets no app_users row, and every policy then resolves to
      false — it can sign in and see nothing at all. The invite, not the
@@ -841,6 +868,7 @@ const VFSync = (function () {
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
+    signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     addShop, addProduct, addVendorGroup, fetchCatalogue,

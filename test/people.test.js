@@ -38,6 +38,12 @@ function check(label, got, want) {
                             body: await r.text() });
     });
     await p.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+    /* Everyone below signs in with an email, and the gate opens on the
+       Shop tab. Pick Office first, as a person at a desk would. Skipped on
+       the reset-password screen, which has no tabs. */
+    await p.evaluate(() => {
+      if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('office');
+    });
     await p.fill('#gateEmail', email);
     await p.fill('#gatePass', 'right');
     await p.click('#gateBtn');
@@ -116,12 +122,17 @@ function check(label, got, want) {
   await p.waitForTimeout(1200);
   const shopMade = received.find(r => r.table === 'fn:create-user');
   check('created without an email being typed', !!shopMade, true);
-  check('login id built from the phone',
-        shopMade && shopMade.rows.email, 'klp.9840055555@shop.velorafresh.in');
+  check('login id built from the phone alone, so the gate can rebuild it',
+        shopMade && shopMade.rows.email, 'p9840055555@shop.velorafresh.in');
   check('the phone is kept too', shopMade && shopMade.rows.phone, '9840055555');
   check('shop id sent', shopMade && shopMade.rows.shop_id, 'KLP');
   const shopPanel = await p.locator('#main').textContent();
-  check('credentials shown', /klp.9840055555/.test(shopPanel), true);
+  /* the derived id is never shown to a shop — they type name, phone and
+     password, so those are what the panel hands over */
+  check('the three things they will type are shown',
+        /Kilpauk Evening/.test(shopPanel) && /9840055555/.test(shopPanel), true);
+  check('the derived id is not put in front of them',
+        /shop\.velorafresh\.in/.test(shopPanel), false);
   check('WhatsApp offered, since a phone is on file',
         await p.locator('button:has-text("Send on WhatsApp")').count(), 1);
 
@@ -131,7 +142,9 @@ function check(label, got, want) {
   const waUrl = await p.evaluate(() => window.__opened);
   check('sent to their number', /wa\.me\/919840055555/.test(waUrl || ''), true);
   const waText = decodeURIComponent(waUrl || '');
-  check('message carries the login', waText.indexOf('klp.9840055555') > -1, true);
+  check('message tells them which tab', waText.indexOf('Shop') > -1, true);
+  check('message carries the name',  waText.indexOf('Kilpauk Evening') > -1, true);
+  check('message carries the phone', waText.indexOf('9840055555') > -1, true);
   check('message carries the password', waText.indexOf(shopPass) > -1, true);
   await p.click('button:has-text("Done")');
   await p.waitForTimeout(300);

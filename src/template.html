@@ -274,6 +274,16 @@ table.ibl tbody tr:hover td{background:none}
 #gate h1{font-size:19px;margin:0;letter-spacing:-.3px}
 #gate .co{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4);margin:0}
 #gate p.hint{font-size:13px;color:var(--ink-3);margin:14px 0 16px}
+/* Shop or office. Two buttons rather than a dropdown: on a shop phone in
+   a hurry this is one tap, and it says outright that there are two ways
+   in rather than hiding one of them. */
+#gate .whotabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:4px}
+#gate .whotabs button{border:0;background:none;border-radius:7px;padding:8px 6px;
+  font:600 13px inherit;color:var(--ink-3);cursor:pointer}
+#gate .whotabs button.on{background:var(--surface);color:var(--brand);
+  box-shadow:0 1px 3px rgba(0,0,0,.14)}
+#gate .whotabs.hidden{display:none}
 #gate label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 4px}
 #gate .f{margin-bottom:12px}
 #gate .err{background:var(--red-soft);border:1px solid #f2d3d1;color:var(--red);
@@ -354,9 +364,18 @@ table.ibl tbody tr:hover td{background:none}
     <div class="bd"><span class="mk">VF</span>
       <div><h1>Velora Fresh</h1><p class="co">Velora Innovations Pvt Ltd</p></div>
     </div>
+    <div class="whotabs" id="gateWho">
+      <button type="button" id="whoShop"   onclick="setGateWho('shop')">Shop</button>
+      <button type="button" id="whoOffice" onclick="setGateWho('office')">Office</button>
+    </div>
     <p class="hint" id="gateHint">Sign in to the supply desk.</p>
     <div id="gateErr"></div>
-    <div class="f"><label for="gateEmail">Email</label>
+    <div class="f hidden" id="gateNameWrap"><label for="gateName">Your name</label>
+      <input id="gateName" type="text" autocomplete="name" placeholder="As the office saved it"></div>
+    <div class="f hidden" id="gatePhoneWrap"><label for="gatePhone">Phone number</label>
+      <input id="gatePhone" type="tel" inputmode="numeric" autocomplete="tel"
+             class="mono" placeholder="98400 00000"></div>
+    <div class="f" id="gateEmailWrap"><label for="gateEmail">Email</label>
       <!-- not marked required: on the reset-link screen this box is hidden,
            and a hidden required box blocks the browser from submitting at
            all. The checks in doSignIn cover every mode instead. -->
@@ -590,23 +609,51 @@ function gateBtnLabel(){
   return (GATE_TEXT[GATE_MODE] || GATE_TEXT.in).btn;
 }
 
+/* Shop or office. A shop signs in with the three things the office gave
+   them — name, phone, password — and has no email at all, so none of the
+   email screens apply. Remembered, because the same phone at a shop is
+   used by the same people every evening. */
+let GATE_WHO = 'shop';
+
+function setGateWho(w){
+  GATE_WHO = (w === 'office') ? 'office' : 'shop';
+  try{ localStorage.setItem('VF_GATE_WHO', GATE_WHO); }catch(e){}
+  document.getElementById('whoShop').className   = GATE_WHO === 'shop'   ? 'on' : '';
+  document.getElementById('whoOffice').className = GATE_WHO === 'office' ? 'on' : '';
+  setGateMode('in');
+}
+
+function show(id, yes){
+  document.getElementById(id).className = yes ? 'f' : 'f hidden';
+}
+
 function setGateMode(m){
   GATE_MODE = m;
+  const shop = (GATE_WHO === 'shop' && m !== 'set');
   const t = GATE_TEXT[m] || GATE_TEXT.in;
-  document.getElementById('gateHint').textContent = t.hint;
+  document.getElementById('gateHint').textContent =
+    shop ? 'Your name, phone number and password.' : t.hint;
   document.getElementById('gateBtn').textContent = gateBtnLabel();
 
   const showPass = (m === 'in' || m === 'up' || m === 'set');
-  const showCode = (m === 'code' && CODE_SENT_TO);
-  document.getElementById('gatePassWrap').className = showPass ? 'f' : 'f hidden';
-  document.getElementById('gateCodeWrap').className = showCode ? 'f' : 'f hidden';
-  document.getElementById('gateEmail').parentNode.className =
-    (m === 'set') ? 'f hidden' : 'f';
+  const showCode = (m === 'code' && CODE_SENT_TO && !shop);
+  show('gateNameWrap',  shop);
+  show('gatePhoneWrap', shop);
+  show('gateEmailWrap', !shop && m !== 'set');
+  show('gatePassWrap',  showPass);
+  show('gateCodeWrap',  showCode);
+  document.getElementById('gateWho').className = (m === 'set') ? 'whotabs hidden' : 'whotabs';
   document.getElementById('gatePass').setAttribute('autocomplete',
     (m === 'up' || m === 'set') ? 'new-password' : 'current-password');
 
   const links = document.getElementById('gateLinks');
   if(m === 'set'){ links.innerHTML = ''; }
+  else if(shop){
+    /* no code, no reset link: there is no address to send either to.
+       The office resets it and sends the new one on WhatsApp. */
+    links.innerHTML = '<span style="opacity:.8">Forgotten it? Ask the office to reset it '
+      + 'and send you a new one on WhatsApp.</span>';
+  }
   else if(m === 'in'){
     links.innerHTML = '<a href="#" id="gateCodeLink" onclick="setGateMode(\'code\');return false">Email me a code instead</a>'
       + ' &middot; <a href="#" id="gateForgot" onclick="setGateMode(\'forgot\');return false">Forgot password</a>'
@@ -629,13 +676,53 @@ function gateNote(html){
   document.getElementById('gateErr').innerHTML = '<div class="notice">' + html + '</div>';
 }
 
+/* Two people can share a phone at a shop, and the office writes the name
+   down its own way. Compared on the letters alone: case, spaces, dots and
+   initials are not what anyone is trying to check here. */
+function sameName(a, b){
+  const tidy = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return tidy(a) !== '' && tidy(a) === tidy(b);
+}
+
+async function shopSignIn(name, phone, pass){
+  /* the phone finds the account, the password opens it, and the name has
+     to match the one the office saved against it */
+  await VFSync.signInShop(phone, pass, SHOPS.map(s => s.id));
+  const me = await VFSync.whoami();
+  if(!me){
+    VFSync.signOut();
+    showGate('That login works, but the office has not given it a shop yet. Ask them to check it.');
+    return;
+  }
+  if(!sameName(name, me.full_name)){
+    VFSync.signOut();
+    showGate('That name does not match the one saved for this phone number. '
+           + 'Ask the office which name they entered for you.');
+    return;
+  }
+  await afterSignIn(me);
+}
+
 async function doSignIn(ev){
   ev.preventDefault();
   const btn   = document.getElementById('gateBtn');
   const email = document.getElementById('gateEmail').value.trim();
   const pass  = document.getElementById('gatePass').value;
   const code  = document.getElementById('gateCode').value.trim();
+  const name  = document.getElementById('gateName').value.trim();
+  const phone = document.getElementById('gatePhone').value.replace(/[^0-9]/g, '');
   const mode  = GATE_MODE;
+
+  if(GATE_WHO === 'shop' && mode !== 'set'){
+    if(!name)              { showGate('Enter your name.'); return; }
+    if(phone.length < 10)  { showGate('Enter the ten digit phone number the office saved.'); return; }
+    if(!pass)              { showGate('Enter your password.'); return; }
+    btn.disabled = true; btn.textContent = 'Please wait...';
+    try{ await shopSignIn(name, phone, pass); }
+    catch(e){ showGate(e.message || 'That did not work'); }
+    finally{ btn.disabled = false; btn.textContent = gateBtnLabel(); }
+    return;
+  }
 
   if(mode !== 'set' && !email){ showGate('Enter your email address.'); return; }
   if((mode === 'up' || mode === 'set') && pass.length < 8){
@@ -668,7 +755,9 @@ async function doSignIn(ev){
       CODE_SENT_TO = '';
     }else if(mode === 'set'){
       await VFSync.setOwnPassword(pass);
-      setGateMode('in');
+      /* they followed an emailed link, so they are office side whatever
+         the tab was set to before */
+      setGateWho('office');
       gateNote('Password saved. Sign in with it.');
       return;
     }else if(mode === 'up'){
@@ -697,8 +786,9 @@ function doSignOut(){
   location.reload();
 }
 
-async function afterSignIn(){
-  const me = await VFSync.whoami();
+async function afterSignIn(known){
+  /* the shop path has already read the row to check the name against it */
+  const me = known || await VFSync.whoami();
   if(!me){
     VFSync.signOut();
     showGate('Your account works, but the owner has not given it access yet. Ask them to add this email under Master > Users.');
@@ -767,7 +857,9 @@ if(typeof VFSync !== 'undefined' && VFSync.enabled()){
     afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
   }else{
     showGate('');
-    setGateMode('in');
+    let who = 'shop';
+    try{ who = localStorage.getItem('VF_GATE_WHO') || 'shop'; }catch(e){}
+    setGateWho(who);
   }
 }
 
@@ -1289,11 +1381,14 @@ function vPeople(){
 function newLoginPanel(){
   if(!NEWLOGIN) return '';
   const n = NEWLOGIN;
-  const msg = 'Velora Fresh \u2014 your login\n\n'
-            + 'Open: ' + location.origin + location.pathname + '\n'
-            + 'Email: ' + n.login + '\n'
-            + 'Password: ' + n.pass + '\n\n'
-            + 'Sign in with these. Keep them safe.';
+  /* A shop types their name, phone and password on the Shop tab; the
+     derived login id is never seen by them and would only confuse. */
+  const rows = n.shop
+    ? 'Name &nbsp;&nbsp;&nbsp;&nbsp;<b>'+esc(n.name)+'</b><br>'
+      + 'Phone &nbsp;&nbsp;&nbsp;<b>'+esc(n.phone || '')+'</b><br>'
+      + 'Password <b>'+esc(n.pass)+'</b>'
+    : 'Email &nbsp;&nbsp;&nbsp;<b>'+esc(n.login)+'</b><br>'
+      + 'Password <b>'+esc(n.pass)+'</b>';
   return '<div class="card" style="border-color:#c9e8d3;background:var(--brand-soft)">'
    + '<h3 style="background:none;border-bottom:1px solid #c9e8d3">'
 + (n.reset ? 'New password for ' : 'Login created for ')+esc(n.name)+'</h3>'
@@ -1302,8 +1397,7 @@ function newLoginPanel(){
    + 'Shown once. Send it now &mdash; it cannot be read again.</p>'
    + '<div class="mono" style="background:#fff;border:1px solid #c9e8d3;border-radius:8px;'
    + 'padding:11px 13px;font-size:13.5px;line-height:1.7">'
-   + 'Email &nbsp;&nbsp;&nbsp;<b>'+esc(n.login)+'</b><br>'
-   + 'Password <b>'+esc(n.pass)+'</b></div>'
+   + rows + '</div>'
    + '<div class="bar" style="margin:12px 0 0">'
    + (n.phone
       ? '<button class="btn pri" onclick="waNewLogin()">Send on WhatsApp</button>'
@@ -1316,10 +1410,16 @@ function newLoginPanel(){
 
 function newLoginMessage(){
   const n = NEWLOGIN; if(!n) return '';
-  return 'Velora Fresh \u2014 ' + (n.reset ? 'new password' : 'your login') + '\n\n'
-       + 'Open: ' + location.origin + location.pathname + '\n'
-       + 'Email: ' + n.login + '\n'
-       + 'Password: ' + n.pass + '\n\n'
+  const head = 'Velora Fresh \u2014 ' + (n.reset ? 'new password' : 'your login') + '\n\n'
+             + 'Open: ' + location.origin + location.pathname + '\n';
+  const body = n.shop
+    ? 'Tap *Shop*, then enter:\n'
+      + 'Name: ' + n.name + '\n'
+      + 'Phone: ' + (n.phone || '') + '\n'
+      + 'Password: ' + n.pass + '\n'
+    : 'Email: ' + n.login + '\n'
+      + 'Password: ' + n.pass + '\n';
+  return head + body + '\n'
        + (n.reset ? 'Your old password no longer works. Use this one.'
                   : 'Sign in with these. Keep them safe.');
 }
@@ -1349,11 +1449,15 @@ function roleSelect(u, isMe){
    provider nobody has set up. Shop staff often have no email at all, so
    one is derived from their phone. It is a username, not an address:
    nothing is ever sent to it, and the account is created already
-   confirmed. */
+   confirmed.
+
+   Built from the phone alone. It used to carry the shop code as well,
+   which read nicely but could not be rebuilt at the gate — the person
+   signing in types a phone number, not a shop. Accounts made under the
+   old shape still work: VFSync.signInShop tries them too. */
 function loginIdFor(role, phone, shopId){
   const digits = String(phone || '').replace(/[^0-9]/g, '');
-  const who = (role === 'shop' && shopId) ? shopId.toLowerCase() : role;
-  return who + '.' + digits + '@shop.velorafresh.in';
+  return 'p' + digits + '@shop.velorafresh.in';
 }
 
 function suggestPass(){
@@ -1383,6 +1487,9 @@ function addPerson(){
 
   if(!phone && !email){ alert('Enter a phone number or an email address.'); return; }
   if(role === 'shop' && !phone){ alert('A shop login needs a phone number.'); return; }
+  /* the name is one of the three things a shop types to get in, so it
+     cannot be left out and it has to be the name they will be told */
+  if(role === 'shop' && !name){ alert('A shop login needs a name — they sign in with it.'); return; }
   if(pass && pass.length < 8){ alert('Use a password of at least 8 characters.'); return; }
 
   /* No email typed but a password given: derive a login id from the
@@ -1420,7 +1527,8 @@ function addPerson(){
   if(pass){
     VFSync.createUser(Object.assign({}, common, {password: pass, email: loginId}))
       .then(()=>{
-        NEWLOGIN = {name: name || loginId, login: loginId, pass: pass, phone: phone};
+        NEWLOGIN = {name: name || loginId, login: loginId, pass: pass, phone: phone,
+                    shop: !email};
         done();
       })
       .catch(e=>{
@@ -1481,6 +1589,8 @@ function resetFor(id){
         name: u.full_name || 'this person',
         login: (res && res.email) || u.phone || '(their usual login)',
         pass: pass, phone: u.phone, reset: true,
+        /* a derived id is not an address, and is not what they type */
+        shop: /@shop\.velorafresh\.in$/.test((res && res.email) || ''),
       };
       PEOPLE = null; loadPeople();
     })
