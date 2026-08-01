@@ -185,6 +185,32 @@ select t('shop cannot issue a bill number',
     then 'blocked' else 'LEAKED' end), 'blocked');
 
 -- ============================================================
+-- 9. service_role — the key the edge functions hold
+--
+-- It bypasses RLS, but a grant is a separate thing from a policy: with
+-- no grant it is refused at the table before any policy is consulted,
+-- and create-user comes back with "permission denied for table
+-- app_users" no matter how correct the key is.
+-- ============================================================
+reset role;
+grant all on results to service_role;
+grant usage, select, update on sequence results_n_seq to service_role;
+set role service_role;
+
+select t('edge functions may read app_users',
+  (select case when cnt('select count(*) from app_users') >= 0 then 'ok' else 'BLOCKED' end), 'ok');
+select t('edge functions see every row, not one client',
+  (select case when cnt('select count(*) from app_users') >= 6 then 'ok' else 'FILTERED' end), 'ok');
+select t('edge functions may create a login',
+  (select case when cnt($$with x as (insert into app_users (id, full_name, role)
+        values ('00000000-0000-0000-0000-0000000000ff','Edge Made','admin') returning 1)
+     select count(*) from x$$) = 1 then 'ok' else 'BLOCKED' end), 'ok');
+select t('and remove one it could not finish',
+  (select case when cnt($$with x as (delete from app_users
+        where id = '00000000-0000-0000-0000-0000000000ff' returning 1)
+     select count(*) from x$$) = 1 then 'ok' else 'BLOCKED' end), 'ok');
+
+-- ============================================================
 -- results
 -- ============================================================
 reset role;

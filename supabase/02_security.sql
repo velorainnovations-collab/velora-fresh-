@@ -348,14 +348,33 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     create role authenticated nologin noinherit;
   end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin noinherit bypassrls;
+  end if;
 end $$;
 
-grant usage on schema public to anon, authenticated;
+grant usage on schema public to anon, authenticated, service_role;
 
 -- anon gets nothing but the ability to attempt a login. Every table is
 -- reachable only after authenticating, and then only through RLS.
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
+
+-- service_role is what the edge functions hold. It bypasses RLS, but a
+-- grant is a separate thing from a policy: without this it is refused at
+-- the table before any policy is consulted, and the function comes back
+-- with "permission denied for table app_users". Supabase's own default
+-- privileges usually cover this; they do not survive a schema built by
+-- hand, so it is stated here rather than assumed.
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant execute on all functions in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
+
+-- and for anything added later
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema public
+  grant execute on functions to service_role;
 
 -- On Supabase the auth schema belongs to supabase_auth_admin and these
 -- grants are already in place, so a permission error here is expected
