@@ -53,8 +53,10 @@ async function tryShop(p, name, phone, pw) {
   console.log('\nnothing is assumed until they say who they are');
   let { ctx, p } = await fresh(b);
   check('the picker is on Select', await p.inputValue('#gateWho'), '');
-  check('and asks',
-        /Choose who is signing in/.test(await p.locator('#gateHint').textContent()), true);
+  check('greeted, not questioned twice',
+        /Welcome/.test(await p.locator('#gateWelcome').textContent()), true);
+  check('no second line under the dropdown',
+        (await p.locator('#gateHint').textContent()).trim(), '');
   check('no fields yet',   await p.locator('#gatePass').isVisible(), false);
   check('no button either', await p.locator('#gateBtn').isVisible(), false);
 
@@ -136,15 +138,29 @@ async function tryShop(p, name, phone, pw) {
   check('owner still gets in', await p.locator('#gate').isVisible(), false);
   await ctx.close();
 
-  console.log('\nthe choice is remembered');
+  console.log('\nevery visit starts with the question');
   ({ ctx, p } = await fresh(b));
   await p.selectOption('#gateWho', 'shop');
   await p.waitForTimeout(200);
   await p.reload({ waitUntil: 'networkidle' });
   await p.waitForTimeout(600);
-  check('still on shop after a refresh', await p.inputValue('#gateWho'), 'shop');
-  check('so nobody at a shop picks twice',
-        await p.locator('#gateName').isVisible(), true);
+  /* a shop phone is passed around; yesterday's answer must not decide
+     today's, and the card is meant to open on the greeting */
+  check('back on Select after a refresh', await p.inputValue('#gateWho'), '');
+  check('no fields carried over',  await p.locator('#gateName').isVisible(), false);
+  check('greeted again', await p.locator('#gateWelcome').isVisible(), true);
+  await ctx.close();
+
+  console.log('\nthe empty card is only the name, a welcome and the question');
+  ({ ctx, p } = await fresh(b));
+  check('welcomed',  /Welcome/.test(await p.locator('#gateWelcome').textContent()), true);
+  check('the dropdown is there', await p.locator('#gateWho').isVisible(), true);
+  check('nothing else to fill in',
+        await p.locator('#gate input:visible').count(), 0);
+  await p.selectOption('#gateWho', 'shop');
+  await p.waitForTimeout(200);
+  check('the welcome steps aside once answered',
+        await p.locator('#gateWelcome').isVisible(), false);
   await ctx.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

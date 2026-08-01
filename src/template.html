@@ -361,6 +361,7 @@ table.ibl tbody tr:hover td{background:none}
     <div class="bd"><span class="mk">VF</span>
       <div><h1>Velora Fresh</h1><p class="co">Velora Innovations Pvt Ltd</p></div>
     </div>
+    <p class="hint" id="gateWelcome">Welcome. Sign in to the supply desk.</p>
     <div class="f" id="gateWhoWrap"><label for="gateWho">Who is signing in</label>
       <select id="gateWho" onchange="setGateWho(this.value)">
         <option value="">Select</option>
@@ -615,10 +616,10 @@ function gateBtnLabel(){
    phone and password — while everyone else has a real address and gets
    the emailed code and the reset link with it.
 
-   Remembered per device, because the same phone at a shop is picked up
-   by the same people every evening and nobody should have to choose
-   twice. Blank until they pick, so the first person to open it is asked
-   rather than guessed at.
+   Always blank when the page opens, on purpose and not for want of
+   remembering: the card is meant to greet a person by name and one
+   question, and a device left on yesterday's answer would show a shop
+   form to whoever picks the phone up next.
 
    'office' is still accepted, from when this was two buttons. */
 let GATE_WHO = '';
@@ -627,7 +628,6 @@ function isShopWho(w){ return w === 'shop'; }
 
 function setGateWho(w){
   GATE_WHO = (w === 'office') ? 'admin' : (w || '');
-  try{ localStorage.setItem('VF_GATE_WHO', GATE_WHO); }catch(e){}
   const sel = document.getElementById('gateWho');
   if(sel && sel.value !== GATE_WHO) sel.value = GATE_WHO;
   setGateMode('in');
@@ -643,8 +643,12 @@ function setGateMode(m){
   const asked  = (m === 'set') || !!GATE_WHO;
   const shop   = isShopWho(GATE_WHO) && m !== 'set';
   const t = GATE_TEXT[m] || GATE_TEXT.in;
+  /* the greeting belongs to the empty card only — once a role is picked
+     the hint below the dropdown says what to type, and the reset screen
+     writes its own welcome */
+  document.getElementById('gateWelcome').className = asked ? 'hint hidden' : 'hint';
   document.getElementById('gateHint').textContent =
-    !asked ? 'Choose who is signing in.'
+    !asked ? ''    /* the welcome above says it, and the dropdown is labelled */
            : shop ? 'Your name, phone number and password.' : t.hint;
   document.getElementById('gateBtn').textContent = gateBtnLabel();
 
@@ -871,9 +875,7 @@ if(typeof VFSync !== 'undefined' && VFSync.enabled()){
     afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
   }else{
     showGate('');
-    let who = '';
-    try{ who = localStorage.getItem('VF_GATE_WHO') || ''; }catch(e){}
-    setGateWho(who);
+    setGateWho('');
   }
 }
 
