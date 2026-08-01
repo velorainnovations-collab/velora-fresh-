@@ -20,6 +20,7 @@
     "test:whatsapp": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/whatsapp.test.js; kill %1",
     "test:theme": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/theme.test.js; kill %1",
     "test:emailauth": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/emailauth.test.js; kill %1",
+    "test:phone": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/phone.test.js; kill %1",
     "test:shoplogin": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/shoplogin.test.js; kill %1"
   },
   "devDependencies": {

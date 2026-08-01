@@ -113,6 +113,20 @@ header select,header input[type=date]{width:auto;max-width:100%;min-width:0;back
 #whoami{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);min-width:0}
 #whoami b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 
+/* the same controls once the drawer has them, stacked and full width */
+#sideTop{padding:13px 16px 15px;border-bottom:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:stretch;gap:11px}
+#sideTop>*{margin:0}
+#sideTop select,#sideTop input[type=date],#sideTop .btn,#sideTop #themeBtn{width:100%;height:36px}
+#sideTop #whoami{font-size:13.5px}
+#sideTop #whoami b{max-width:none}
+/* room for words here, unlike the bar it came from */
+#sideTop #themeBtn{display:flex;align-items:center;justify-content:center;gap:8px;
+  font:inherit;font-size:13.5px;color:var(--ink-2)}
+#sideTop #themeBtn::after{content:'Light or dark'}
+#sideTop #clock{font-size:12px;color:var(--ink-4)}
+#sideTop label{font-size:12.5px}
+
 /* ---------- nav ---------- */
 /* ---------- sidebar ---------- */
 #side{position:fixed;top:var(--hdr);left:0;bottom:0;width:var(--side);background:var(--surface);
@@ -322,9 +336,14 @@ table.ibl tbody tr:hover td{background:none}
 
 /* ---------- mobile ---------- */
 @media (max-width:720px){
-  header{padding:8px 13px;gap:9px;row-gap:7px}
+  /* one row, always: 8 + 34 + 8 and the border, which is what the
+     drawer hangs off */
+  :root{--hdr:51px}
+  header{padding:8px 13px;gap:10px;flex-wrap:nowrap}
   /* no sidebar to line up with once it becomes a drawer */
-  .brand{font-size:15px;flex:0 1 auto;margin-right:0}
+  .brand{font-size:15px;flex:0 1 auto;margin-right:0;min-width:0}
+  .brand>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #side{width:min(84vw,300px)}
   header select,header input[type=date]{font-size:13px;padding:6px 8px}
   #burger{display:grid}
   #side{transform:translateX(-100%);box-shadow:var(--sh-2)}
@@ -358,9 +377,11 @@ table.ibl tbody tr:hover td{background:none}
 <header>
   <button id="burger" type="button" onclick="toggleSide()" aria-label="Menu">&#9776;</button>
   <div class="brand"><span class="mk" aria-hidden="true">VF</span><span>Velora Fresh<small>Velora Innovations Pvt Ltd</small></span></div>
-  <select id="roleSel" style="width:auto" onchange="setRole(this.value)"></select>
+  <!-- no inline widths: in the header they sit at their own size, in the
+       drawer on a phone they fill the width -->
+  <select id="roleSel" onchange="setRole(this.value)"></select>
   <span id="whoami" class="hidden"></span>
-  <input type="date" id="dateSel" style="width:auto" onchange="setDate(this.value)">
+  <input type="date" id="dateSel" onchange="setDate(this.value)">
   <span class="spacer"></span>
   <label id="anyBox" class="hidden" style="font-size:12.5px;color:#6b6b66;display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore the 6–9 pm indent window
@@ -371,7 +392,9 @@ table.ibl tbody tr:hover td{background:none}
   <span id="clock" class="mono" style="font-size:13px;color:#6b6b66"></span>
 </header>
 
-<aside id="side"></aside>
+<!-- sideTop holds whatever the header hands over on a phone; the menu
+     itself is redrawn on every render and must not take them with it -->
+<aside id="side"><div id="sideTop" class="hidden"></div><div id="sideNav"></div></aside>
 <div id="scrim" onclick="toggleSide(false)"></div>
 <main id="main"></main>
 
@@ -2994,13 +3017,47 @@ function drawSide(){
                        + k.t+'</button>').join('')
        + '</div></div>';
   });
-  document.getElementById('side').innerHTML = h;
+  document.getElementById('sideNav').innerHTML = h;
 }
 
 function toggleGrp(name){
   OPENGRP = (OPENGRP===name) ? '' : name;
   drawSide();
 }
+
+/* ---------- the header on a phone ----------
+   Seven controls will not sit on one line at 390px, so the header wrapped
+   to four rows — and the drawer, which hangs off the header's height,
+   started halfway down the screen with its first menu items behind it.
+   On a phone the header keeps the menu button and the name of the
+   business, and everything else moves into the drawer, where there is
+   room to read it. Moved back the moment there is width for it. */
+/* not every browser has matchMedia, and an old till-counter tablet
+   without it must not take the whole script down with it */
+const PHONE = window.matchMedia ? window.matchMedia('(max-width:720px)') : null;
+function onPhone(){ return PHONE ? PHONE.matches : (window.innerWidth <= 720); }
+const HEADER_ORDER = Array.prototype.slice.call(document.querySelector('header').children);
+const HEADER_MOVES = ['whoami','roleSel','dateSel','anyBox','themeBtn','syncState','signOutBtn','clock'];
+
+function placeHeaderControls(){
+  const top = document.getElementById('sideTop');
+  const head = document.querySelector('header');
+  if(onPhone()){
+    HEADER_MOVES.forEach(id=>{
+      const el = document.getElementById(id);
+      if(el && el.parentNode !== top) top.appendChild(el);
+    });
+    top.classList.remove('hidden');
+  }else{
+    /* appendChild moves rather than copies, so walking the original list
+       puts every one of them back in the order it was written in */
+    HEADER_ORDER.forEach(el=> head.appendChild(el));
+    top.classList.add('hidden');
+  }
+}
+if(PHONE && PHONE.addEventListener) PHONE.addEventListener('change', placeHeaderControls);
+else if(PHONE && PHONE.addListener) PHONE.addListener(placeHeaderControls);
+else window.addEventListener('resize', placeHeaderControls);
 
 function toggleSide(force){
   const side = document.getElementById('side'), sc = document.getElementById('scrim');
@@ -4047,6 +4104,7 @@ BOOT_TAB = readHash();
 if(BOOT_TAB) TAB = BOOT_TAB;
 if(!TAB) TAB = tabsFor()[0].id;
 paintThemeButton();
+placeHeaderControls();
 render();
 tick();
 setInterval(tick, 30000);
