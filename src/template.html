@@ -151,7 +151,10 @@ button,select,input{font-family:inherit;font-size:14px}
 .btn.sm{padding:5px 11px;font-size:12.5px;border-radius:7px}
 .btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
 .btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
-input[type=text],input[type=number],input[type=date],select{border:1px solid var(--line);border-radius:8px;
+/* email, password and tel were missing here, so the sign-in boxes fell
+   back to the browser's own width and sat short of the button */
+input[type=text],input[type=number],input[type=date],
+input[type=email],input[type=password],input[type=tel],select{border:1px solid var(--line);border-radius:8px;
   padding:7px 10px;background:var(--surface);width:100%;color:var(--ink);transition:border-color .13s,box-shadow .13s}
 input:hover,select:hover{border-color:#d5cfc6}
 input:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
@@ -274,16 +277,10 @@ table.ibl tbody tr:hover td{background:none}
 #gate h1{font-size:19px;margin:0;letter-spacing:-.3px}
 #gate .co{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4);margin:0}
 #gate p.hint{font-size:13px;color:var(--ink-3);margin:14px 0 16px}
-/* Shop or office. Two buttons rather than a dropdown: on a shop phone in
-   a hurry this is one tap, and it says outright that there are two ways
-   in rather than hiding one of them. */
-#gate .whotabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px;
-  background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:4px}
-#gate .whotabs button{border:0;background:none;border-radius:7px;padding:8px 6px;
-  font:600 13px inherit;color:var(--ink-3);cursor:pointer}
-#gate .whotabs button.on{background:var(--surface);color:var(--brand);
-  box-shadow:0 1px 3px rgba(0,0,0,.14)}
-#gate .whotabs.hidden{display:none}
+/* the boxes on this card are all one width, button included */
+#gate input,#gate select,#gate .btn{width:100%;font-size:14px}
+#gate input,#gate select{padding:9px 11px}
+#gate #gateWhoWrap{margin-top:16px}
 #gate label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 4px}
 #gate .f{margin-bottom:12px}
 #gate .err{background:var(--red-soft);border:1px solid #f2d3d1;color:var(--red);
@@ -364,10 +361,14 @@ table.ibl tbody tr:hover td{background:none}
     <div class="bd"><span class="mk">VF</span>
       <div><h1>Velora Fresh</h1><p class="co">Velora Innovations Pvt Ltd</p></div>
     </div>
-    <div class="whotabs" id="gateWho">
-      <button type="button" id="whoShop"   onclick="setGateWho('shop')">Shop</button>
-      <button type="button" id="whoOffice" onclick="setGateWho('office')">Office</button>
-    </div>
+    <div class="f" id="gateWhoWrap"><label for="gateWho">Who is signing in</label>
+      <select id="gateWho" onchange="setGateWho(this.value)">
+        <option value="">Select</option>
+        <option value="shop">Shop</option>
+        <option value="admin">Manager</option>
+        <option value="ho">Head office</option>
+        <option value="owner">Owner</option>
+      </select></div>
     <p class="hint" id="gateHint">Sign in to the supply desk.</p>
     <div id="gateErr"></div>
     <div class="f hidden" id="gateNameWrap"><label for="gateName">Your name</label>
@@ -609,17 +610,26 @@ function gateBtnLabel(){
   return (GATE_TEXT[GATE_MODE] || GATE_TEXT.in).btn;
 }
 
-/* Shop or office. A shop signs in with the three things the office gave
-   them — name, phone, password — and has no email at all, so none of the
-   email screens apply. Remembered, because the same phone at a shop is
-   used by the same people every evening. */
-let GATE_WHO = 'shop';
+/* Who is signing in decides what is asked for. A shop has no email at
+   all — they sign in with the three things the office gave them, name,
+   phone and password — while everyone else has a real address and gets
+   the emailed code and the reset link with it.
+
+   Remembered per device, because the same phone at a shop is picked up
+   by the same people every evening and nobody should have to choose
+   twice. Blank until they pick, so the first person to open it is asked
+   rather than guessed at.
+
+   'office' is still accepted, from when this was two buttons. */
+let GATE_WHO = '';
+
+function isShopWho(w){ return w === 'shop'; }
 
 function setGateWho(w){
-  GATE_WHO = (w === 'office') ? 'office' : 'shop';
+  GATE_WHO = (w === 'office') ? 'admin' : (w || '');
   try{ localStorage.setItem('VF_GATE_WHO', GATE_WHO); }catch(e){}
-  document.getElementById('whoShop').className   = GATE_WHO === 'shop'   ? 'on' : '';
-  document.getElementById('whoOffice').className = GATE_WHO === 'office' ? 'on' : '';
+  const sel = document.getElementById('gateWho');
+  if(sel && sel.value !== GATE_WHO) sel.value = GATE_WHO;
   setGateMode('in');
 }
 
@@ -629,25 +639,29 @@ function show(id, yes){
 
 function setGateMode(m){
   GATE_MODE = m;
-  const shop = (GATE_WHO === 'shop' && m !== 'set');
+  /* a reset link knows who it belongs to, so the question does not apply */
+  const asked  = (m === 'set') || !!GATE_WHO;
+  const shop   = isShopWho(GATE_WHO) && m !== 'set';
   const t = GATE_TEXT[m] || GATE_TEXT.in;
   document.getElementById('gateHint').textContent =
-    shop ? 'Your name, phone number and password.' : t.hint;
+    !asked ? 'Choose who is signing in.'
+           : shop ? 'Your name, phone number and password.' : t.hint;
   document.getElementById('gateBtn').textContent = gateBtnLabel();
 
-  const showPass = (m === 'in' || m === 'up' || m === 'set');
-  const showCode = (m === 'code' && CODE_SENT_TO && !shop);
-  show('gateNameWrap',  shop);
-  show('gatePhoneWrap', shop);
-  show('gateEmailWrap', !shop && m !== 'set');
+  const showPass = asked && (m === 'in' || m === 'up' || m === 'set');
+  const showCode = asked && (m === 'code' && CODE_SENT_TO && !shop);
+  show('gateWhoWrap',   m !== 'set');
+  show('gateNameWrap',  asked && shop);
+  show('gatePhoneWrap', asked && shop);
+  show('gateEmailWrap', asked && !shop && m !== 'set');
   show('gatePassWrap',  showPass);
   show('gateCodeWrap',  showCode);
-  document.getElementById('gateWho').className = (m === 'set') ? 'whotabs hidden' : 'whotabs';
+  document.getElementById('gateBtn').className = asked ? 'btn pri' : 'btn pri hidden';
   document.getElementById('gatePass').setAttribute('autocomplete',
     (m === 'up' || m === 'set') ? 'new-password' : 'current-password');
 
   const links = document.getElementById('gateLinks');
-  if(m === 'set'){ links.innerHTML = ''; }
+  if(m === 'set' || !asked){ links.innerHTML = ''; }
   else if(shop){
     /* no code, no reset link: there is no address to send either to.
        The office resets it and sends the new one on WhatsApp. */
@@ -713,7 +727,7 @@ async function doSignIn(ev){
   const phone = document.getElementById('gatePhone').value.replace(/[^0-9]/g, '');
   const mode  = GATE_MODE;
 
-  if(GATE_WHO === 'shop' && mode !== 'set'){
+  if(isShopWho(GATE_WHO) && mode !== 'set'){
     if(!name)              { showGate('Enter your name.'); return; }
     if(phone.length < 10)  { showGate('Enter the ten digit phone number the office saved.'); return; }
     if(!pass)              { showGate('Enter your password.'); return; }
@@ -757,7 +771,7 @@ async function doSignIn(ev){
       await VFSync.setOwnPassword(pass);
       /* they followed an emailed link, so they are office side whatever
          the tab was set to before */
-      setGateWho('office');
+      setGateWho(GATE_WHO && !isShopWho(GATE_WHO) ? GATE_WHO : 'admin');
       gateNote('Password saved. Sign in with it.');
       return;
     }else if(mode === 'up'){
@@ -857,8 +871,8 @@ if(typeof VFSync !== 'undefined' && VFSync.enabled()){
     afterSignIn().catch(() => showGate('Could not reach the server. Sign in again.'));
   }else{
     showGate('');
-    let who = 'shop';
-    try{ who = localStorage.getItem('VF_GATE_WHO') || 'shop'; }catch(e){}
+    let who = '';
+    try{ who = localStorage.getItem('VF_GATE_WHO') || ''; }catch(e){}
     setGateWho(who);
   }
 }
@@ -1336,8 +1350,10 @@ function vPeople(){
    + '<div class="addform">'
    + '<div><label>Name</label><input type="text" id="npName" placeholder="Full name"></div>'
    + '<div><label>Phone</label><input type="text" id="npPhone" placeholder="98400 00000"></div>'
-   + '<div><label>Email <span class="hint">(optional for shop staff)</span></label>'
-   + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
+   /* Role comes second, because everything after it depends on the
+      answer: a shop has no email and must have a shop and a password,
+      and everyone else is the other way round. npRoleChanged() does the
+      showing and hiding. */
    + '<div><label>Role</label><select id="npRole" onchange="npRoleChanged()">'
    + '<option value="admin">Manager</option>'
    + '<option value="shop">Shop</option>'
@@ -1345,16 +1361,14 @@ function vPeople(){
    + '<option value="owner">Owner</option></select></div>'
    + '<div id="npShopWrap" class="hidden"><label>Which shop</label>'
    + '<select id="npShop">'+shopOpts+'</select></div>'
-   + '<div><label>Password <span class="hint">(blank = email them a link)</span></label>'
+   + '<div id="npEmailWrap"><label>Email</label>'
+   + '<input type="text" id="npEmail" placeholder="name@example.com"></div>'
+   + '<div><label>Password <span class="hint" id="npPassHint">(blank = email them a link)</span></label>'
    + '<div class="pair"><input type="text" id="npPass" class="mono" placeholder="leave blank to email a link">'
    + '<button class="btn sm" type="button" onclick="suggestPass()" title="Suggest one">\u21bb</button></div></div>'
    + '<div class="act">'
    + '<button class="btn pri" onclick="addPerson()"'+(PEOPLE_BUSY?' disabled':'')+'>Add</button>'
-   + '<p class="hintline">Type a password and the login is created straight away, already confirmed &mdash; '
-   + 'no email is sent, so hand it over on WhatsApp. That is the way for shop staff, '
-   + 'who get a login id made from their phone. '
-   + 'Leave it blank and an email goes to the address above with a link to set their own password '
-   + '&mdash; use that for managers, head office and owners.</p>'
+   + '<p class="hintline" id="npHint"></p>'
    + '</div></div></div></div>'
 
    /* ---- people ---- */
@@ -1471,16 +1485,33 @@ function suggestPass(){
   document.getElementById('npPass').value = out;
 }
 
+/* What is asked for follows the role, the same way the sign-in screen
+   follows who is signing in. A shop cannot be emailed anything, so the
+   email box is not there to be filled in by mistake. */
 function npRoleChanged(){
-  const r = document.getElementById('npRole').value;
-  document.getElementById('npShopWrap').className = (r === 'shop') ? '' : 'hidden';
+  const shop = document.getElementById('npRole').value === 'shop';
+  document.getElementById('npShopWrap').className  = shop ? '' : 'hidden';
+  document.getElementById('npEmailWrap').className = shop ? 'hidden' : '';
+  document.getElementById('npPassHint').textContent =
+    shop ? '(required)' : '(blank = email them a link)';
+  document.getElementById('npPass').placeholder =
+    shop ? 'set one and send it' : 'leave blank to email a link';
+  document.getElementById('npHint').innerHTML = shop
+    ? 'They sign in with the three things you type here &mdash; <b>name</b>, <b>phone</b> '
+      + 'and <b>password</b>. Nothing is emailed; the panel that appears next sends them '
+      + 'on WhatsApp. Use the name exactly as you want them to type it.'
+    : 'Leave the password blank and an email goes to the address above with a link to set '
+      + 'their own. Type one instead and the login works straight away, but nothing is sent '
+      + '&mdash; you hand it over yourself.';
 }
 
 function addPerson(){
   const name  = document.getElementById('npName').value.trim();
   const phone = document.getElementById('npPhone').value.replace(/\s+/g,'');
-  const email = document.getElementById('npEmail').value.trim();
   const role  = document.getElementById('npRole').value;
+  /* the box is hidden for a shop, so anything left in it from the last
+     person added is not theirs and must not decide which path is taken */
+  const email = (role === 'shop') ? '' : document.getElementById('npEmail').value.trim();
   const shop  = document.getElementById('npShop').value;
 
   const pass = document.getElementById('npPass').value.trim();
@@ -1772,6 +1803,8 @@ function render(){
     people:vPeople
   }[TAB];
   m.innerHTML = fn ? fn() : '';
+  /* the add-person form paints itself for whatever role is selected */
+  if(TAB === 'people' && document.getElementById('npRole')) npRoleChanged();
   if(afterRender){ const f = afterRender; afterRender = null; f(); }
   save();
 }

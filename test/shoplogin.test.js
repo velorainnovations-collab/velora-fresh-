@@ -36,6 +36,10 @@ async function fresh(b) {
 }
 
 async function tryShop(p, name, phone, pw) {
+  if (await p.inputValue('#gateWho') !== 'shop') {
+    await p.selectOption('#gateWho', 'shop');
+    await p.waitForTimeout(150);
+  }
   await p.fill('#gateName', name);
   await p.fill('#gatePhone', phone);
   await p.fill('#gatePass', pw);
@@ -46,9 +50,17 @@ async function tryShop(p, name, phone, pw) {
 (async () => {
   const b = await chromium.launch();
 
-  console.log('\nwhat a shop sees first');
+  console.log('\nnothing is assumed until they say who they are');
   let { ctx, p } = await fresh(b);
-  check('shop is the tab it opens on', await p.locator('#whoShop').getAttribute('class'), 'on');
+  check('the picker is on Select', await p.inputValue('#gateWho'), '');
+  check('and asks',
+        /Choose who is signing in/.test(await p.locator('#gateHint').textContent()), true);
+  check('no fields yet',   await p.locator('#gatePass').isVisible(), false);
+  check('no button either', await p.locator('#gateBtn').isVisible(), false);
+
+  console.log('\nwhat a shop is asked for');
+  await p.selectOption('#gateWho', 'shop');
+  await p.waitForTimeout(200);
   check('asks for a name',     await p.locator('#gateName').isVisible(), true);
   check('asks for a phone',    await p.locator('#gatePhone').isVisible(), true);
   check('asks for a password', await p.locator('#gatePass').isVisible(), true);
@@ -92,6 +104,8 @@ async function tryShop(p, name, phone, pw) {
 
   console.log('\nhalf-filled forms are refused before any request');
   received.length = 0;
+  await p.selectOption('#gateWho', 'shop');
+  await p.waitForTimeout(150);
   await p.fill('#gateName', 'Kilpauk Mgr');
   await p.fill('#gatePhone', '90000');
   await p.fill('#gatePass', 'shoppass1');
@@ -108,9 +122,9 @@ async function tryShop(p, name, phone, pw) {
   check('as their own shop', await p.evaluate(() => ROLE), 'NGB');
   await ctx.close();
 
-  console.log('\nthe office tab is still there');
+  console.log('\nan office role is asked for different things');
   ({ ctx, p } = await fresh(b));
-  await p.click('#whoOffice');
+  await p.selectOption('#gateWho', 'ho');
   await p.waitForTimeout(200);
   check('email box back',   await p.locator('#gateEmail').isVisible(), true);
   check('name box gone',    await p.locator('#gateName').isVisible(), false);
@@ -124,12 +138,13 @@ async function tryShop(p, name, phone, pw) {
 
   console.log('\nthe choice is remembered');
   ({ ctx, p } = await fresh(b));
-  await p.click('#whoOffice');
+  await p.selectOption('#gateWho', 'shop');
   await p.waitForTimeout(200);
   await p.reload({ waitUntil: 'networkidle' });
   await p.waitForTimeout(600);
-  check('still on office after a refresh',
-        await p.locator('#whoOffice').getAttribute('class'), 'on');
+  check('still on shop after a refresh', await p.inputValue('#gateWho'), 'shop');
+  check('so nobody at a shop picks twice',
+        await p.locator('#gateName').isVisible(), true);
   await ctx.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

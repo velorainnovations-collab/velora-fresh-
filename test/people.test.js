@@ -42,7 +42,7 @@ function check(label, got, want) {
        Shop tab. Pick Office first, as a person at a desk would. Skipped on
        the reset-password screen, which has no tabs. */
     await p.evaluate(() => {
-      if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('office');
+      if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('admin');
     });
     await p.fill('#gateEmail', email);
     await p.fill('#gatePass', 'right');
@@ -114,7 +114,8 @@ function check(label, got, want) {
   await p.waitForTimeout(200);
   await p.fill('#npName', 'Kilpauk Evening');
   await p.fill('#npPhone', '98400 55555');
-  await p.fill('#npEmail', '');
+  check('no email box for a shop — they have no address',
+        await p.locator('#npEmail').isVisible(), false);
   await p.selectOption('#npShop', 'KLP');
   await p.click('button[title="Suggest one"]');
   const shopPass = await p.inputValue('#npPass');
@@ -171,7 +172,6 @@ function check(label, got, want) {
   received.length = 0;
   await p.fill('#npName', 'Shop Person');
   await p.fill('#npPhone', '9000011111');
-  await p.fill('#npEmail', '');          // no address, so this is an invite row
   await p.selectOption('#npShop', 'MBK');
   await p.click('button:has-text("Add")');
   await p.waitForTimeout(900);

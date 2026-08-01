@@ -39,7 +39,7 @@ function check(label, got, want) {
        Shop tab. Pick Office first, as a person at a desk would. Skipped on
        the reset-password screen, which has no tabs. */
     await p.evaluate(() => {
-      if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('office');
+      if (typeof setGateWho === 'function' && GATE_MODE !== 'set') setGateWho('admin');
     });
     return { ctx, p };
   }
