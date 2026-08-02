@@ -1901,6 +1901,26 @@ const VFSync = (function () {
      calls them without the right role is refused by the database
      rather than by the interface. */
 
+  /* What a shop will be billed per kilo. The market rate is Velora's
+     cost base and a shop may not read it (02_security.sql, read_rates),
+     so its own screens have nothing to work from and every amount on
+     them came out as zero. purchase_rate() is SECURITY DEFINER for
+     exactly this: it hands back the resulting rate without exposing the
+     margin behind it. Answers null for a product with no rate yet, and
+     that is shown as "rate not set" rather than as nothing owed. */
+  async function purchaseRateFor(shopId, code, date) {
+    if (!enabled() || !signedIn()) return null;
+    try {
+      const r = await fetch(CFG.url + '/rest/v1/rpc/purchase_rate', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ p_shop: shopId, p_code: code, p_date: date }),
+      });
+      if (!r.ok) return null;
+      const v = await r.json();
+      return (v === null || v === undefined || v === '') ? null : Number(v);
+    } catch (e) { return null; }
+  }
+
   async function rpc(fn, args) {
     if (!enabled() || !signedIn()) throw new Error('Not signed in');
     const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, {
@@ -2124,7 +2144,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
-    refreshIndents,
+    refreshIndents, purchaseRateFor,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
@@ -2530,10 +2550,38 @@ function commOf(shopId){
   const v = DB.master.comm[shopId];
   return v===undefined || v===null || v==='' ? 0 : parseFloat(v)||0;
 }
-function purchaseRate(shopId, code){
-  const mk = DB.days[DATE] && DB.days[DATE].rates ? DB.days[DATE].rates[code] : null;
-  if(mk===undefined || mk===null || mk==='') return null;
-  return (parseFloat(mk)||0) * (1 + commOf(shopId)/100);
+/* Rates the server was asked for, because this device may not hold the
+   market rate itself. Keyed by the day and the shop, so yesterday's is
+   never shown against today. */
+const RATEASKED = {};
+
+function purchaseRate(shopId, code, date){
+  const d = date || DATE;
+  const day = DB.days[d];
+  const mk = day && day.rates ? day.rates[code] : null;
+  if(mk!==undefined && mk!==null && mk!=='') return (parseFloat(mk)||0) * (1 + commOf(shopId)/100);
+  /* a shop has no market rates of its own — see askRates() */
+  const got = RATEASKED[d+'|'+shopId+'|'+code];
+  return (got === undefined || got === null) ? null : got;
+}
+
+/* A shop is not allowed to read the market rate, so its own screens had
+   nothing to price with and showed every amount as zero. The rate it
+   will actually be billed is asked of the server, one product at a
+   time, once, and kept for the rest of the visit. */
+let ASKING = false;
+async function askRates(shopId, date, codes){
+  if(ASKING) return;
+  if(typeof VFSync === 'undefined' || !VFSync.enabled() || !VFSync.signedIn()) return;
+  const want = codes.filter(c=>RATEASKED[date+'|'+shopId+'|'+c] === undefined);
+  if(!want.length) return;
+  ASKING = true;
+  try{
+    const got = await Promise.all(want.map(c=> VFSync.purchaseRateFor(shopId, c, date)));
+    want.forEach((c,i)=>{ RATEASKED[date+'|'+shopId+'|'+c] = got[i]; });
+    render();
+  }catch(e){ /* offline: the lines say the rate is not set, which is true here */ }
+  finally{ ASKING = false; }
 }
 function sellMargin(shopId, code){
   const s = DB.master.selling[shopId];
@@ -4186,12 +4234,22 @@ function vMyDeliveries(){
       + '<div class="card"><div class="empty">Nothing has left for you yet. This fills in as '
       + 'soon as it is out for delivery.</div></div>';
 
-  let rows='', tot=0;
+  /* the rate for these lines is not on this device — ask for it once */
+  askRates(ROLE, DATE, codes);
+
+  let rows='', tot=0, unpriced=0;
   codes.forEach((c,i)=>{
-    const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit), pr=purchaseRate(ROLE,c)||0, amt=nk*pr; tot+=amt;
+    const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit);
+    const pr = purchaseRate(ROLE, c);
+    /* a rate that is not in yet is said to be missing. Nothing here is
+       worth nothing, and a zero on a delivery note reads as free. */
+    const priced = (pr !== null && pr !== undefined);
+    const amt = priced ? nk*pr : 0;
+    if(priced) tot += amt; else unpriced++;
     rows+='<tr><td class="c mono">'+(i+1)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
       +'<td class="c mono">'+num(q)+' '+esc(e.unit)+'</td><td class="r mono">'+num(nk,3)+'</td>'
-      +'<td class="r mono">'+money(pr)+'</td><td class="r mono">'+money(amt)+'</td></tr>';
+      +'<td class="r mono">'+(priced?money(pr):'<span style="color:var(--ink-4)">rate not set</span>')+'</td>'
+      +'<td class="r mono">'+(priced?money(amt):'&mdash;')+'</td></tr>';
   });
   return '<h2>Delivery for '+fmtDate(DATE)+'</h2>'
    /* the state of the day in the same words the office uses, so a shop
@@ -4202,7 +4260,9 @@ function vMyDeliveries(){
      :'<div class="note">If a weight or product differs, tell Velora Fresh before confirming — they will adjust it and send it again.</div>')
    +'<div class="card"><table><thead><tr><th class="c">#</th><th>Product</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
    +'<tbody>'+(rows||'<tr><td colspan="6" class="empty">No lines.</td></tr>')+'</tbody></table></div>'
-   +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong></span><span class="spacer"></span>'
+   +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong>'
+   +(unpriced ? ' <span style="color:var(--ink-3)">&middot; '+unpriced+' line'+(unpriced===1?'':'s')
+                + ' not priced yet</span>' : '')+'</span><span class="spacer"></span>'
    +(st==='out'?'<button class="btn pri" onclick="confirmReceipt(\''+ROLE+'\')">Confirm receipt</button>':'')+'</div>';
 }
 function vMyBills(){

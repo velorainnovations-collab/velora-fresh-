@@ -11,7 +11,7 @@
  * exactly like one packed right.
  */
 const { chromium } = require('playwright');
-require('./mock-supabase.js');
+const { received } = require('./mock-supabase.js');
 
 let pass = 0, fail = 0;
 function check(label, got, want) {
@@ -136,7 +136,60 @@ function check(label, got, want) {
         /Short packed/.test(await p.locator('#main').textContent()), false);
   check('two left', /2 products still to settle/.test(await p.locator('#main').textContent()), true);
 
+  /* ---------------- the shop's own delivery note ---------------- */
+  console.log('\nthe shop is priced without being shown the market rate');
+  /* A shop may not read day_rates — the market rate is Velora's cost
+     base — so its delivery screen had nothing to price with and put
+     0.00 against every line. The database will hand it the rate it is
+     actually billed, and that is what it asks for. */
+  await p.evaluate(() => {
+    dayOf(DATE).ship['KLP'] = 'out';
+    setPacked('2', 20);          /* the over-packed one, priced */
+    save();
+  });
+  await p.waitForTimeout(1200);
   await ctx.close();
+
+  const sctx = await b.newContext({ viewport: { width: 1300, height: 950 } });
+  const sp = await sctx.newPage();
+  sp.on('pageerror', e => console.log('PAGEERROR:', e.message));
+  await sp.route('**://*.supabase.co/**', async route => {
+    const q = route.request(); const u = new URL(q.url());
+    const r = await fetch('http://127.0.0.1:8123' + u.pathname + u.search, {
+      method: q.method(), headers: q.headers(),
+      body: ['GET', 'HEAD'].includes(q.method()) ? undefined : q.postData(),
+    });
+    await route.fulfill({ status: r.status, headers: { 'content-type': 'application/json' },
+                          body: await r.text() });
+  });
+  await sp.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+  await sp.selectOption('#gateWho', 'shop');
+  await sp.waitForTimeout(200);
+  await sp.fill('#gateName', 'Kilpauk Mgr');
+  await sp.fill('#gatePhone', '9000000004');
+  await sp.fill('#gatePass', 'shoppass1');
+  await sp.click('#gateBtn');
+  await sp.waitForTimeout(1600);
+  await sp.evaluate(() => go('mydel'));
+  await sp.waitForTimeout(2200);
+
+  check('the shop still holds no market rates of its own',
+        await sp.evaluate(() => JSON.stringify(dayOf(DATE).rates)), '{}');
+  const line = name => sp.locator('#main tbody tr', { hasText: name }).first();
+  const lemon = (await line('Lemon').textContent()).replace(/\s+/g, ' ');
+  check('but the rate is on the line', /83\.20/.test(lemon), true);
+  check('and the amount with it', /832\.00/.test(lemon), true);
+  check('it asked the database for it, one product at a time',
+        received.filter(r => r.table === 'rpc:purchase_rate').length > 0, true);
+
+  /* potato was packed but never given a market rate */
+  const pot = (await line('Potato').textContent()).replace(/\s+/g, ' ');
+  check('a product with no rate says so', /rate not set/.test(pot), true);
+  check('rather than showing nothing owed', /0\.00/.test(pot), false);
+  check('and the total says how many are unpriced',
+        /not priced yet/.test(await sp.locator('#main').textContent()), true);
+
+  await sctx.close();
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   await b.close();
   process.exit(fail ? 1 : 0);

@@ -933,6 +933,26 @@ const VFSync = (function () {
      calls them without the right role is refused by the database
      rather than by the interface. */
 
+  /* What a shop will be billed per kilo. The market rate is Velora's
+     cost base and a shop may not read it (02_security.sql, read_rates),
+     so its own screens have nothing to work from and every amount on
+     them came out as zero. purchase_rate() is SECURITY DEFINER for
+     exactly this: it hands back the resulting rate without exposing the
+     margin behind it. Answers null for a product with no rate yet, and
+     that is shown as "rate not set" rather than as nothing owed. */
+  async function purchaseRateFor(shopId, code, date) {
+    if (!enabled() || !signedIn()) return null;
+    try {
+      const r = await fetch(CFG.url + '/rest/v1/rpc/purchase_rate', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ p_shop: shopId, p_code: code, p_date: date }),
+      });
+      if (!r.ok) return null;
+      const v = await r.json();
+      return (v === null || v === undefined || v === '') ? null : Number(v);
+    } catch (e) { return null; }
+  }
+
   async function rpc(fn, args) {
     if (!enabled() || !signedIn()) throw new Error('Not signed in');
     const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, {
@@ -1156,7 +1176,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
-    refreshIndents,
+    refreshIndents, purchaseRateFor,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,

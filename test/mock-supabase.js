@@ -44,6 +44,7 @@ const INDENTS        = [];   // indent headers, so their ids can be looked up
 const ILINES         = [];   // and their lines, so a second device can read them
 const PACKED         = [];   // what was packed, so the other device sees it
 const SHIPS          = [];   // and where the lorry is
+const RATES          = {};   // trade_date|code -> market rate, for purchase_rate()
 let LAST_CODE = '';          // the six digit code the mock last 'emailed'
 
 // what list_people() returns; mutated by the rpc handlers below
@@ -168,6 +169,12 @@ const srv = http.createServer((req, res) => {
       const fn = url.pathname.slice('/rest/v1/rpc/'.length);
       const args = body ? JSON.parse(body) : {};
       received.push({ table: 'rpc:' + fn, method: 'POST', rows: args });
+      /* the database hands a shop the rate it will be billed without
+         showing it the market rate behind it (02_security.sql) */
+      if (fn === 'purchase_rate') {
+        const mk = RATES[args.p_date + '|' + args.p_code];
+        return send(200, mk === undefined ? null : Math.round(mk * 1.04 * 10000) / 10000);
+      }
       if (fn === 'list_people') return send(200, PEOPLE);
       if (fn === 'invite_person') {
         PEOPLE.push({ kind: 'invite', id: 'inv-' + PEOPLE.length,
@@ -236,6 +243,11 @@ const srv = http.createServer((req, res) => {
         const store = name === 'packed' ? PACKED : SHIPS;
         const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
         return send(200, store.filter(r => !d || r.trade_date === d));
+      }
+      if (req.method === 'POST' && name === 'day_rates') {
+        (body ? JSON.parse(body) : []).forEach(r => {
+          RATES[r.trade_date + '|' + r.product_code] = Number(r.rate);
+        });
       }
       if (req.method === 'POST' && (name === 'packed' || name === 'shipments')) {
         const store = name === 'packed' ? PACKED : SHIPS;
