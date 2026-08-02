@@ -148,26 +148,43 @@ async function tryShop(p, name, phone, pw) {
   check('and the usual section is short',
         await p.locator('#mylist tr[data-grp="usual"][data-k]').count(), 2);
 
-  console.log('\nwhat they had last time is on the line');
+  console.log('\nlast order and last price, from the same day');
   await p.evaluate(() => {
     const back = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-    DB.days[back(1)] = DB.days[back(1)] || { rates:{}, packed:{}, ship:{}, sent:{} };
-    DB.days[back(1)].packed = { KLP: { '2': 8 } };   /* what actually arrived */
+    /* billed yesterday: the bill knows both the quantity and the rate */
+    DB.invoices[back(1)] = { KLP: { no: 'X1', total: 0, roundOff: 0, lines: [
+      { code: '1', name: 'Lemon', unit: 'kg', qty: 25, net: 25, rate: 100, amount: 2500, sell: 130 },
+      { code: '11', name: 'Cauliflower', unit: 'piece', qty: 10, net: 10, rate: 18, amount: 180, sell: 24 },
+    ] } };
+    /* packed three days ago and never billed: a quantity, but no price */
+    DB.days[back(3)] = { rates: {}, packed: { KLP: { '3': 5 } }, ship: {}, sent: {} };
     save(); render();
   });
-  await p.waitForTimeout(400);
-  const potato = p.locator('#mylist tbody tr[data-k]', { hasText: 'Potato' }).first();
-  const potatoText = (await potato.textContent()).replace(/\s+/g, ' ');
-  check('the day is named, not dated, when it was yesterday',
-        /yesterday/.test(potatoText), true);
-  check('and it is what arrived, not what was asked for',
-        /got 8/.test(potatoText), true);
-  const cabbage = p.locator('#mylist tbody tr[data-k]', { hasText: 'Cabbage' }).first();
-  check('what was only ever asked for says so',
-        /asked 2/.test((await cabbage.textContent()).replace(/\s+/g, ' ')), true);
-  check('and a product they have never had says nothing',
-        /got|asked/.test(await p.locator('#mylist tbody tr[data-k]', { hasText: 'Beetroot' })
-                                 .first().textContent()), false);
+  await p.waitForTimeout(500);
+  const cells = async name => (await p.locator('#mylist tbody tr[data-k]', { hasText: name })
+                                      .first().locator('td').allTextContents());
+  const head = (await p.locator('#mylist thead th').allTextContents())
+                 .map(t => t.trim()).filter(Boolean).join(' | ');
+  check('the columns are where they were asked for',
+        head, 'Code | Product | Last order | Last price | Quantity');
+  const lemon = await cells('Lemon');
+  check('the quantity and unit', /^25 kg/.test(lemon[2]), true);
+  check('with the day it was bought', /\d\d\/\d\d\/\d{4}/.test(lemon[2]), true);
+  check('and the price from that same bill', /₹100/.test(lemon[3]), true);
+  const cauli = await cells('Cauliflower');
+  check('pieces read as pieces', /^10 pcs/.test(cauli[2]), true);
+  check('and the price is per piece', /per pc/.test(cauli[3]), true);
+  /* cabbage was asked for the day before yesterday and packed three days
+     ago; the newer record wins, and an indent carries no price */
+  const cab = await cells('Cabbage');
+  check('the most recent record wins', /^2 kg/.test(cab[2]), true);
+  check('and an indent leaves the price blank rather than inventing one',
+        cab[3].trim(), '');
+  const beet = await cells('Beetroot');
+  check('never had it: both blank', (beet[2] + beet[3]).trim(), '');
+  check('and the quantity box is still the last thing on the row',
+        await p.locator('#mylist tbody tr[data-k]', { hasText: 'Beetroot' })
+               .first().locator('td').nth(4).locator('input').count(), 1);
 
   console.log('\na sheet can be handed over whole');
   await p.click('#myImport');

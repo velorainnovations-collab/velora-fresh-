@@ -64,8 +64,10 @@ async function device(b) {
   console.log('\nbefore anything is sent');
   check('the office sees nothing from this shop',
         /Not submitted/.test(await office.p.locator('#main tbody tr').first().textContent()), true);
-  check('and the button invites a review anyway',
-        /Review/.test(await office.p.locator('#main tbody tr').first().textContent()), true);
+  /* nothing has been sent, so the button must not promise a review */
+  check('and does not offer to review what is not there',
+        /Review/.test(await office.p.locator('#main tbody tr').first().textContent()), false);
+  check('it just opens', /Open/.test(await office.p.locator('#main tbody tr').first().textContent()), true);
 
   console.log('\nthe shop fills it in and presses the button');
   await shop.p.evaluate(() => {

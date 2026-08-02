@@ -3607,8 +3607,7 @@ function vMyIndent(){
     + (ind.acceptedBy ? ' ' + esc(ind.acceptedBy) : '')
     + (ind.acceptedAt ? ' on ' + esc(fmtDate(ind.acceptedAt.slice(0,10)))
                       + ' at ' + esc(ind.acceptedAt.slice(11,16)) : '')
-    + '. This indent is closed and cannot be changed &mdash; it is the record of what was '
-    + 'ordered. Anything that has to change now goes through the office.</div>';
+    + '.</div>';
 
   /* The whole list, in the order the vendors are grouped, with a box on
      every line. A shop knows what it wants by looking down the list, not
@@ -3620,11 +3619,12 @@ function vMyIndent(){
   let rows = '';
   if(locked){
     if(!codes.length){
-      rows = '<tr><td colspan="4" class="empty">Nothing was indented for this day.</td></tr>';
+      rows = '<tr><td colspan="6" class="empty">Nothing was indented for this day.</td></tr>';
     } else codes.forEach(c=>{
       const e = CAT[c]; if(!e) return;
       rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
         + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+        + myLastCells(ROLE, c, DATE)
         + '<td class="c" style="width:150px"><span class="mono">'+num(ind.lines[c])+' '+esc(e.unit)+'</span></td>'
         + '<td></td></tr>';
     });
@@ -3648,14 +3648,12 @@ function vMyIndent(){
       /* everything the search should match, lower cased once here
          rather than on every keystroke */
       const key = (c+' '+e.name+' '+(e.tamil||'')+' '+(e.alias||'')).toLowerCase();
-      /* what they had last time, so the quantity is decided against
-         something rather than from memory */
-      const last = myLastLabel(ROLE, c, DATE);
       return '<tr data-k="'+esc(key)+'" data-grp="'+grp+'"'+(has?' data-has="1"':'')+'>'
         + '<td class="mono" style="width:58px">'+esc(c)+'</td>'
-        + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)
-        + (last ? ' &nbsp;&middot;&nbsp; <b style="font-weight:600">'+esc(last)+'</b>' : '')
-        + '</span></td>'
+        + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+        /* what they last had, and what it cost: the quantity below is
+           decided against these rather than from memory */
+        + myLastCells(ROLE, c, DATE)
         + '<td class="c" style="width:150px">'
         + '<input type="number" min="0" step="any" class="row-inp mono" id="mq_'+esc(c)+'" '
         + 'value="'+(has?qty:'')+'" placeholder="0" onchange="myQty(\''+c+'\',this.value)"> '
@@ -3666,12 +3664,12 @@ function vMyIndent(){
     };
 
     if(usual.length){
-      rows += '<tr class="vgrp" data-grp="usual"><td colspan="4">What you usually order '
+      rows += '<tr class="vgrp" data-grp="usual"><td colspan="6">What you usually order '
             + '<span style="font-weight:400;color:var(--ink-3)">&middot; '+usual.length
             + ' product'+(usual.length===1?'':'s')+', the ones you ask for most first</span></td></tr>';
       usual.forEach(c=>{ rows += line(c, 'usual'); });
     }
-    rows += '<tr class="vgrp" data-grp="rest"><td colspan="4">'
+    rows += '<tr class="vgrp" data-grp="rest"><td colspan="6">'
           + (usual.length ? 'Everything else' : 'All products')
           + ' <span style="font-weight:400;color:var(--ink-3)">&middot; '+rest.length+'</span></td></tr>';
     rest.forEach(c=>{ rows += line(c, 'rest'); });
@@ -3695,6 +3693,7 @@ function vMyIndent(){
       + '<span class="sub" id="myCount" style="margin:0">'+codes.length+' chosen</span></div>')
    + (locked ? '' : vImportPanel())
    + '<div class="card" id="mylist"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="r">Last order</th><th class="r">Last price</th>'
    + '<th class="c">Quantity</th><th></th></tr></thead>'
    + '<tbody>'+rows+'</tbody></table></div>'
    + '<div class="bar">'
@@ -3730,36 +3729,71 @@ function myUsual(shopId, exceptDate){
   });
 }
 
-/* The last time this shop had this product, and how much. What was
-   packed is what they actually got, so it wins over what they asked
-   for; before packing there is only the indent, and that is what is
-   shown. Yesterday is named as yesterday — a date has to be read, a
-   word does not. */
+/* The last time this shop actually had this product.
+
+   One record answers both columns, so the quantity and the price a
+   shop reads always belong to the same day. The bill is the best
+   source — it carries what arrived and what it was charged at, frozen
+   at the time. Failing that the packing slip says what arrived but not
+   at what price, and failing that there is only what they asked for,
+   which is not a purchase and is marked as such by having no price. */
 function myLastFor(shopId, code, beforeDate){
   const dates = {};
   Object.keys(DB.indents || {}).forEach(d=>{ dates[d] = 1; });
   Object.keys(DB.days || {}).forEach(d=>{ dates[d] = 1; });
+  Object.keys(DB.invoices || {}).forEach(d=>{ dates[d] = 1; });
   const days = Object.keys(dates).filter(d=>d < beforeDate).sort();
+
   for(let i = days.length - 1; i >= 0; i--){
     const d = days[i];
+
+    const inv = (DB.invoices[d] || {})[shopId];
+    const line = inv && (inv.lines || []).filter(l=>String(l.code) === String(code))[0];
+    if(line && Number(line.qty) > 0){
+      return { date: d, qty: Number(line.qty), rate: Number(line.rate) || null, billed: true };
+    }
+
     const packed = ((DB.days[d] || {}).packed || {})[shopId] || {};
     if(packed[code] !== undefined && Number(packed[code]) > 0){
-      return { date: d, qty: Number(packed[code]), got: true };
+      return { date: d, qty: Number(packed[code]), rate: null, billed: false };
     }
+
     const ind = (DB.indents[d] || {})[shopId];
     const q = ind && ind.lines ? ind.lines[code] : undefined;
-    if(q !== undefined && Number(q) > 0) return { date: d, qty: Number(q), got: false };
+    if(q !== undefined && Number(q) > 0){
+      return { date: d, qty: Number(q), rate: null, billed: false };
+    }
   }
   return null;
 }
 
-function myLastLabel(shopId, code, date){
+/* kg stays kg; the rest read better shortened next to a price */
+const UNIT_SHORT = { piece: 'pc', pieces: 'pc', box: 'box', tray: 'tray', bunch: 'bunch' };
+function unitShort(u){ return UNIT_SHORT[String(u||'').toLowerCase()] || (u || ''); }
+function unitPlural(u, n){
+  const s = String(u||'').toLowerCase();
+  if(Number(n) === 1) return unitShort(u);
+  if(s === 'piece') return 'pcs';
+  if(s === 'box')   return 'boxes';
+  return unitShort(u);
+}
+
+/* Last order and last price, as two cells. Blank when they have never
+   had it — an empty cell says "new to you" better than a dash does. */
+function myLastCells(shopId, code, date){
+  const e = CAT[code] || {};
   const l = myLastFor(shopId, code, date);
-  if(!l) return '';
-  const y = addDays(date, -1);
-  const when = (l.date === y) ? 'yesterday' : fmtDate(l.date);
-  return (l.got ? 'got ' : 'asked ') + num(l.qty) + ' ' + (CAT[code] ? CAT[code].unit : '')
-       + ' ' + when;
+  if(!l){
+    return '<td class="r" style="width:150px"></td><td class="r" style="width:110px"></td>';
+  }
+  const qty = '<span class="mono">'+num(l.qty)+'</span> '+esc(unitPlural(e.unit, l.qty))
+            + '<span class="tam">'+esc(fmtDate(l.date))+'</span>';
+  const price = l.rate
+    ? '<span class="mono">&#8377;'+money(l.rate)+'</span>'
+      + '<span class="tam">per '+esc(unitShort(e.unit))+'</span>'
+    : '';
+  return '<td class="r" style="width:150px">'+qty+'</td>'
+       + '<td class="r" style="width:110px">'+price+'</td>';
 }
 
 /* The last indent this shop actually sent, whatever became of it. */
@@ -4181,9 +4215,12 @@ function vIndents(){
     const n = Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
     rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td>'
       + '<td>'+statusPill(ind.status, ind.late)+'</td>'
+      /* "Review & accept" only when there is something to review — on a
+         shop that has sent nothing it promises work that is not there */
       + '<td class="r"><button class="btn'+(ind.status==='submitted'?' sm pri':' sm')
       + '" onclick="OPENIND=\''+s.id+'\';render()">'
-      + (indentLocked(DATE, s.id) ? 'View' : 'Review &amp; accept')+'</button></td></tr>';
+      + (ind.status==='submitted' ? 'Review &amp; accept'
+         : indentLocked(DATE, s.id) ? 'View' : 'Open')+'</button></td></tr>';
   });
   /* A shop submits for the day it is ordering for, which is not always
      the day this screen happens to be showing — and an empty list then
