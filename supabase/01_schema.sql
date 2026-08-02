@@ -101,6 +101,12 @@ create table indents (
   shop_id      text not null references shops(id) on delete cascade,
   status       indent_status not null default 'draft',
   submitted_at timestamptz,
+  -- when it was closed, and by whom. Accepted is final
+  -- (02_security.sql), so this is the moment the row became the record
+  -- of what was ordered. The name is stored rather than the id because
+  -- the shop is shown it, and a shop may not read app_users.
+  accepted_at      timestamptz,
+  accepted_by_name text not null default '',
   late         boolean not null default false,
   unique (trade_date, shop_id)
 );

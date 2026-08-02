@@ -779,6 +779,9 @@ const SHOPS = [
 ];
 
 const CLIENT = 'Kalpaviruksha Pazhamudir Nilayam';
+/* us, as opposed to CLIENT which is the chain we supply. Written out
+   wherever a shop is told who did something to their indent. */
+const VELORA = 'Velora Fresh';
 /* The indent window: shops were meant to send between 6 and 9 pm, with
    anything up to 11:30 recorded as late.
 
@@ -1006,6 +1009,8 @@ const VFSync = (function () {
           trade_date: date, shop_id: shop,
           status: ind.status || 'draft',
           submitted_at: ind.submittedAt || null,
+          accepted_at: ind.acceptedAt || null,
+          accepted_by_name: ind.acceptedBy || null,
           late: !!ind.late,
         };
         Object.keys(lines).forEach(code => {
@@ -1537,7 +1542,8 @@ const VFSync = (function () {
     return out;
   }
 
-  async function send(table, rows, isDelete, keyCols) {
+  async function send(table, rows, isDelete, keyCols, depth) {
+    depth = depth || 0;
     if (table === 'indent_lines') {
       rows = await asLineRows(rows, isDelete);
       keyCols = ['indent_id', 'product_code'];
@@ -1571,7 +1577,34 @@ const VFSync = (function () {
         headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify(unique),
       });
-    if (!r.ok) throw await httpError(r, table);
+    if (!r.ok) {
+      const e = await httpError(r, table);
+      /* A project a version behind this build does not have every column
+         yet. PostgREST names the one it could not find, so it is dropped
+         and the rest of the row is sent — the day's work goes up, and
+         only the new field waits for the migration. Bounded, so a
+         genuine fault cannot spin here. */
+      const miss = missingColumn(e);
+      if (miss && depth < 4 && unique.some(row => miss in row)) {
+        unique.forEach(row => { delete row[miss]; });
+        if (typeof console !== 'undefined') {
+          console.warn('[VFSync] ' + table + '.' + miss + ' is not in this project yet — '
+                       + 'sent without it');
+        }
+        return send(table, unique, false, keyCols, depth + 1);
+      }
+      throw e;
+    }
+  }
+
+  /* "Could not find the 'accepted_at' column of 'indents' in the schema
+     cache" — the column, not the table, so the row is worth retrying. */
+  function missingColumn(e) {
+    const b = e && e.body;
+    const msg = (b && b.message) || (e && e.message) || '';
+    if (!/column/i.test(msg)) return '';
+    const m = msg.match(/'([a-z0-9_]+)' column/i);
+    return m ? m[1] : '';
   }
 
   /* A project that has not been given the newest schema yet answers
@@ -1649,11 +1682,55 @@ const VFSync = (function () {
      when a device has been away. Anything still queued locally is
      pushed afterwards, so unsent local work is never lost. */
 
-  async function get(table, select) {
-    const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*'),
-                          { headers: headers() });
+  async function get(table, select, filter) {
+    const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*')
+                          + (filter ? '&' + filter : ''), { headers: headers() });
     if (!r.ok) throw await httpError(r, table);
     return r.json();
+  }
+
+  /* ---------- one day's indents, on demand ----------
+     A shop submits on its own phone; the office is looking at a screen
+     that was drawn before that happened. Rather than make somebody press
+     reload — and rather than pull the whole history every half minute —
+     this reads just the indents of the day on screen and merges them in.
+     Returns true when something actually changed, so the caller only
+     redraws when there is a reason to. */
+  async function refreshIndents(DB, date) {
+    if (!enabled() || !signedIn() || !date) return false;
+    const before = JSON.stringify(DB.indents[date] || {});
+    let inds;
+    try {
+      inds = await get('indents', '*', 'trade_date=eq.' + encodeURIComponent(date));
+    } catch (e) { return false; }        /* offline, or a slow moment */
+    const ids = inds.map(i => i.id).filter(Boolean);
+    let lines = [];
+    if (ids.length) {
+      try {
+        lines = await get('indent_lines', '*', 'indent_id=in.(' + ids.join(',') + ')');
+      } catch (e) { lines = []; }
+    }
+    const byId = {};
+    const day = DB.indents[date] = DB.indents[date] || {};
+    /* only the shops the server answered for: a draft being typed here
+       and not yet sent must not be wiped by a read */
+    inds.forEach(i => {
+      byId[i.id] = i.shop_id;
+      day[i.shop_id] = {
+        status: i.status, lines: {},
+        submittedAt: i.submitted_at || null,
+        acceptedAt: i.accepted_at || null,
+        acceptedBy: i.accepted_by_name || null,
+        late: !!i.late,
+      };
+    });
+    lines.forEach(l => {
+      const shop = byId[l.indent_id];
+      if (shop && day[shop]) day[shop].lines[l.product_code] = Number(l.qty);
+    });
+    const changed = JSON.stringify(day) !== before;
+    if (changed) { synced = flatten(DB); writeJSON(SKEY, synced); }
+    return changed;
   }
 
   async function pull(DB) {
@@ -1670,7 +1747,8 @@ const VFSync = (function () {
       indById[i.id] = i;
       const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
       d[i.shop_id] = { status: i.status, lines: {},
-                       submittedAt: i.submitted_at, late: !!i.late };
+                       submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
+                       acceptedBy: i.accepted_by_name || null, late: !!i.late };
     });
     ilines.forEach(l => {
       const hdr = indById[l.indent_id];
@@ -2012,6 +2090,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
+    refreshIndents,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
@@ -2461,6 +2540,16 @@ function uniqueCodes(date){
   });
   return Object.keys(set).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
 }
+/* Accepted is final. The day's order has gone to the vendors on the
+   strength of it, the shop has been told what it is getting, and a
+   quantity that moves afterwards makes the bill disagree with the
+   packing slip. Every screen and every function asks this rather than
+   testing the status itself, so there is one answer and not six. */
+function indentLocked(date, shopId){
+  const st = (indentOf(date, shopId) || {}).status;
+  return st !== 'draft' && st !== 'submitted';
+}
+
 function windowState(){
   if(!WINDOW_ON) return 'open';      /* no hours are enforced — see WINDOW_ON */
   if(DB.settings.anytime) return 'open';
@@ -3503,7 +3592,7 @@ function vMyIndent(){
   const sh = shopById(ROLE); if(!sh) return '';
   const ind = indentOf(DATE, ROLE);
   const w = windowState();
-  const locked = (ind.status !== 'draft' && ind.status !== 'submitted');
+  const locked = indentLocked(DATE, ROLE);
   const codes = Object.keys(ind.lines);
 
   let note = '';
@@ -3513,7 +3602,13 @@ function vMyIndent(){
   if(w==='late')   note = '<div class="note">Late window. Submitting now is recorded as a late indent and the owner is notified.</div>';
   if(w==='closed') note = '<div class="note" style="background:#fbeaea;border-color:#f0c4c4;color:#8c2020">Indent window is closed. It opens again at 6:00 pm.</div>';
   if(ind.status==='submitted') note = '<div class="note" style="background:#e7f0fa;border-color:#c4d8ee;color:#1b4f80">Submitted'+(ind.late?' (late)':'')+'. You can still change it until Velora accepts it.</div>';
-  if(locked) note = '<div class="note" style="background:#f0f0ed;border-color:#dedeD8;color:#5f5f5a">Accepted by Velora. This indent can no longer be changed.</div>';
+  if(locked) note = '<div class="note" style="background:var(--green-soft);border-color:#bfe0cd;'
+    + 'color:var(--green)"><b>Accepted by '+esc(VELORA)+'.</b>'
+    + (ind.acceptedBy ? ' ' + esc(ind.acceptedBy) : '')
+    + (ind.acceptedAt ? ' on ' + esc(fmtDate(ind.acceptedAt.slice(0,10)))
+                      + ' at ' + esc(ind.acceptedAt.slice(11,16)) : '')
+    + '. This indent is closed and cannot be changed &mdash; it is the record of what was '
+    + 'ordered. Anything that has to change now goes through the office.</div>';
 
   /* The whole list, in the order the vendors are grouped, with a box on
      every line. A shop knows what it wants by looking down the list, not
@@ -3583,7 +3678,8 @@ function vMyIndent(){
   }
 
   return '<h2>Indent for '+fmtDate(DATE)+'</h2>'
-   + '<p class="sub">'+esc(sh.name)+' &middot; '+esc(CLIENT)+'</p>'
+   + '<p class="sub">'+esc(sh.name)+' &middot; '+esc(CLIENT)+' &middot; '
+   + statusPill(ind.status, ind.late)+'</p>'
    + note
    + (locked ? '' :
       '<div class="bar"><div class="srch">'
@@ -3680,6 +3776,7 @@ function myLastIndent(shopId, exceptDate){
    before is a better starting point than an empty list. Never silently:
    anything already typed today would be replaced, so that is asked. */
 function myRepeatLast(){
+  if(indentLocked(DATE, ROLE)) return lockedNote();
   const from = myLastIndent(ROLE, DATE);
   if(!from){ alert('There is no earlier indent to copy yet.'); return; }
   const ind = indentOf(DATE, ROLE);
@@ -3710,7 +3807,10 @@ function myRepeatLast(){
    pastes in below like anything else. */
 let IMPORT = null;      /* {lines:[{raw, code, qty, ok, use}], when} */
 
-function myImportOpen(){ IMPORT = { lines: [], text: '' }; render(); }
+function myImportOpen(){
+  if(indentLocked(DATE, ROLE)) return lockedNote();
+  IMPORT = { lines: [], text: '' }; render();
+}
 function myImportClose(){ IMPORT = null; render(); }
 
 /* One line of somebody's sheet: a product and a number, in any order,
@@ -3807,6 +3907,7 @@ function myImportPick(i, code){
 
 function myImportApply(){
   if(!IMPORT) return;
+  if(indentLocked(DATE, ROLE)){ IMPORT = null; return lockedNote(); }
   const ind = indentOf(DATE, ROLE);
   let n = 0;
   IMPORT.lines.forEach(l=>{
@@ -3906,13 +4007,25 @@ function myApplyFilter(){
   }
 }
 function myQty(code, v){
+  if(indentLocked(DATE, ROLE)) return lockedNote();
   const ind = indentOf(DATE, ROLE);
   const q = parseFloat(v)||0;
   if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
   save(); render();
 }
-function myDel(code){ const ind = indentOf(DATE, ROLE); delete ind.lines[code]; save(); render(); }
+function myDel(code){
+  if(indentLocked(DATE, ROLE)) return lockedNote();
+  const ind = indentOf(DATE, ROLE); delete ind.lines[code]; save(); render();
+}
+
+/* Said once, the same way, wherever something is refused because the
+   indent is closed. */
+function lockedNote(){
+  alert('This indent has been accepted by ' + VELORA + ' and can no longer be changed.');
+  render();
+}
 function submitIndent(){
+  if(indentLocked(DATE, ROLE)) return lockedNote();
   const ind = indentOf(DATE, ROLE);
   const w = windowState();
   if(w==='closed'){ alert('The indent window is closed.'); return; }
@@ -4008,7 +4121,8 @@ function vMyBills(){
    ADMIN — day board
    ============================================================ */
 function statusPill(s, late){
-  const map = {draft:['p-grey','Not submitted'], submitted:['p-blue','Submitted'], accepted:['p-amber','Accepted'],
+  const map = {draft:['p-grey','Not submitted'], submitted:['p-blue','Submitted &middot; waiting for review'],
+               accepted:['p-green','Accepted by '+VELORA],
                packed:['p-amber','Packed'], shipped:['p-blue','Out for delivery'], received:['p-green','Received'], billed:['p-green','Billed']};
   const m = map[s] || map.draft;
   return '<span class="pill '+m[0]+'">'+m[1]+'</span>'+(late?' <span class="pill p-red">Late</span>':'');
@@ -4067,16 +4181,38 @@ function vIndents(){
     const n = Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
     rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td>'
       + '<td>'+statusPill(ind.status, ind.late)+'</td>'
-      + '<td class="r"><button class="btn sm" onclick="OPENIND=\''+s.id+'\';render()">'
-      + (ind.status==='submitted'?'Review &amp; accept':'Open')+'</button></td></tr>';
+      + '<td class="r"><button class="btn'+(ind.status==='submitted'?' sm pri':' sm')
+      + '" onclick="OPENIND=\''+s.id+'\';render()">'
+      + (indentLocked(DATE, s.id) ? 'View' : 'Review &amp; accept')+'</button></td></tr>';
   });
+  /* A shop submits for the day it is ordering for, which is not always
+     the day this screen happens to be showing — and an empty list then
+     reads as "nothing has come in" when in fact it has. */
+  let elsewhere = '';
+  const waiting = {};
+  Object.keys(DB.indents || {}).forEach(d=>{
+    if(d === DATE) return;
+    Object.keys(DB.indents[d] || {}).forEach(sid=>{
+      if((DB.indents[d][sid] || {}).status === 'submitted') waiting[d] = (waiting[d]||0) + 1;
+    });
+  });
+  const wdays = Object.keys(waiting).sort();
+  if(wdays.length){
+    elsewhere = '<div class="note" style="background:var(--blue-soft);border-color:#c4d8ee;'
+      + 'color:var(--blue)">Waiting on '+(wdays.length===1?'another day':'other days')+': '
+      + wdays.map(d=>'<a href="#" onclick="setDate(\''+d+'\');return false"><b>'+esc(fmtDate(d))
+                     + '</b></a> ('+waiting[d]+')').join(' &middot; ')
+      + '</div>';
+  }
+
   return '<h2>Indents</h2><p class="sub">'+fmtDate(DATE)+' &middot; cut what is not needed, then accept</p>'
+   + elsewhere
    + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Lines</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function vIndentOne(id){
   const s = shopById(id), ind = indentOf(DATE, id);
   const codes = Object.keys(ind.lines);
-  const editable = (ind.status==='submitted' || ind.status==='draft');
+  const editable = !indentLocked(DATE, id);
   let rows='';
   codes.forEach(c=>{
     const e=CAT[c]; if(!e) return;
@@ -4090,13 +4226,30 @@ function vIndentOne(id){
   return '<div class="bar"><button class="btn sm" onclick="OPENIND=null;render()">&larr; All indents</button></div>'
    + '<h2>'+esc(s.name)+'</h2><p class="sub">Indent for '+fmtDate(DATE)+' &middot; '+statusPill(ind.status, ind.late)+'</p>'
    + (ind.late?'<div class="note">This indent was submitted late.</div>':'')
+   /* closed means closed for the office too — the screen says so rather
+      than showing boxes that would be refused */
+   + (editable ? '' :
+      '<div class="note" style="background:var(--green-soft);border-color:#bfe0cd;color:var(--green)">'
+      + '<b>Accepted by '+esc(VELORA)+'.</b> '
+      + (ind.acceptedBy ? esc(ind.acceptedBy) : 'Accepted')
+      + (ind.acceptedAt ? ' on '+esc(fmtDate(ind.acceptedAt.slice(0,10)))
+                        + ' at '+esc(ind.acceptedAt.slice(11,16)) : '')
+      + '. This is the record of what was ordered; it cannot be changed, here or at the '
+      + 'shop.</div>')
    + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Quantity</th><th></th></tr></thead>'
    + '<tbody>'+(rows||'<tr><td colspan="4" class="empty">Nothing indented.</td></tr>')+'</tbody></table></div>'
    + '<div class="bar"><span class="spacer"></span>'
-   + (ind.status==='submitted' && ROLE!=='ho' ? '<button class="btn pri" onclick="acceptIndent(\''+id+'\')">Accept indent</button>' : '')
+   + (editable && ind.status==='submitted' && ROLE!=='ho'
+      ? '<button class="btn pri" onclick="acceptIndent(\''+id+'\')">Accept indent</button>' : '')
    + '</div>';
 }
 function adminQty(shopId, code, v){
+  /* the office is not an exception: once it is accepted it is the
+     record, and the database refuses the change as well */
+  if(indentLocked(DATE, shopId)){
+    alert('This indent has been accepted and is closed. It cannot be changed.');
+    render(); return;
+  }
   const ind = indentOf(DATE, shopId);
   const q = parseFloat(v)||0;
   if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
@@ -4104,7 +4257,22 @@ function adminQty(shopId, code, v){
 }
 function acceptIndent(shopId){
   const ind = indentOf(DATE, shopId);
+  if(ind.status !== 'submitted' && ind.status !== 'draft'){
+    alert('That indent has already been accepted.'); render(); return;
+  }
+  const sh = shopById(shopId);
+  const n = Object.keys(ind.lines).filter(c=>ind.lines[c] > 0).length;
+  /* the last chance to look: after this nobody can change it */
+  if(!confirm('Accept ' + (sh ? sh.name : shopId) + '\u2019s indent \u2014 ' + n + ' line'
+              + (n===1?'':'s') + '?\n\nIt is closed after this. Neither the shop nor the office '
+              + 'can change it, and the vendor orders are built from it.')) return;
   ind.status = 'accepted';
+  ind.acceptedAt = new Date().toISOString();
+  /* who closed it, in the words the shop will read. Either of them may
+     accept and either is final, so the record has to say which. */
+  ind.acceptedBy = (ME && ME.full_name)
+    ? ME.full_name + ' (' + (ROLE === 'owner' ? 'Owner' : 'Manager') + ')'
+    : (ROLE === 'owner' ? 'Owner' : 'Manager');
   save(); OPENIND=null; render();
 }
 
@@ -4880,6 +5048,34 @@ window.VF = {
   get DB(){ return DB; }, get DATE(){ return DATE; }, get ROLE(){ return ROLE; }, get TAB(){ return TAB; }
 };
 
+/* ---------- what arrives while you are looking ----------
+   A shop submits on its own phone, and the office is looking at a
+   screen drawn before that happened. Nobody should have to press
+   reload to find out. Only the day on screen is read, and only while
+   an indent screen is open, so this costs one small request a
+   half-minute and nothing at all on the other screens.
+
+   The redraw is held back while somebody is typing: losing a
+   half-entered quantity to a background refresh would be worse than
+   seeing it a moment later. */
+let WATCHING = false;
+
+async function watchIndents(){
+  if(WATCHING) return;
+  if(typeof VFSync === 'undefined' || !VFSync.enabled() || !VFSync.signedIn()) return;
+  if(TAB !== 'indents' && TAB !== 'myindent') return;
+  WATCHING = true;
+  try{
+    const changed = await VFSync.refreshIndents(DB, DATE);
+    if(changed){
+      const a = document.activeElement;
+      const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#main');
+      if(!typing) render();
+    }
+  }catch(e){ /* offline: the screen stands, the next tick tries again */ }
+  finally{ WATCHING = false; }
+}
+
 /* ---------- boot ---------- */
 function tick(){
   const n = new Date();
@@ -4904,6 +5100,11 @@ placeHeaderControls();
 render();
 tick();
 setInterval(tick, 30000);
+setInterval(watchIndents, 20000);
+/* and straight away when the screen is opened, rather than up to
+   twenty seconds later */
+const _go = go;
+go = function(t, keepHash){ _go(t, keepHash); watchIndents(); };
 
 /* re-wire the product search after every render that needs it */
 const _render = render;

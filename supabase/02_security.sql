@@ -255,12 +255,24 @@ create policy read_indents on indents for select using (may_see_shop(shop_id));
 
 -- Who may still change an indent depends on its state
 -- (docs/WORKFLOW.md, "Indent states"):
---   draft/submitted  the shop and its head office
---   accepted         Velora only
+--   draft/submitted  the shop, its head office, and Velora
+--   accepted         nobody, bar an owner
+--
+-- Accepted is final. The vendor orders were placed on the strength of
+-- it and the shop was told what it is getting, so a quantity that moves
+-- afterwards makes the bill disagree with the packing slip. USING says
+-- which existing rows may be touched; WITH CHECK says what they may be
+-- turned into. Accepting is therefore still allowed — the row being
+-- changed is 'submitted' at the time — while changing it afterwards is
+-- not, for the office as much as for the shop.
+--
+-- The owner is the administrative override, and the only one: correcting
+-- a mistake in a closed indent is their call to make and to answer for.
 create policy write_indents on indents for all
   using (
     case
-      when is_velora() then true
+      when is_owner() then true
+      when is_velora() then status in ('draft','submitted')
       when current_role_name() in ('shop','ho')
         then may_see_shop(shop_id) and status in ('draft','submitted')
       else false
@@ -268,6 +280,7 @@ create policy write_indents on indents for all
   )
   with check (
     case
+      when is_owner() then true
       when is_velora() then true
       when current_role_name() in ('shop','ho')
         then may_see_shop(shop_id) and status in ('draft','submitted')
@@ -275,13 +288,20 @@ create policy write_indents on indents for all
     end
   );
 
+-- A line follows its header: once the indent is accepted its lines are
+-- the record too, and only an owner may touch them.
 create policy rw_indent_lines on indent_lines for all
-  using (exists (select 1 from indents i where i.id = indent_id and may_see_shop(i.shop_id)))
+  using (exists (
+    select 1 from indents i
+     where i.id = indent_id
+       and may_see_shop(i.shop_id)
+       and (is_owner() or i.status in ('draft','submitted'))
+  ))
   with check (exists (
     select 1 from indents i
      where i.id = indent_id
        and may_see_shop(i.shop_id)
-       and (is_velora() or i.status in ('draft','submitted'))
+       and (is_owner() or i.status in ('draft','submitted'))
   ));
 
 -- ---------- rates: Velora writes, and only Velora reads ----------

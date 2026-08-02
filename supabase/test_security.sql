@@ -213,6 +213,65 @@ select t('and remove one it could not finish',
 -- ============================================================
 -- results
 -- ============================================================
+-- 10. accepted is final
+--
+-- The vendor orders were placed on the strength of it and the shop was
+-- told what it is getting, so a quantity that moves afterwards makes
+-- the bill disagree with the packing slip. The office is not an
+-- exception; the owner is, because correcting a closed indent is their
+-- call to make and to answer for.
+--
+-- The seeded indents are already accepted, so this works on one of its
+-- own: a fresh day, submitted, then closed.
+-- ============================================================
+set role authenticated;
+select login(:ADMIN);
+
+select t('a manager may put up a submitted indent',
+  (select case when cnt($$with x as (insert into indents (trade_date, shop_id, status)
+        values ('2026-09-09','KLP','submitted') returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+select t('and may change it while it is submitted',
+  (select case when cnt($$with x as (update indents set late = true
+                                      where trade_date = '2026-09-09' and shop_id = 'KLP'
+                                      returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+select t('a manager may accept it',
+  (select case when cnt($$with x as (update indents set status = 'accepted'
+                                      where trade_date = '2026-09-09' and shop_id = 'KLP'
+                                      returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+select t('but not change it afterwards',
+  (select case when cnt($$with x as (update indents set late = false
+                                      where trade_date = '2026-09-09' and shop_id = 'KLP'
+                                      returning 1) select count(*) from x$$) = 0
+          then 'ok' else 'CHANGED' end), 'ok');
+
+select t('nor add a line to it',
+  (select case when cnt($$with x as (insert into indent_lines (indent_id, product_code, qty)
+        select id, '1', 5 from indents
+         where trade_date = '2026-09-09' and shop_id = 'KLP' returning 1)
+     select count(*) from x$$) < 1
+          then 'ok' else 'ADDED' end), 'ok');
+
+select login(:KLP);
+select t('and the shop certainly cannot reopen it',
+  (select case when cnt($$with x as (update indents set status = 'submitted'
+                                      where trade_date = '2026-09-09' and shop_id = 'KLP'
+                                      returning 1) select count(*) from x$$) = 0
+          then 'ok' else 'CHANGED' end), 'ok');
+
+select login(:OWNER);
+select t('the owner is the one override',
+  (select case when cnt($$with x as (update indents set late = false
+                                      where trade_date = '2026-09-09' and shop_id = 'KLP'
+                                      returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+-- ============================================================
 reset role;
 
 select n, label,

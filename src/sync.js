@@ -57,6 +57,8 @@ const VFSync = (function () {
           trade_date: date, shop_id: shop,
           status: ind.status || 'draft',
           submitted_at: ind.submittedAt || null,
+          accepted_at: ind.acceptedAt || null,
+          accepted_by_name: ind.acceptedBy || null,
           late: !!ind.late,
         };
         Object.keys(lines).forEach(code => {
@@ -588,7 +590,8 @@ const VFSync = (function () {
     return out;
   }
 
-  async function send(table, rows, isDelete, keyCols) {
+  async function send(table, rows, isDelete, keyCols, depth) {
+    depth = depth || 0;
     if (table === 'indent_lines') {
       rows = await asLineRows(rows, isDelete);
       keyCols = ['indent_id', 'product_code'];
@@ -622,7 +625,34 @@ const VFSync = (function () {
         headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify(unique),
       });
-    if (!r.ok) throw await httpError(r, table);
+    if (!r.ok) {
+      const e = await httpError(r, table);
+      /* A project a version behind this build does not have every column
+         yet. PostgREST names the one it could not find, so it is dropped
+         and the rest of the row is sent — the day's work goes up, and
+         only the new field waits for the migration. Bounded, so a
+         genuine fault cannot spin here. */
+      const miss = missingColumn(e);
+      if (miss && depth < 4 && unique.some(row => miss in row)) {
+        unique.forEach(row => { delete row[miss]; });
+        if (typeof console !== 'undefined') {
+          console.warn('[VFSync] ' + table + '.' + miss + ' is not in this project yet — '
+                       + 'sent without it');
+        }
+        return send(table, unique, false, keyCols, depth + 1);
+      }
+      throw e;
+    }
+  }
+
+  /* "Could not find the 'accepted_at' column of 'indents' in the schema
+     cache" — the column, not the table, so the row is worth retrying. */
+  function missingColumn(e) {
+    const b = e && e.body;
+    const msg = (b && b.message) || (e && e.message) || '';
+    if (!/column/i.test(msg)) return '';
+    const m = msg.match(/'([a-z0-9_]+)' column/i);
+    return m ? m[1] : '';
   }
 
   /* A project that has not been given the newest schema yet answers
@@ -700,11 +730,55 @@ const VFSync = (function () {
      when a device has been away. Anything still queued locally is
      pushed afterwards, so unsent local work is never lost. */
 
-  async function get(table, select) {
-    const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*'),
-                          { headers: headers() });
+  async function get(table, select, filter) {
+    const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*')
+                          + (filter ? '&' + filter : ''), { headers: headers() });
     if (!r.ok) throw await httpError(r, table);
     return r.json();
+  }
+
+  /* ---------- one day's indents, on demand ----------
+     A shop submits on its own phone; the office is looking at a screen
+     that was drawn before that happened. Rather than make somebody press
+     reload — and rather than pull the whole history every half minute —
+     this reads just the indents of the day on screen and merges them in.
+     Returns true when something actually changed, so the caller only
+     redraws when there is a reason to. */
+  async function refreshIndents(DB, date) {
+    if (!enabled() || !signedIn() || !date) return false;
+    const before = JSON.stringify(DB.indents[date] || {});
+    let inds;
+    try {
+      inds = await get('indents', '*', 'trade_date=eq.' + encodeURIComponent(date));
+    } catch (e) { return false; }        /* offline, or a slow moment */
+    const ids = inds.map(i => i.id).filter(Boolean);
+    let lines = [];
+    if (ids.length) {
+      try {
+        lines = await get('indent_lines', '*', 'indent_id=in.(' + ids.join(',') + ')');
+      } catch (e) { lines = []; }
+    }
+    const byId = {};
+    const day = DB.indents[date] = DB.indents[date] || {};
+    /* only the shops the server answered for: a draft being typed here
+       and not yet sent must not be wiped by a read */
+    inds.forEach(i => {
+      byId[i.id] = i.shop_id;
+      day[i.shop_id] = {
+        status: i.status, lines: {},
+        submittedAt: i.submitted_at || null,
+        acceptedAt: i.accepted_at || null,
+        acceptedBy: i.accepted_by_name || null,
+        late: !!i.late,
+      };
+    });
+    lines.forEach(l => {
+      const shop = byId[l.indent_id];
+      if (shop && day[shop]) day[shop].lines[l.product_code] = Number(l.qty);
+    });
+    const changed = JSON.stringify(day) !== before;
+    if (changed) { synced = flatten(DB); writeJSON(SKEY, synced); }
+    return changed;
   }
 
   async function pull(DB) {
@@ -721,7 +795,8 @@ const VFSync = (function () {
       indById[i.id] = i;
       const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
       d[i.shop_id] = { status: i.status, lines: {},
-                       submittedAt: i.submitted_at, late: !!i.late };
+                       submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
+                       acceptedBy: i.accepted_by_name || null, late: !!i.late };
     });
     ilines.forEach(l => {
       const hdr = indById[l.indent_id];
@@ -1063,6 +1138,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
+    refreshIndents,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,

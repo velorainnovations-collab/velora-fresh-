@@ -41,6 +41,7 @@ const EXTRA_PRODUCTS = [];
 const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
 const INDENTS        = [];   // indent headers, so their ids can be looked up
+const ILINES         = [];   // and their lines, so a second device can read them
 let LAST_CODE = '';          // the six digit code the mock last 'emailed'
 
 // what list_people() returns; mutated by the rpc handlers below
@@ -229,13 +230,32 @@ const srv = http.createServer((req, res) => {
         return send(200, INDENTS.filter(i => (!d || i.trade_date === d) &&
                                              (!s || i.shop_id === s)));
       }
+      if (req.method === 'GET' && name === 'indent_lines') {
+        const inp = (url.searchParams.get('indent_id') || '');
+        const ids = (inp.match(/in\.\((.*)\)/) || [])[1];
+        const want = ids ? ids.split(',') : null;
+        return send(200, ILINES.filter(l => !want || want.indexOf(l.indent_id) > -1));
+      }
       if (req.method === 'POST' && name === 'indents') {
         (body ? JSON.parse(body) : []).forEach(r => {
-          if (!INDENTS.some(i => i.trade_date === r.trade_date && i.shop_id === r.shop_id)) {
-            INDENTS.push({ id: 'ind-' + (INDENTS.length + 1), trade_date: r.trade_date,
-                           shop_id: r.shop_id });
-          }
+          const had = INDENTS.filter(i => i.trade_date === r.trade_date && i.shop_id === r.shop_id)[0];
+          if (had) Object.assign(had, r);
+          else INDENTS.push(Object.assign({ id: 'ind-' + (INDENTS.length + 1) }, r));
         });
+      }
+      if (req.method === 'POST' && name === 'indent_lines') {
+        (body ? JSON.parse(body) : []).forEach(r => {
+          const had = ILINES.filter(l => l.indent_id === r.indent_id &&
+                                         l.product_code === r.product_code)[0];
+          if (had) had.qty = r.qty; else ILINES.push(Object.assign({}, r));
+        });
+      }
+      if (req.method === 'DELETE' && name === 'indent_lines') {
+        const id = (url.searchParams.get('indent_id') || '').replace(/^eq\./, '');
+        const pc = (url.searchParams.get('product_code') || '').replace(/^eq\./, '');
+        for (let i = ILINES.length - 1; i >= 0; i--) {
+          if (ILINES[i].indent_id === id && ILINES[i].product_code === pc) ILINES.splice(i, 1);
+        }
       }
 
       /* The columns each table actually has, copied from
@@ -244,7 +264,8 @@ const srv = http.createServer((req, res) => {
          months, PostgREST refused every push that carried a line, and
          nothing here noticed. */
       const COLUMNS = {
-        indents:        ['id', 'trade_date', 'shop_id', 'status', 'submitted_at', 'late'],
+        indents:        ['id', 'trade_date', 'shop_id', 'status', 'submitted_at',
+                         'accepted_at', 'accepted_by_name', 'late'],
         indent_lines:   ['indent_id', 'product_code', 'qty'],
         day_rates:      ['trade_date', 'product_code', 'rate'],
         packed:         ['trade_date', 'shop_id', 'product_code', 'qty'],
