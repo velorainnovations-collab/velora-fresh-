@@ -457,6 +457,9 @@ table.ibl tbody tr:hover td{background:none}
   <select id="roleSel" onchange="setRole(this.value)"></select>
   <span id="whoami" class="hidden"></span>
   <input type="date" id="dateSel" onchange="setDate(this.value)">
+  <!-- testing only; hidden unless TESTING_TOOLS is on -->
+  <button id="wipeDay" class="btn sm danger hidden" type="button" onclick="wipeDayAsk()"
+          title="Testing only: clear everything for this date">Clear day</button>
   <span class="spacer"></span>
   <label id="anyBox" class="hidden" style="font-size:12.5px;color:var(--ink-3);display:flex;align-items:center;gap:5px;cursor:pointer">
     <input type="checkbox" id="anyChk" style="width:auto" onchange="setAnytime(this.checked)"> Ignore the 6–9 pm indent window
@@ -560,6 +563,11 @@ const VELORA = 'Velora Fresh';
    back to true restores the rule exactly as it was, and is the only
    change needed to do it. */
 const WINDOW_ON = false;
+
+/* Tools for trying the app out, not for running the business on. One
+   line takes them all away: set this to false before it is anybody's
+   real day, and the button disappears with it. */
+const TESTING_TOOLS = true;
 const OPEN_H = 18, CLOSE_H = 21, LATE_H = 23.5;   /* 6pm / 9pm / 11:30pm */
 
 /* ---------- catalogue parse ---------- */
@@ -1093,22 +1101,70 @@ function purchaseRate(shopId, code, date){
 }
 
 /* A shop is not allowed to read the market rate, so its own screens had
-   nothing to price with and showed every amount as zero. The rate it
-   will actually be billed is asked of the server, one product at a
-   time, once, and kept for the rest of the visit. */
-let ASKING = false;
+   nothing to price with: every amount came out as zero and the last
+   price on the indent stayed blank. The rate it was actually charged is
+   asked of the server instead — a whole day in one request where the
+   project has that function, product by product where it does not —
+   and kept for the rest of the visit.
+
+   The days asked for are the days something was last bought on, which
+   in practice is one or two, not two hundred. */
+let ASKING = 0;
+const ASKED_DAYS = {};
+
 async function askRates(shopId, date, codes){
-  if(ASKING) return;
   if(typeof VFSync === 'undefined' || !VFSync.enabled() || !VFSync.signedIn()) return;
   const want = codes.filter(c=>RATEASKED[date+'|'+shopId+'|'+c] === undefined);
   if(!want.length) return;
-  ASKING = true;
+  const dayKey = date+'|'+shopId;
+
+  if(ASKING > 2) return;              /* never more than a few at once */
+  ASKING++;
   try{
-    const got = await Promise.all(want.map(c=> VFSync.purchaseRateFor(shopId, c, date)));
-    want.forEach((c,i)=>{ RATEASKED[date+'|'+shopId+'|'+c] = got[i]; });
+    /* the whole day at once, if this project knows how. Once a day has
+       been read there is nothing more to ask about it: anything it did
+       not carry has no rate that day, and asking product by product
+       would only be a slower way of hearing the same thing. */
+    /* a request for this day is already in the air; it will redraw when
+       it lands, and asking again product by product would double it */
+    if(ASKED_DAYS[dayKey] === 'asking') return;
+    if(ASKED_DAYS[dayKey] === 'done'){
+      want.forEach(c=>{ RATEASKED[date+'|'+shopId+'|'+c] = null; });
+      render();
+      return;
+    }
+    if(!ASKED_DAYS[dayKey]){
+      ASKED_DAYS[dayKey] = 'asking';
+      const all = await VFSync.purchaseRatesOn(shopId, date);
+      if(all){
+        ASKED_DAYS[dayKey] = 'done';
+        Object.keys(all).forEach(c=>{ RATEASKED[date+'|'+shopId+'|'+c] = all[c]; });
+        want.forEach(c=>{ if(RATEASKED[date+'|'+shopId+'|'+c] === undefined)
+                            RATEASKED[date+'|'+shopId+'|'+c] = null; });
+        render();
+        return;
+      }
+      ASKED_DAYS[dayKey] = 'single';    /* this project has no such function */
+    }
+    /* otherwise one at a time, and not the whole catalogue */
+    const some = want.slice(0, 40);
+    const got = await Promise.all(some.map(c=> VFSync.purchaseRateFor(shopId, c, date)));
+    some.forEach((c,i)=>{ RATEASKED[date+'|'+shopId+'|'+c] = got[i]; });
     render();
-  }catch(e){ /* offline: the lines say the rate is not set, which is true here */ }
-  finally{ ASKING = false; }
+  }catch(e){ /* offline: the lines say the rate is not set, which is true */ }
+  finally{ ASKING--; }
+}
+
+/* The price on the day something was last bought. Asked for per day,
+   because that is how few days are involved. */
+function askLastPrices(shopId, date, codes){
+  const byDay = {};
+  codes.forEach(c=>{
+    const l = myLastFor(shopId, c, date);
+    if(!l || l.rate) return;                  /* never had it, or the bill knows */
+    (byDay[l.date] = byDay[l.date] || []).push(c);
+  });
+  Object.keys(byDay).forEach(d=> askRates(shopId, d, byDay[d]));
 }
 function sellMargin(shopId, code){
   const s = DB.master.selling[shopId];
@@ -2167,6 +2223,9 @@ function render(){
   }
   rs.value = ROLE;
   document.getElementById('dateSel').value = DATE;
+  const wd = document.getElementById('wipeDay');
+  if(wd) wd.className = (TESTING_TOOLS && (ROLE === 'owner' || ROLE === 'admin'))
+    ? 'btn sm danger' : 'btn sm danger hidden';
   const ab = document.getElementById('anyBox');
   /* nothing to overrule while no hours are enforced */
   ab.className = (ROLE==='owner' && WINDOW_ON) ? '' : 'hidden';
@@ -2245,6 +2304,9 @@ function vMyIndent(){
        What this shop has ordered before comes first, the one it orders
        most often at the top; everything else follows, by name. */
     const usual = myUsual(ROLE, DATE);
+    /* the prices these lines will want: the ones already chosen, and the
+       ones they usually order. Not the whole catalogue. */
+    askLastPrices(ROLE, DATE, codes.concat(usual.filter(c=>codes.indexOf(c) < 0)).slice(0, 60));
     const seen = {};
     usual.forEach(c=>{ seen[c] = 1; });
     const rest = CODES.filter(c=>CAT[c] && !seen[c])
@@ -2401,7 +2463,10 @@ function indentEstimate(shopId, date){
     const q = Number(ind.lines[c]) || 0;
     if(q <= 0) return;
     const l = myLastFor(shopId, c, date);
-    if(l && l.rate){ total += q * l.rate; priced++; }
+    const rate = !l ? null
+               : (l.rate !== null && l.rate !== undefined) ? l.rate
+               : purchaseRate(shopId, c, l.date);
+    if(rate !== null && rate !== undefined){ total += q * rate; priced++; }
     else missing++;
   });
   return { total: total, priced: priced, missing: missing };
@@ -2428,8 +2493,12 @@ function myLastCells(shopId, code, date){
   }
   const qty = '<span class="mono">'+num(l.qty)+'</span> '+esc(unitPlural(e.unit, l.qty))
             + '<span class="tam">'+esc(fmtDate(l.date))+'</span>';
-  const price = l.rate
-    ? '<span class="mono">&#8377;'+money(l.rate)+'</span>'
+  /* the bill's own rate if it has been raised, otherwise what they were
+     charged that day, which is the same figure before it is frozen */
+  const rate = (l.rate !== null && l.rate !== undefined) ? l.rate
+             : purchaseRate(shopId, code, l.date);
+  const price = (rate !== null && rate !== undefined)
+    ? '<span class="mono">&#8377;'+money(rate)+'</span>'
       + '<span class="tam">per '+esc(unitShort(e.unit))+'</span>'
     : '';
   return '<td class="r" style="width:150px">'+qty+'</td>'
@@ -2764,7 +2833,9 @@ function vMyDeliveries(){
   /* the rate for these lines is not on this device — ask for it once */
   askRates(ROLE, DATE, codes);
 
-  let rows='', tot=0, unpriced=0;
+  const ind = indentOf(DATE, ROLE);
+
+  let rows='', tot=0, unpriced=0, off=0;
   codes.forEach((c,i)=>{
     const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit);
     const pr = purchaseRate(ROLE, c);
@@ -2773,10 +2844,23 @@ function vMyDeliveries(){
     const priced = (pr !== null && pr !== undefined);
     const amt = priced ? nk*pr : 0;
     if(priced) tot += amt; else unpriced++;
+
+    /* what they asked for against what came. Only a difference is worth
+       a word: a line that came as ordered needs nothing said about it. */
+    const want = Number(ind.lines[c]) || 0;
+    const got  = Number(q) || 0;
+    const flag = !want ? '<span class="pill p-blue">Not indented</span>'
+               : got > want ? '<span class="pill p-blue">Over packed</span>'
+               : got < want ? '<span class="pill p-amber">Short packed</span>' : '';
+    if(flag) off++;
+
     rows+='<tr><td class="c mono">'+(i+1)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      +'<td class="c mono" style="color:var(--ink-3)">'+(want?num(want)+' '+esc(e.unit):'&mdash;')+'</td>'
       +'<td class="c mono">'+num(q)+' '+esc(e.unit)+'</td><td class="r mono">'+num(nk,3)+'</td>'
       +'<td class="r mono">'+(priced?money(pr):'<span style="color:var(--ink-4)">rate not set</span>')+'</td>'
-      +'<td class="r mono">'+(priced?money(amt):'&mdash;')+'</td></tr>';
+      +'<td class="r mono">'+(priced?money(amt):'&mdash;')+'</td>'
+      +'<td class="c">'+flag+'</td>'
+      +'<td class="r"><button class="btn sm" onclick="delEdit(\''+c+'\')">Edit</button></td></tr>';
   });
   return '<h2>Delivery for '+fmtDate(DATE)+'</h2>'
    /* the state of the day in the same words the office uses, so a shop
@@ -2785,13 +2869,24 @@ function vMyDeliveries(){
    +' &middot; check the weights against the crates, then confirm.</p>'
    +(st==='received'?'<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Received and confirmed. The invoice can now be raised.</div>'
      :'<div class="note">If a weight or product differs, tell Velora Fresh before confirming — they will adjust it and send it again.</div>')
-   +'<div class="card"><table><thead><tr><th class="c">#</th><th>Product</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
-   +'<tbody>'+(rows||'<tr><td colspan="6" class="empty">No lines.</td></tr>')+'</tbody></table></div>'
+   +'<div class="card"><table><thead><tr><th class="c">#</th><th>Product</th>'
+   +'<th class="c">Indent</th><th class="c">Delivered</th><th class="r">Net kg</th>'
+   +'<th class="r">Rate/kg</th><th class="r">Amount</th><th class="c">Status</th><th></th></tr></thead>'
+   +'<tbody>'+(rows||'<tr><td colspan="9" class="empty">No lines.</td></tr>')+'</tbody></table></div>'
    +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong>'
    +(unpriced ? ' <span style="color:var(--ink-3)">&middot; '+unpriced+' line'+(unpriced===1?'':'s')
                 + ' not priced yet</span>' : '')+'</span><span class="spacer"></span>'
    +(st==='out'?'<button class="btn pri" onclick="confirmReceipt(\''+ROLE+'\')">Confirm receipt</button>':'')+'</div>';
 }
+/* The button is on every line as asked; what it opens is not decided
+   yet, so it says so rather than doing something half thought out. */
+function delEdit(code){
+  const e = CAT[code] || {};
+  alert('Telling ' + VELORA + ' what to do about ' + (e.name || code)
+        + ' is not built yet.\n\nFor now, call the office \u2014 they can change the packed '
+        + 'quantity and send it again.');
+}
+
 function vMyBills(){
   const mine = settled().filter(b=>b.shopId===ROLE);
   const outstanding = mine.reduce((t,b)=>t+b.due, 0);
@@ -3882,6 +3977,41 @@ window.VF = {
   grouped:function(d){ return groupedRequirement(d); }, orderText:orderText,
   get DB(){ return DB; }, get DATE(){ return DATE; }, get ROLE(){ return ROLE; }, get TAB(){ return TAB; }
 };
+
+/* ---------- clearing a day, for testing ----------
+   Wipes the date on screen everywhere: the indents and their lines, the
+   rates, the packing, the lorry, the vendor orders and the bill, on
+   this device and on the server. There is no undo, which is why it is
+   asked twice and why it goes with TESTING_TOOLS. */
+async function wipeDayAsk(){
+  const d = DATE;
+  if(!confirm('Delete all data for ' + fmtDate(d) + '?\n\n'
+    + 'This permanently removes every record for that date — indents, rates, packing, '
+    + 'delivery and any bill raised.\n\nThis is a testing feature and cannot be undone.')) return;
+
+  const btn = document.getElementById('wipeDay');
+  if(btn){ btn.disabled = true; btn.textContent = 'Clearing…'; }
+  try{
+    let skipped = [];
+    if(typeof VFSync !== 'undefined' && VFSync.enabled()){
+      const r = await VFSync.wipeDay(d);
+      skipped = (r && r.skipped) || [];
+    }
+    delete DB.indents[d];
+    delete DB.days[d];
+    delete DB.invoices[d];
+    OPENIND = null; PACKSHOP = null; RATEDRAFT = {}; RATENOTE = '';
+    save(); render();
+    alert('All data for ' + fmtDate(d) + ' has been deleted.'
+      + (skipped.length ? '\n\nNot on the server yet, so left alone: ' + skipped.join(', ') : ''));
+  }catch(e){
+    alert('Could not clear the day: ' + (e.message || e) + '\n\nNothing has been left half done '
+      + 'on this device — reload and try again.');
+  }finally{
+    const b2 = document.getElementById('wipeDay');
+    if(b2){ b2.disabled = false; b2.textContent = 'Clear day'; }
+  }
+}
 
 /* ---------- what arrives while you are looking ----------
    A shop submits on its own phone, and the office is looking at a

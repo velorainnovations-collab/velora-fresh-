@@ -171,6 +171,16 @@ const srv = http.createServer((req, res) => {
       received.push({ table: 'rpc:' + fn, method: 'POST', rows: args });
       /* the database hands a shop the rate it will be billed without
          showing it the market rate behind it (02_security.sql) */
+      /* a whole day at once, as the database does it */
+      if (fn === 'purchase_rates_on') {
+        const out = [];
+        Object.keys(RATES).forEach(k => {
+          const [d, code] = k.split('|');
+          if (d === args.p_date) out.push({ product_code: code,
+                                            rate: Math.round(RATES[k] * 1.04 * 10000) / 10000 });
+        });
+        return send(200, out);
+      }
       if (fn === 'purchase_rate') {
         const mk = RATES[args.p_date + '|' + args.p_code];
         return send(200, mk === undefined ? null : Math.round(mk * 1.04 * 10000) / 10000);
@@ -239,6 +249,29 @@ const srv = http.createServer((req, res) => {
         return send(200, INDENTS.filter(i => (!d || i.trade_date === d) &&
                                              (!s || i.shop_id === s)));
       }
+      /* clearing a day: everything with that trade date goes, and the
+         indent lines go with their headers as the cascade would */
+      if (req.method === 'DELETE' && url.searchParams.get('trade_date')) {
+        const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
+        received.push({ table: name, method: 'DELETE', rows: { trade_date: d } });
+        const drop = (arr) => { for (let i = arr.length - 1; i >= 0; i--)
+                                  if (arr[i].trade_date === d) arr.splice(i, 1); };
+        if (name === 'indents') {
+          const gone = INDENTS.filter(x => x.trade_date === d).map(x => x.id);
+          for (let i = ILINES.length - 1; i >= 0; i--)
+            if (gone.indexOf(ILINES[i].indent_id) > -1) ILINES.splice(i, 1);
+          drop(INDENTS);
+        }
+        if (name === 'packed') drop(PACKED);
+        if (name === 'shipments') drop(SHIPS);
+        if (name === 'day_rates') Object.keys(RATES).forEach(k => {
+          if (k.indexOf(d + '|') === 0) delete RATES[k];
+        });
+        if (name === 'vendor_order_lines') return send(404, { code: 'PGRST205',
+          message: "Could not find the table 'public.vendor_order_lines' in the schema cache" });
+        return send(204, null);
+      }
+
       if (req.method === 'GET' && (name === 'packed' || name === 'shipments')) {
         const store = name === 'packed' ? PACKED : SHIPS;
         const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');

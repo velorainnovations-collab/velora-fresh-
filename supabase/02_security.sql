@@ -135,6 +135,25 @@ returns numeric language sql stable security definer set search_path = public as
   end
 $$;
 
+-- Every rate a shop was charged on one day, in one call.
+--
+-- purchase_rate() answers for a single product, which is fine for a
+-- line being looked at and hopeless for a screen listing two hundred.
+-- Same rule, same SECURITY DEFINER reasoning: the resulting rate is
+-- returned, never the market rate or the margin behind it.
+create or replace function purchase_rates_on(p_shop text, p_date date)
+returns table (product_code text, rate numeric)
+language sql stable security definer set search_path = public as $$
+  select r.product_code,
+         r.rate * (1 + coalesce(m.pct, c.comm_pct, 0) / 100)
+    from day_rates r
+    join shops s on s.id = p_shop
+    join clients c on c.id = s.client_id
+    left join margin_comm m on m.shop_id = p_shop
+   where r.trade_date = p_date
+     and may_see_shop(p_shop)
+$$;
+
 -- Selling price is the shop's shelf price. Head office must not see it
 -- (README: "No selling price, no cost"), so this returns null for them.
 create or replace function selling_price(p_shop text, p_code text, p_date date)

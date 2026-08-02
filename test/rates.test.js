@@ -173,14 +173,38 @@ function check(label, got, want) {
   await sp.evaluate(() => go('mydel'));
   await sp.waitForTimeout(2200);
 
+  console.log('  (the delivery note itself)');
+  check('it shows what was asked for beside what came',
+        (await sp.locator('#main thead th').allTextContents())
+          .map(t => t.trim()).filter(Boolean).join(' | '),
+        '# | Product | Indent | Delivered | Net kg | Rate/kg | Amount | Status');
+  const dline = name => sp.locator('#main tbody tr', { hasText: name }).first();
+  check('a line that came as ordered says nothing about it',
+        /packed/i.test(await dline('Lemon').textContent()), false);
+  /* make one differ and watch the line say so */
+  await sp.evaluate(() => { dayOf(DATE).packed[ROLE]['1'] = 99; save(); render(); });
+  await sp.waitForTimeout(400);
+  check('a line that came over says so',
+        /Over packed/.test(await dline('Lemon').textContent()), true);
+  await sp.evaluate(() => { dayOf(DATE).packed[ROLE]['1'] = 3; save(); render(); });
+  await sp.waitForTimeout(400);
+  check('and one that came short says that',
+        /Short packed/.test(await dline('Lemon').textContent()), true);
+  /* put it back to what was actually packed for the checks below */
+  await sp.evaluate(() => { dayOf(DATE).packed[ROLE]['1'] = 10; save(); render(); });
+  await sp.waitForTimeout(400);
+  check('and every line offers the edit that is coming',
+        await sp.locator('#main tbody button:has-text("Edit")').count(),
+        await sp.locator('#main tbody tr').count());
+
   check('the shop still holds no market rates of its own',
         await sp.evaluate(() => JSON.stringify(dayOf(DATE).rates)), '{}');
   const line = name => sp.locator('#main tbody tr', { hasText: name }).first();
   const lemon = (await line('Lemon').textContent()).replace(/\s+/g, ' ');
   check('but the rate is on the line', /83\.20/.test(lemon), true);
   check('and the amount with it', /832\.00/.test(lemon), true);
-  check('it asked the database for it, one product at a time',
-        received.filter(r => r.table === 'rpc:purchase_rate').length > 0, true);
+  check('it asked the database for it rather than working it out',
+        received.filter(r => /purchase_rate/.test(r.table)).length > 0, true);
 
   /* potato was packed but never given a market rate */
   const pot = (await line('Potato').textContent()).replace(/\s+/g, ' ');
@@ -190,6 +214,79 @@ function check(label, got, want) {
         /not priced yet/.test(await sp.locator('#main').textContent()), true);
 
   await sctx.close();
+
+  /* ---------------- last price, before any bill exists ---------------- */
+  console.log('\nthe last price is there before the bill is');
+  /* Deliveries are priced the day they go out; the bill comes later.
+     Reading the last price only off invoices left the column blank for
+     anything delivered since the last billing run — which is most of
+     what a shop is looking at — and the estimate came to nothing. */
+  const dev = async who => {
+    const c = await b.newContext({ viewport: { width: 1360, height: 900 } });
+    const q = await c.newPage();
+    q.on('pageerror', e => console.log('PAGEERROR:', e.message));
+    await q.route('**://*.supabase.co/**', async route => {
+      const rq = route.request(); const u = new URL(rq.url());
+      const r = await fetch('http://127.0.0.1:8123' + u.pathname + u.search, {
+        method: rq.method(), headers: rq.headers(),
+        body: ['GET', 'HEAD'].includes(rq.method()) ? undefined : rq.postData(),
+      });
+      await route.fulfill({ status: r.status, headers: { 'content-type': 'application/json' },
+                            body: await r.text() });
+    });
+    await q.goto('http://127.0.0.1:8092/index.html', { waitUntil: 'networkidle' });
+    if (who === 'shop') {
+      await q.selectOption('#gateWho', 'shop'); await q.waitForTimeout(200);
+      await q.fill('#gateName', 'Kilpauk Mgr'); await q.fill('#gatePhone', '9000000004');
+      await q.fill('#gatePass', 'shoppass1');
+    } else {
+      await q.evaluate(() => setGateWho('admin'));
+      await q.fill('#gateEmail', 'owner@velora.example'); await q.fill('#gatePass', 'right');
+    }
+    await q.click('#gateBtn'); await q.waitForTimeout(1500);
+    return { c, q };
+  };
+
+  const off = await dev('owner');
+  await off.q.evaluate(() => {
+    /* yesterday: rates set, packed, received — and no bill raised */
+    const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    DB.indents[y] = { KLP: { status: 'accepted', lines: { '6': 58, '259': 1 } } };
+    DB.days[y] = { rates: { '6': 40, '259': 18 }, packed: { KLP: { '6': 58, '259': 1 } },
+                   ship: { KLP: 'received' }, sent: {} };
+    save();
+  });
+  await off.q.waitForTimeout(1500);
+  await off.c.close();
+
+  const sh = await dev('shop');
+  received.length = 0;         /* only what the indent screen asks for */
+  /* today's indent was accepted earlier in this run, so that screen is
+     closed. Tomorrow is where a shop would be typing anyway. */
+  await sh.q.evaluate(() => setDate(addDays(DATE, 1)));
+  await sh.q.waitForTimeout(2500);
+  const cells = async name => (await sh.q.locator('#mylist tbody tr[data-k]', { hasText: name })
+                                         .first().locator('td').allTextContents());
+  const beet = await cells('Beetroot');
+  check('the quantity and day are there', /58 kg/.test(beet[2]), true);
+  check('and now the price is too', /₹41\.60/.test(beet[3]), true);   /* 40 + 4% */
+  const agathi = await cells('Agathi Keerai');
+  check('for a product sold by the piece as well', /₹18\.72/.test(agathi[3]), true);
+  /* one request a day, not one a product: two days are involved here,
+     yesterday's delivery and today's packing */
+  const batch = received.filter(r => r.table === 'rpc:purchase_rates_on').length;
+  check('a request a day at most', batch > 0 && batch <= 3, true);
+  check('and none product by product',
+        received.filter(r => r.table === 'rpc:purchase_rate').length, 0);
+
+  await sh.q.evaluate(() => { indentOf(DATE, ROLE).lines = { '6': 10 }; save(); render(); });
+  await sh.q.waitForTimeout(700);
+  check('and the estimate is built on it',
+        /₹416\.00/.test(await sh.q.locator('.estbar').textContent()), true);
+  check('with nothing left uncounted',
+        /not counted/.test(await sh.q.locator('.estbar').textContent()), false);
+  await sh.c.close();
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   await b.close();
   process.exit(fail ? 1 : 0);

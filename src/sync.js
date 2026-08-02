@@ -953,6 +953,60 @@ const VFSync = (function () {
     } catch (e) { return null; }
   }
 
+  /* Every rate that shop was charged on that day, in one request. A
+     project that has not been given the function yet answers 404, and
+     the caller falls back to asking product by product. */
+  async function purchaseRatesOn(shopId, date) {
+    if (!enabled() || !signedIn()) return null;
+    try {
+      const r = await fetch(CFG.url + '/rest/v1/rpc/purchase_rates_on', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ p_shop: shopId, p_date: date }),
+      });
+      if (!r.ok) return null;
+      const rows = await r.json();
+      if (!Array.isArray(rows)) return null;
+      const out = {};
+      rows.forEach(x => { out[x.product_code] = Number(x.rate); });
+      return out;
+    } catch (e) { return null; }
+  }
+
+  /* ---------- clearing a day, for testing ----------
+     Everything the day is made of, off the server. Tables this project
+     does not have yet are skipped rather than failing the lot; a row
+     that is already gone is not an error either. Invoice lines and
+     indent lines go with their headers, on delete cascade. */
+  const DAY_TABLES = ['indent_lines', 'indents', 'day_rates', 'packed', 'shipments',
+                      'vendor_order_lines', 'vendor_orders', 'invoices'];
+
+  async function wipeDay(date) {
+    if (!enabled() || !signedIn()) return { cleared: [], skipped: [] };
+    const cleared = [], skipped = [];
+    for (const t of DAY_TABLES) {
+      /* indent_lines is keyed by its header, so it has no date of its
+         own; deleting the headers takes the lines with them */
+      if (t === 'indent_lines') continue;
+      try {
+        const r = await fetch(CFG.url + '/rest/v1/' + t
+                              + '?trade_date=eq.' + encodeURIComponent(date),
+                              { method: 'DELETE', headers: headers({ 'Prefer': 'return=minimal' }) });
+        if (r.ok || r.status === 404) cleared.push(t);
+        else {
+          const e = await httpError(r, t);
+          if (isMissingTable(e)) skipped.push(t); else throw e;
+        }
+      } catch (e) {
+        if (isMissingTable(e)) skipped.push(t); else throw e;
+      }
+    }
+    /* the day is gone: forget it was ever synced, so what is left on
+       this device is not read as new work and pushed straight back */
+    queue = queue.filter(o => JSON.stringify(o.row || {}).indexOf(date) < 0);
+    writeJSON(QKEY, queue);
+    return { cleared: cleared, skipped: skipped };
+  }
+
   async function rpc(fn, args) {
     if (!enabled() || !signedIn()) throw new Error('Not signed in');
     const r = await fetch(CFG.url + '/rest/v1/rpc/' + fn, {
@@ -1176,7 +1230,7 @@ const VFSync = (function () {
 
   return {
     enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
-    refreshIndents, purchaseRateFor,
+    refreshIndents, purchaseRateFor, purchaseRatesOn, wipeDay,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,

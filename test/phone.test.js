@@ -153,7 +153,7 @@ const box = (p, sel) => p.evaluate(s => {
   check('and in the order they were written',
         await p.evaluate(() => Array.prototype.slice.call(document.querySelector('header').children)
                                 .map(el => el.id).filter(Boolean).join(',')),
-        'burger,roleSel,whoami,dateSel,anyBox,themeBtn,syncState,signOutBtn,clock');
+        'burger,roleSel,whoami,dateSel,wipeDay,anyBox,themeBtn,syncState,signOutBtn,clock');
 
   console.log('\nand they follow the width as it changes');
   await p.setViewportSize(PHONE);

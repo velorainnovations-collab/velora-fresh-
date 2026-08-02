@@ -218,6 +218,36 @@ async function device(b) {
   check('without anybody reloading anything',
         await shop.p.evaluate(() => TAB), 'mydel');
 
+  console.log('\nand a day can be cleared while the app is being tried out');
+  /* testing only — TESTING_TOOLS takes the button away for good */
+  check('the button is there for the office',
+        await office.p.locator('#wipeDay').isVisible(), true);
+  let warned = '';
+  office.p.once('dialog', async d => { warned = d.message(); await d.dismiss(); });
+  await office.p.click('#wipeDay');
+  await office.p.waitForTimeout(600);
+  check('it says what it will do', /permanently removes every record/.test(warned), true);
+  check('and that there is no undo', /cannot be undone/.test(warned), true);
+  check('saying no leaves the day alone',
+        await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 1);
+
+  received.length = 0;
+  /* two in a row: the warning, then the confirmation it is done */
+  const acceptAll = async d => { await d.accept(); };
+  office.p.on('dialog', acceptAll);
+  await office.p.click('#wipeDay');
+  await office.p.waitForTimeout(2500);
+  check('the day is empty afterwards',
+        await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 0);
+  check('the indent is gone from the server too',
+        received.some(r => r.method === 'DELETE' && r.table === 'indents'), true);
+  check('with the rates, packing and lorry',
+        ['day_rates', 'packed', 'shipments'].every(t =>
+          received.some(r => r.method === 'DELETE' && r.table === t)), true);
+  check('and a table this project has not got yet does not stop it',
+        received.some(r => r.method === 'DELETE' && r.table === 'vendor_order_lines'), true);
+  office.p.off('dialog', acceptAll);
+
   await shop.ctx.close();
   await office.ctx.close();
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
