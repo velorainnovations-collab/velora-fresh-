@@ -151,6 +151,24 @@ async function tryShop(p, name, phone, pw) {
   check('and the list is still narrowed',
         await p.locator('#mylist tbody tr[data-k]:visible').count(), few);
 
+  console.log('\nand it reaches the server');
+  /* the one that matters: indent_lines is keyed by the id of its header
+     row, and the app was sending the day and the shop instead. Every
+     push carrying a line was refused, which for a shop is every push
+     there is — that was the "Sync problem" they were staring at. */
+  await p.waitForTimeout(1200);
+  const lines = received.filter(r => r.table === 'indent_lines' && r.method === 'POST');
+  check('the line was sent', lines.length > 0, true);
+  check('and accepted, not refused for a column that does not exist',
+        lines.filter(r => r.refused).length, 0);
+  check('keyed by its indent, as the table is',
+        lines.length ? Object.keys(lines[lines.length - 1].rows[0]).sort().join(',') : '',
+        'indent_id,product_code,qty');
+  check('the header went first', received.some(r => r.table === 'indents'), true);
+  check('nothing is left waiting', await p.evaluate(() => VFSync.queueLength()), 0);
+  check('and the badge says it is saved',
+        /Saved/.test(await p.locator('#syncState').textContent()), true);
+
   console.log('\nand clearing the box takes it out again');
   await p.locator('#mylist tbody tr[data-has] input').fill('');
   await p.locator('#mylist tbody tr[data-has] input').blur();

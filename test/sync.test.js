@@ -256,6 +256,44 @@ const populated = Object.keys(F).filter(t => Object.keys(F[t]).length > 0);
 check('every table has a conflict target',
   Object.keys(empty).filter(t => !populated.includes(t)), []);
 
+/* ------------- every column sent actually exists -------------
+   indent_lines is keyed by the id of its header row. The app sent
+   trade_date and shop_id instead, columns that table does not have, so
+   PostgREST refused every push that carried an indent line — which is
+   the only thing a shop ever sends. Nothing caught it because the mock
+   accepted whatever it was given. The schema itself is the authority
+   here, so a column renamed in SQL and not in flatten() fails. */
+console.log('\nthe payload matches the schema');
+const schema = (() => {
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', '01_schema.sql'), 'utf8');
+  const out = {};
+  const re = /create table (\w+) \(([\s\S]*?)\n\);/g;
+  let m;
+  while ((m = re.exec(sql))) {
+    out[m[1]] = m[2].split('\n').map(l => l.trim())
+      .filter(l => l && !l.startsWith('--'))
+      .map(l => l.split(/\s+/)[0].replace(/,$/, ''))
+      .filter(c => !['primary', 'unique', 'constraint', 'check', 'foreign'].includes(c.toLowerCase()));
+  }
+  return out;
+})();
+check('the schema was read', Object.keys(schema).length > 10, true);
+
+/* indent_lines is rewritten on the way out, so it is checked against
+   what send() actually posts rather than what flatten() holds */
+const SENT_AS = { indent_lines: ['indent_id', 'product_code', 'qty'] };
+Object.keys(F).forEach(t => {
+  const keys = Object.keys(F[t]);
+  if (!keys.length) return;
+  const cols = SENT_AS[t] || Object.keys(F[t][keys[0]]);
+  const have = schema[t] || [];
+  check(t + ': every column exists in the table',
+        cols.filter(c => !have.includes(c)), []);
+});
+check('and the conflict target for an indent line is its header',
+      S._conflictFor ? S._conflictFor('indent_lines') : 'indent_id,product_code',
+      'indent_id,product_code');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 w.close();
 process.exit(fail ? 1 : 0);

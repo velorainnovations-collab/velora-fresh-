@@ -40,6 +40,7 @@ const uidOf = req =>
 const EXTRA_PRODUCTS = [];
 const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
+const INDENTS        = [];   // indent headers, so their ids can be looked up
 let LAST_CODE = '';          // the six digit code the mock last 'emailed'
 
 // what list_people() returns; mutated by the rpc handlers below
@@ -216,6 +217,65 @@ const srv = http.createServer((req, res) => {
 
     if (url.pathname.startsWith('/rest/v1/')) {
       const table = url.pathname.slice('/rest/v1/'.length);
+      const name = table.split('?')[0];
+
+      /* An indent line is keyed by its header's id. The app works in
+         days and shops and has to look the id up before it can send
+         one — so the mock keeps the headers it was given and answers
+         that lookup, exactly as PostgREST would. */
+      if (req.method === 'GET' && name === 'indents') {
+        const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
+        const s = (url.searchParams.get('shop_id') || '').replace(/^eq\./, '');
+        return send(200, INDENTS.filter(i => (!d || i.trade_date === d) &&
+                                             (!s || i.shop_id === s)));
+      }
+      if (req.method === 'POST' && name === 'indents') {
+        (body ? JSON.parse(body) : []).forEach(r => {
+          if (!INDENTS.some(i => i.trade_date === r.trade_date && i.shop_id === r.shop_id)) {
+            INDENTS.push({ id: 'ind-' + (INDENTS.length + 1), trade_date: r.trade_date,
+                           shop_id: r.shop_id });
+          }
+        });
+      }
+
+      /* The columns each table actually has, copied from
+         supabase/01_schema.sql. A mock that accepts anything is worse
+         than no mock: indent_lines was sent trade_date and shop_id for
+         months, PostgREST refused every push that carried a line, and
+         nothing here noticed. */
+      const COLUMNS = {
+        indents:        ['id', 'trade_date', 'shop_id', 'status', 'submitted_at', 'late'],
+        indent_lines:   ['indent_id', 'product_code', 'qty'],
+        day_rates:      ['trade_date', 'product_code', 'rate'],
+        packed:         ['trade_date', 'shop_id', 'product_code', 'qty'],
+        shipments:      ['trade_date', 'shop_id', 'state', 'out_at', 'received_at'],
+        vendor_orders:  ['trade_date', 'group_name', 'sent_at'],
+        invoices:       ['id', 'bill_no', 'trade_date', 'shop_id', 'total', 'round_off',
+                         'net_amount', 'created_at'],
+        invoice_lines:  ['invoice_id', 'line_no', 'product_code', 'name', 'tamil', 'unit',
+                         'qty', 'net_kg', 'rate', 'amount', 'sell'],
+        payments:       ['id', 'client_id', 'paid_on', 'amount', 'mode', 'ref', 'created_at'],
+        vendors:        ['group_name', 'name', 'phone', 'contact', 'address', 'notes'],
+        vendor_bank:    ['group_name', 'ac_name', 'ac_no', 'ifsc', 'upi'],
+        margin_comm:    ['shop_id', 'pct'],
+        margin_selling: ['shop_id', 'product_code', 'pct'],
+        settings:       ['client_id', 'anytime'],
+      };
+      if (req.method === 'POST' && COLUMNS[name] && body) {
+        const rows = JSON.parse(body);
+        for (const row of (Array.isArray(rows) ? rows : [rows])) {
+          const bad = Object.keys(row).filter(c => COLUMNS[name].indexOf(c) < 0);
+          if (bad.length) {
+            received.push({ table: name, method: 'POST', rows: rows, refused: bad });
+            return send(400, {
+              code: 'PGRST204',
+              message: "Could not find the '" + bad[0] + "' column of '" + name +
+                       "' in the schema cache",
+            });
+          }
+        }
+      }
+
       if (req.method === 'GET' && table.startsWith('products')) return send(200, EXTRA_PRODUCTS);
       if (req.method === 'GET' && table.startsWith('product_groups')) return send(200, EXTRA_MAPPING);
       if (req.method === 'GET' && table.startsWith('vendor_groups'))

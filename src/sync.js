@@ -513,7 +513,61 @@ const VFSync = (function () {
     timer = setTimeout(push, ms === undefined ? 800 : ms);
   }
 
+  /* ---------- indent lines ----------
+     The app thinks in days and shops. The database keys an indent line
+     by the id of its header row: indent_lines is (indent_id,
+     product_code, qty) and has no trade_date or shop_id at all.
+
+     Every push carrying a line was therefore handed columns the table
+     does not have and refused — and a shop's only work IS indent lines,
+     so a shop could never sync anything. The mock accepted whatever it
+     was sent, which is exactly why the tests never saw it.
+
+     The header's id is looked up here, once per day and shop, and the
+     rows are rewritten before they go. sortOps puts the indents upsert
+     ahead of its lines in the same batch, so the header is always there
+     to be found. */
+  const indentIds = new Map();
+
+  async function indentIdFor(date, shop) {
+    const k = date + '|' + shop;
+    if (indentIds.has(k)) return indentIds.get(k);
+    const r = await fetch(CFG.url + '/rest/v1/indents?select=id'
+      + '&trade_date=eq.' + encodeURIComponent(date)
+      + '&shop_id=eq.' + encodeURIComponent(shop), { headers: headers() });
+    if (!r.ok) throw await httpError(r, 'indents');
+    const rows = await r.json();
+    if (!rows.length) {
+      throw new Error('indent_lines: no indent for ' + shop + ' on ' + date
+                      + ' — the day it belongs to has not been saved yet');
+    }
+    indentIds.set(k, rows[0].id);
+    return rows[0].id;
+  }
+
+  async function asLineRows(rows, isDelete) {
+    const out = [];
+    for (const row of rows) {
+      let id;
+      try {
+        id = await indentIdFor(row.trade_date, row.shop_id);
+      } catch (e) {
+        /* removing a line from a day that is no longer there is already
+           what was wanted; only a save needs the header to exist */
+        if (isDelete) continue;
+        throw e;
+      }
+      out.push({ indent_id: id, product_code: row.product_code, qty: row.qty });
+    }
+    return out;
+  }
+
   async function send(table, rows, isDelete, keyCols) {
+    if (table === 'indent_lines') {
+      rows = await asLineRows(rows, isDelete);
+      keyCols = ['indent_id', 'product_code'];
+      if (!rows.length) return;
+    }
     if (isDelete) {
       // one request per row: the filter is a conjunction of its key columns
       for (const row of rows) {
@@ -968,6 +1022,7 @@ const VFSync = (function () {
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _mayWrite: mayWrite,
+    _conflictFor: t => (t === 'indent_lines' ? 'indent_id,product_code' : CONFLICT[t]),
     _reset: function () { queue = []; synced = null; WHO = { role: '', shop: '' }; },
   };
 })();
