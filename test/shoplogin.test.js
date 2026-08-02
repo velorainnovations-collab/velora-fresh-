@@ -203,7 +203,7 @@ async function tryShop(p, name, phone, pw) {
   await p.waitForTimeout(400);
   const bar = (await p.locator('.estbar').textContent()).replace(/\s+/g, ' ');
   check('one with no history does not move the figure', /₹1,560\.00/.test(bar), true);
-  check('but is not hidden either', /1 line not counted/.test(bar), true);
+  check('but is not hidden either', /1 product not counted/.test(bar), true);
 
   await p.evaluate(() => { myDel('11'); });
   await p.waitForTimeout(500);

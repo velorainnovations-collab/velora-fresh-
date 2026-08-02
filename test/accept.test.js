@@ -124,7 +124,7 @@ async function device(b) {
   check('and the same estimate the shop was shown',
         /₹500\.00/.test(await office.p.locator('.estbar').textContent()), true);
   check('with the uncounted line named',
-        /1 line not counted/.test(await office.p.locator('.estbar').textContent()), true);
+        /1 product not counted/.test(await office.p.locator('.estbar').textContent()), true);
   const first = office.p.locator('#main tbody tr').first();
   await first.locator('input').fill('3');
   await first.locator('input').blur();

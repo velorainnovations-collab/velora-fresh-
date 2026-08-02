@@ -2382,7 +2382,7 @@ function estimateLine(shopId, date){
   if(!e.priced && !e.missing) return '';
   return '<div class="estbar"><span class="lbl">Estimated purchase value</span>'
     + '<span class="amt">&#8377;'+money(e.total)+'</span>'
-    + (e.missing ? '<span class="note2">'+e.missing+' line'+(e.missing===1?'':'s')
+    + (e.missing ? '<span class="note2">'+e.missing+' product'+(e.missing===1?'':'s')
                    + ' not counted &mdash; no earlier price for '
                    + (e.missing===1?'it':'them')+'</span>' : '')
     + '</div>';
@@ -2806,7 +2806,7 @@ function vBoard(){
   return '<h2>Day board</h2><p class="sub">'+fmtDate(DATE)+' &middot; '+esc(CLIENT)+'</p>'
    + '<div class="kpi">'
    + '<div><div class="lb">Day value</div><div class="vl mono">&#8377;'+money(totVal)+'</div></div>'
-   + '<div><div class="lb">Lines packed</div><div class="vl mono">'+totLines+'</div></div>'
+   + '<div><div class="lb">Products packed</div><div class="vl mono">'+totLines+'</div></div>'
    + '<div><div class="lb">Rates entered</div><div class="vl mono">'+Object.keys(day.rates).filter(c=>day.rates[c]!=='').length+' / '+uniqueCodes(DATE).length+'</div></div>'
    + '<div><div class="lb">Fill rate</div><div class="vl mono">'+fill+'%</div></div>'
    + '</div><div class="grid">'+tiles+'</div>';
@@ -2856,7 +2856,7 @@ function vIndents(){
 
   return '<h2>Indents</h2><p class="sub">'+fmtDate(DATE)+' &middot; cut what is not needed, then accept</p>'
    + elsewhere
-   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Lines</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Products</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function vIndentOne(id){
   const s = shopById(id), ind = indentOf(DATE, id);
@@ -2918,7 +2918,7 @@ function acceptIndent(shopId){
   const sh = shopById(shopId);
   const n = Object.keys(ind.lines).filter(c=>ind.lines[c] > 0).length;
   /* the last chance to look: after this nobody can change it */
-  if(!confirm('Accept ' + (sh ? sh.name : shopId) + '\u2019s indent \u2014 ' + n + ' line'
+  if(!confirm('Accept ' + (sh ? sh.name : shopId) + '\u2019s indent \u2014 ' + n + ' product'
               + (n===1?'':'s') + '?\n\nIt is closed after this. Neither the shop nor the office '
               + 'can change it, and the vendor orders are built from it.')) return;
   ind.status = 'accepted';
@@ -3091,7 +3091,7 @@ function vShip(){
   });
   return '<h2>Delivery</h2><p class="sub">'+fmtDate(DATE)+' &middot; the invoice can only be raised once the shop has confirmed</p>'
    + '<div class="note">If a shop reports a difference, change the packed quantity on the Packing tab, then mark it received.</div>'
-   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Lines</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+   + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Products</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function confirmReceipt(shopId){ dayOf(DATE).ship[shopId] = 'received'; save(); render(); }
 function reopenReceipt(shopId){ dayOf(DATE).ship[shopId] = 'out'; save(); render(); }
