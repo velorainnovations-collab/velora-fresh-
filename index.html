@@ -3534,29 +3534,52 @@ function vMyIndent(){
         + '<td></td></tr>';
     });
   } else {
-    GROUPNAMES.forEach(g=>{
-      const list = (GROUPS[g] || []).filter(c=>CAT[c]);
-      if(!list.length) return;
-      rows += '<tr class="vgrp" data-grp="'+esc(g)+'"><td colspan="4">'+esc(g)+'</td></tr>';
-      list.forEach(c=>{
-        const e = CAT[c];
-        const qty = ind.lines[c];
-        const has = qty !== undefined && qty !== '' && Number(qty) > 0;
-        /* everything the search should match, lower cased once here
-           rather than on every keystroke */
-        const key = (c+' '+e.name+' '+(e.tamil||'')+' '+(e.alias||'')).toLowerCase();
-        rows += '<tr data-k="'+esc(key)+'" data-grp="'+esc(g)+'"'+(has?' data-has="1"':'')+'>'
-          + '<td class="mono" style="width:58px">'+esc(c)+'</td>'
-          + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
-          + '<td class="c" style="width:150px">'
-          + '<input type="number" min="0" step="any" class="row-inp mono" id="mq_'+esc(c)+'" '
-          + 'value="'+(has?qty:'')+'" placeholder="0" onchange="myQty(\''+c+'\',this.value)"> '
-          + '<span style="font-size:12px;color:var(--ink-4)">'+esc(e.unit)+'</span></td>'
-          + '<td class="c" style="width:44px">'
-          + (has ? '<button class="rm" onclick="myDel(\''+c+'\')" title="Remove">&times;</button>' : '')
-          + '</td></tr>';
-      });
-    });
+    /* Their own products first. A vendor grouping is Velora's business —
+       a shop manager has never heard of the vendor a tomato comes from,
+       and asking one to find twenty five products inside two hundred and
+       forty one sorted by somebody else's bills is the wrong question.
+       What this shop has ordered before comes first, the one it orders
+       most often at the top; everything else follows, by name. */
+    const usual = myUsual(ROLE, DATE);
+    const seen = {};
+    usual.forEach(c=>{ seen[c] = 1; });
+    const rest = CODES.filter(c=>CAT[c] && !seen[c])
+      .sort((a,b)=> CAT[a].name.localeCompare(CAT[b].name));
+
+    const line = (c, grp)=>{
+      const e = CAT[c];
+      const qty = ind.lines[c];
+      const has = qty !== undefined && qty !== '' && Number(qty) > 0;
+      /* everything the search should match, lower cased once here
+         rather than on every keystroke */
+      const key = (c+' '+e.name+' '+(e.tamil||'')+' '+(e.alias||'')).toLowerCase();
+      /* what they had last time, so the quantity is decided against
+         something rather than from memory */
+      const last = myLastLabel(ROLE, c, DATE);
+      return '<tr data-k="'+esc(key)+'" data-grp="'+grp+'"'+(has?' data-has="1"':'')+'>'
+        + '<td class="mono" style="width:58px">'+esc(c)+'</td>'
+        + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)
+        + (last ? ' &nbsp;&middot;&nbsp; <b style="font-weight:600">'+esc(last)+'</b>' : '')
+        + '</span></td>'
+        + '<td class="c" style="width:150px">'
+        + '<input type="number" min="0" step="any" class="row-inp mono" id="mq_'+esc(c)+'" '
+        + 'value="'+(has?qty:'')+'" placeholder="0" onchange="myQty(\''+c+'\',this.value)"> '
+        + '<span style="font-size:12px;color:var(--ink-4)">'+esc(e.unit)+'</span></td>'
+        + '<td class="c" style="width:44px">'
+        + (has ? '<button class="rm" onclick="myDel(\''+c+'\')" title="Remove">&times;</button>' : '')
+        + '</td></tr>';
+    };
+
+    if(usual.length){
+      rows += '<tr class="vgrp" data-grp="usual"><td colspan="4">What you usually order '
+            + '<span style="font-weight:400;color:var(--ink-3)">&middot; '+usual.length
+            + ' product'+(usual.length===1?'':'s')+', the ones you ask for most first</span></td></tr>';
+      usual.forEach(c=>{ rows += line(c, 'usual'); });
+    }
+    rows += '<tr class="vgrp" data-grp="rest"><td colspan="4">'
+          + (usual.length ? 'Everything else' : 'All products')
+          + ' <span style="font-weight:400;color:var(--ink-3)">&middot; '+rest.length+'</span></td></tr>';
+    rest.forEach(c=>{ rows += line(c, 'rest'); });
   }
 
   return '<h2>Indent for '+fmtDate(DATE)+'</h2>'
@@ -3568,8 +3591,13 @@ function vMyIndent(){
       + 'autocomplete="off" value="'+esc(MYFILT)+'" oninput="myFind(this.value)"></div>'
       + '<button class="btn sm" id="myOnly" onclick="myOnlyChosen()">'
       + (MYONLY ? 'Show every product' : 'Show only what I have chosen')+'</button>'
+      + (myLastIndent(ROLE, DATE)
+         ? '<button class="btn sm" id="myRepeat" onclick="myRepeatLast()">Same as '
+           + esc(fmtDate(myLastIndent(ROLE, DATE)))+'</button>' : '')
+      + '<button class="btn sm" id="myImport" onclick="myImportOpen()">Add from a sheet</button>'
       + '<span class="spacer"></span>'
       + '<span class="sub" id="myCount" style="margin:0">'+codes.length+' chosen</span></div>')
+   + (locked ? '' : vImportPanel())
    + '<div class="card" id="mylist"><table><thead><tr><th>Code</th><th>Product</th>'
    + '<th class="c">Quantity</th><th></th></tr></thead>'
    + '<tbody>'+rows+'</tbody></table></div>'
@@ -3580,6 +3608,273 @@ function vMyIndent(){
       '<button class="btn pri" onclick="submitIndent()"'+(w==='closed'||!codes.length?' disabled':'')+'>'
       + (ind.status==='submitted'?'Update indent':'Submit indent')+'</button>')
    + '</div>';
+}
+
+/* What this shop has actually ordered, most often first. Read from its
+   own past indents — every one it has, not a fixed window, because a
+   shop that orders drumstick once a fortnight still orders drumstick.
+   Ties are broken by the most recent, so something picked up last week
+   sits above something dropped a month ago. */
+function myUsual(shopId, exceptDate){
+  const times = {}, last = {};
+  Object.keys(DB.indents || {}).sort().forEach(d=>{
+    if(d === exceptDate) return;
+    const ind = (DB.indents[d] || {})[shopId];
+    if(!ind || !ind.lines) return;
+    Object.keys(ind.lines).forEach(c=>{
+      if(!CAT[c] || !(Number(ind.lines[c]) > 0)) return;
+      times[c] = (times[c] || 0) + 1;
+      last[c] = d;
+    });
+  });
+  return Object.keys(times).sort((a,b)=>{
+    if(times[b] !== times[a]) return times[b] - times[a];
+    if(last[b] !== last[a]) return last[b] < last[a] ? -1 : 1;
+    return CAT[a].name.localeCompare(CAT[b].name);
+  });
+}
+
+/* The last time this shop had this product, and how much. What was
+   packed is what they actually got, so it wins over what they asked
+   for; before packing there is only the indent, and that is what is
+   shown. Yesterday is named as yesterday — a date has to be read, a
+   word does not. */
+function myLastFor(shopId, code, beforeDate){
+  const dates = {};
+  Object.keys(DB.indents || {}).forEach(d=>{ dates[d] = 1; });
+  Object.keys(DB.days || {}).forEach(d=>{ dates[d] = 1; });
+  const days = Object.keys(dates).filter(d=>d < beforeDate).sort();
+  for(let i = days.length - 1; i >= 0; i--){
+    const d = days[i];
+    const packed = ((DB.days[d] || {}).packed || {})[shopId] || {};
+    if(packed[code] !== undefined && Number(packed[code]) > 0){
+      return { date: d, qty: Number(packed[code]), got: true };
+    }
+    const ind = (DB.indents[d] || {})[shopId];
+    const q = ind && ind.lines ? ind.lines[code] : undefined;
+    if(q !== undefined && Number(q) > 0) return { date: d, qty: Number(q), got: false };
+  }
+  return null;
+}
+
+function myLastLabel(shopId, code, date){
+  const l = myLastFor(shopId, code, date);
+  if(!l) return '';
+  const y = addDays(date, -1);
+  const when = (l.date === y) ? 'yesterday' : fmtDate(l.date);
+  return (l.got ? 'got ' : 'asked ') + num(l.qty) + ' ' + (CAT[code] ? CAT[code].unit : '')
+       + ' ' + when;
+}
+
+/* The last indent this shop actually sent, whatever became of it. */
+function myLastIndent(shopId, exceptDate){
+  const days = Object.keys(DB.indents || {}).filter(d=>{
+    if(d === exceptDate) return false;
+    const ind = (DB.indents[d] || {})[shopId];
+    return ind && ind.status !== 'draft' && Object.keys(ind.lines || {}).length;
+  }).sort();
+  return days.length ? days[days.length - 1] : '';
+}
+
+/* Most days are the same order with a couple of changes, so the day
+   before is a better starting point than an empty list. Never silently:
+   anything already typed today would be replaced, so that is asked. */
+function myRepeatLast(){
+  const from = myLastIndent(ROLE, DATE);
+  if(!from){ alert('There is no earlier indent to copy yet.'); return; }
+  const ind = indentOf(DATE, ROLE);
+  const had = Object.keys(ind.lines).length;
+  if(had && !confirm('Replace what you have entered today with your indent from '
+                     + fmtDate(from) + '?')) return;
+  const src = DB.indents[from][ROLE].lines;
+  ind.lines = {};
+  Object.keys(src).forEach(c=>{ if(CAT[c] && Number(src[c]) > 0) ind.lines[c] = Number(src[c]); });
+  MYONLY = true;                 /* so they can see what they just got */
+  save(); render();
+}
+
+/* ---------- adding from a sheet ----------
+   The shop already writes the day's list somewhere — a printed sheet
+   filled in by hand, a message from the branch, a spreadsheet. Typing it
+   in a second time is the part they resent, so it can be handed over
+   whole: a file, or the text pasted straight in.
+
+   Nothing is taken on trust. Every line is matched against the
+   catalogue and shown for checking first — what matched, what did not,
+   and what quantity is about to be set — and only what is still ticked
+   when Add is pressed reaches the indent.
+
+   A photograph cannot be read here: recognising handwriting needs a
+   service this app does not talk to. Both phones can copy text out of
+   a picture themselves (long press, or Google Lens), and that text
+   pastes in below like anything else. */
+let IMPORT = null;      /* {lines:[{raw, code, qty, ok, use}], when} */
+
+function myImportOpen(){ IMPORT = { lines: [], text: '' }; render(); }
+function myImportClose(){ IMPORT = null; render(); }
+
+/* One line of somebody's sheet: a product and a number, in any order,
+   separated by anything. The last number on the line is the quantity —
+   a code at the front is not mistaken for one. */
+function importLine(raw){
+  const line = String(raw || '').trim();
+  if(!line) return null;
+  const nums = line.match(/(\d+(?:\.\d+)?)/g) || [];
+  let qty = null, text = line;
+  if(nums.length){
+    qty = parseFloat(nums[nums.length - 1]);
+    const at = line.lastIndexOf(nums[nums.length - 1]);
+    text = (line.slice(0, at) + ' ' + line.slice(at + nums[nums.length - 1].length));
+  }
+  const found = matchProducts(text);
+  return { raw: line, code: found[0] || '', also: found.slice(0, 8),
+           qty: (qty === null || isNaN(qty)) ? null : qty,
+           use: !!(found[0] && qty) };
+}
+
+/* What a written line could be, best first.
+
+   The name is asked first and the code only after it, because the
+   number on the line is far more often a quantity than a code —
+   "Potato, 12" is twelve kilos of potato, not product 12. A number at
+   the front is treated as a code only once the quantity has been taken
+   off the end and nothing else on the line names a product. */
+function matchProducts(text){
+  const tidy = s => String(s||'').toLowerCase().replace(/[^a-z0-9஀-௿]+/g, ' ').trim();
+  let t = String(text || '').trim();
+  let lead = '';
+  const m = t.match(/^\s*(\d{1,4}[A-Za-z]?)\b[\s,;:.|\-]*/);
+  if(m && CAT[m[1]]){ lead = m[1]; t = t.slice(m[0].length); }
+
+  const q = tidy(t);
+  const out = [];
+  const push = c => { if(c && CAT[c] && out.indexOf(c) < 0) out.push(c); };
+
+  const alias = ALIAS[String(t).trim().toUpperCase()];
+  if(alias) push(alias);
+
+  if(q){
+    CODES.forEach(c=>{ const e = CAT[c];
+      if(e && (tidy(e.name) === q || tidy(e.tamil) === q)) push(c); });
+    CODES.forEach(c=>{ const e = CAT[c]; if(!e) return;
+      const n = tidy(e.name), tam = tidy(e.tamil);
+      if(n.indexOf(q) === 0 || (tam && tam.indexOf(q) === 0)) push(c); });
+    if(q.length > 2){
+      CODES.forEach(c=>{ const e = CAT[c]; if(!e) return;
+        if(tidy(e.name).indexOf(q) > -1 || tidy(e.tamil).indexOf(q) > -1) push(c); });
+    }
+  }
+  if(lead) push(lead);            /* the code, if nothing was named */
+  return out;
+}
+
+function myImportText(text){
+  IMPORT = IMPORT || { lines: [], text: '' };
+  IMPORT.text = text;
+  IMPORT.lines = String(text || '').split(/[\r\n]+/).map(importLine).filter(Boolean);
+  render();
+}
+
+function myImportFile(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  if(/\.(xlsx|xls)$/i.test(f.name)){
+    alert('An Excel file cannot be read here. Open it, File → Save as → CSV, '
+          + 'and choose that instead. Or copy the rows and paste them in the box below.');
+    input.value = '';
+    return;
+  }
+  const r = new FileReader();
+  r.onload = ()=> myImportText(String(r.result || ''));
+  r.onerror = ()=> alert('That file could not be read.');
+  r.readAsText(f);
+}
+
+function myImportUse(i, on){ if(IMPORT && IMPORT.lines[i]) IMPORT.lines[i].use = !!on; render(); }
+function myImportQty(i, v){
+  if(!IMPORT || !IMPORT.lines[i]) return;
+  const q = parseFloat(v);
+  IMPORT.lines[i].qty = isNaN(q) ? null : q;
+  IMPORT.lines[i].use = !!(IMPORT.lines[i].code && q > 0);
+  render();
+}
+function myImportPick(i, code){
+  if(!IMPORT || !IMPORT.lines[i]) return;
+  IMPORT.lines[i].code = code;
+  IMPORT.lines[i].use = !!(code && IMPORT.lines[i].qty > 0);
+  render();
+}
+
+function myImportApply(){
+  if(!IMPORT) return;
+  const ind = indentOf(DATE, ROLE);
+  let n = 0;
+  IMPORT.lines.forEach(l=>{
+    if(!l.use || !l.code || !(l.qty > 0)) return;
+    ind.lines[l.code] = Number(l.qty);
+    n++;
+  });
+  IMPORT = null;
+  MYONLY = true;                /* so the whole of it can be looked over */
+  save(); render();
+  if(!n) alert('Nothing was ticked, so nothing was added.');
+}
+
+function vImportPanel(){
+  if(!IMPORT) return '';
+  const ind = indentOf(DATE, ROLE);
+  let rows = '';
+  IMPORT.lines.forEach((l, i)=>{
+    const e = l.code ? CAT[l.code] : null;
+    const now = ind.lines[l.code];
+    rows += '<tr'+(l.code?'':' class="skipped"')+'>'
+      + '<td class="c" style="width:44px">'
+      + (l.code ? '<input type="checkbox" style="width:auto"'+(l.use?' checked':'')
+                  + ' onchange="myImportUse('+i+',this.checked)">' : '&mdash;')
+      + '</td>'
+      + '<td style="color:var(--ink-3);font-size:12.5px">'+esc(l.raw)+'</td>'
+      /* more than one product can answer to "tomato", so where the line
+         was ambiguous the choice is handed over rather than guessed */
+      + '<td>'+(e
+          ? ((l.also && l.also.length > 1)
+             ? '<select onchange="myImportPick('+i+',this.value)">'
+               + l.also.map(c=>'<option value="'+esc(c)+'"'+(c===l.code?' selected':'')+'>'
+                                + esc(c)+' &mdash; '+esc(CAT[c].name)+'</option>').join('')
+               + '</select>'
+             : '<span class="mono">'+esc(l.code)+'</span> '+esc(e.name))
+            + (now!==undefined ? '<span class="tam">already on your indent: '+num(now)+'</span>' : '')
+          : '<span style="color:var(--red)">not found in the list</span>')+'</td>'
+      + '<td class="c" style="width:130px">'
+      + (e ? '<input type="number" min="0" step="any" class="row-inp mono" value="'
+             + (l.qty===null?'':l.qty)+'" onchange="myImportQty('+i+',this.value)"> '
+             + '<span style="font-size:12px;color:var(--ink-4)">'+esc(e.unit)+'</span>'
+           : '')
+      + '</td></tr>';
+  });
+  const ok = IMPORT.lines.filter(l=>l.use).length;
+  const miss = IMPORT.lines.filter(l=>!l.code).length;
+  return '<div class="card"><h3>Add from a sheet</h3><div style="padding:15px 16px">'
+   + '<p class="sub" style="margin:0 0 12px">Choose a CSV file, or paste the rows in. '
+   + 'One product a line, with its quantity &mdash; <span class="mono">23 tomato 5</span> or '
+   + '<span class="mono">Tomato, 5</span> both read the same. Nothing is added until you '
+   + 'press Add below.</p>'
+   + '<div class="bar" style="margin-bottom:10px">'
+   + '<input type="file" accept=".csv,.txt,.tsv,text/plain,text/csv" onchange="myImportFile(this)">'
+   + '</div>'
+   + '<textarea id="myImportBox" rows="4" style="width:100%" placeholder="or paste the list here" '
+   + 'oninput="myImportText(this.value)">'+esc(IMPORT.text||'')+'</textarea>'
+   + (IMPORT.lines.length
+      ? '<div class="twrap" style="margin-top:12px"><table><thead><tr><th class="c">Add</th>'
+        + '<th>Your line</th><th>Matched to</th><th class="c">Quantity</th></tr></thead>'
+        + '<tbody>'+rows+'</tbody></table></div>'
+        + (miss ? '<p class="sub" style="margin:10px 0 0">'+miss+' line'+(miss===1?'':'s')
+                  + ' could not be matched to a product and will be left out. Add those by hand '
+                  + 'from the list below.</p>' : '')
+      : '')
+   + '<div class="bar" style="margin-top:12px">'
+   + '<button class="btn pri" onclick="myImportApply()"'+(ok?'':' disabled')+'>Add '+ok+' to my indent</button>'
+   + '<button class="btn sm" onclick="myImportClose()">Cancel</button>'
+   + '</div></div></div>';
 }
 
 /* What the shop is looking at: neither belongs in the saved indent, so

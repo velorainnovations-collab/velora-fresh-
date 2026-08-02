@@ -105,12 +105,112 @@ async function tryShop(p, name, phone, pw) {
   await p.waitForTimeout(400);
   const all = await p.locator('#mylist tbody tr[data-k]').count();
   check('every product is on the list', all > 200, true);
-  check('grouped the way the vendors are',
-        await p.locator('#mylist tbody tr.vgrp').count() > 1, true);
+  check('under a heading, not loose',
+        await p.locator('#mylist tbody tr.vgrp').count() > 0, true);
   check('nothing chosen to begin with',
         await p.locator('#mylist tbody tr[data-has]').count(), 0);
   check('and nothing can be submitted yet',
         await p.locator('button:has-text("Submit indent")').isDisabled(), true);
+
+  console.log('\ntheir own products come first');
+  /* a vendor grouping is Velora's business — a shop manager has never
+     heard of the vendor a tomato comes from, and finding twenty five
+     products inside two hundred and forty one sorted by somebody
+     else's bills is the wrong question to ask them */
+  check('no vendor names on their screen',
+        /Ooty|SUK|Nellai/.test(await p.locator('#mylist tr.vgrp').first().textContent()), false);
+  check('with no history, one heading for the lot',
+        (await p.locator('#mylist tr.vgrp').allTextContents()).length, 1);
+  check('and it says so',
+        /All products/.test(await p.locator('#mylist tr.vgrp').first().textContent()), true);
+  check('sorted by name, so a name can be found',
+        await p.evaluate(() => {
+          const names = Array.prototype.slice.call(
+            document.querySelectorAll('#mylist tbody tr[data-k] td:nth-child(2)'))
+            .map(td => td.childNodes[0].textContent.trim());
+          return names.every((n, i) => i === 0 || names[i-1].localeCompare(n) <= 0);
+        }), true);
+
+  console.log('\nand what they order most sits at the top');
+  await p.evaluate(() => {
+    const back = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    DB.indents[back(1)] = { KLP: { status: 'accepted', lines: { '2': 10, '3': 2 } } };
+    DB.indents[back(2)] = { KLP: { status: 'accepted', lines: { '2': 8 } } };
+    DB.indents[back(3)] = { KLP: { status: 'accepted', lines: { '2': 6 } } };
+    save(); render();
+  });
+  await p.waitForTimeout(400);
+  const heads = await p.locator('#mylist tr.vgrp').allTextContents();
+  check('a section of their own', /usually order/.test(heads[0] || ''), true);
+  check('everything else under it', /Everything else/.test(heads[1] || ''), true);
+  check('three days of one product beats one day of another',
+        (await p.locator('#mylist tr[data-grp="usual"]').nth(1).textContent()).indexOf('Potato') > -1, true);
+  check('and the usual section is short',
+        await p.locator('#mylist tr[data-grp="usual"][data-k]').count(), 2);
+
+  console.log('\nwhat they had last time is on the line');
+  await p.evaluate(() => {
+    const back = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    DB.days[back(1)] = DB.days[back(1)] || { rates:{}, packed:{}, ship:{}, sent:{} };
+    DB.days[back(1)].packed = { KLP: { '2': 8 } };   /* what actually arrived */
+    save(); render();
+  });
+  await p.waitForTimeout(400);
+  const potato = p.locator('#mylist tbody tr[data-k]', { hasText: 'Potato' }).first();
+  const potatoText = (await potato.textContent()).replace(/\s+/g, ' ');
+  check('the day is named, not dated, when it was yesterday',
+        /yesterday/.test(potatoText), true);
+  check('and it is what arrived, not what was asked for',
+        /got 8/.test(potatoText), true);
+  const cabbage = p.locator('#mylist tbody tr[data-k]', { hasText: 'Cabbage' }).first();
+  check('what was only ever asked for says so',
+        /asked 2/.test((await cabbage.textContent()).replace(/\s+/g, ' ')), true);
+  check('and a product they have never had says nothing',
+        /got|asked/.test(await p.locator('#mylist tbody tr[data-k]', { hasText: 'Beetroot' })
+                                 .first().textContent()), false);
+
+  console.log('\na sheet can be handed over whole');
+  await p.click('#myImport');
+  await p.waitForTimeout(300);
+  await p.fill('#myImportBox', '23 Country Tomato 5\nPotato, 12\nLemon 3\nrandom thing 4');
+  await p.waitForTimeout(500);
+  const panel = p.locator('#main table').first();
+  check('every line is shown for checking', await panel.locator('tbody tr').count(), 4);
+  check('a number after a name is the quantity, not a code',
+        /Potato/.test(await panel.locator('tbody tr').nth(1).textContent()), true);
+  check('a code in front is still read as a code',
+        /Country Tomato/.test(await panel.locator('tbody tr').nth(0).textContent()), true);
+  check('what could not be matched is said so, not dropped quietly',
+        /not found/.test(await panel.locator('tbody tr').nth(3).textContent()), true);
+  check('and the button counts only what will go in',
+        /Add 3 to my indent/.test(await p.locator('button:has-text("to my indent")').textContent()), true);
+  check('nothing has touched the indent yet',
+        await p.evaluate(() => Object.keys(indentOf(DATE, ROLE).lines).length), 0);
+
+  await p.click('button:has-text("to my indent")');
+  await p.waitForTimeout(700);
+  check('now it has', await p.evaluate(() => JSON.stringify(indentOf(DATE, ROLE).lines)),
+        '{"1":3,"2":12,"23":5}');
+  check('and it shows what came in, to be looked over',
+        await p.locator('#mylist tbody tr[data-k]:visible').count(), 3);
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines = {}; MYONLY = false; save(); render(); });
+  await p.waitForTimeout(400);
+
+  console.log('\nyesterday again, with one press');
+  check('the button names the day it will copy',
+        /Same as/.test(await p.locator('#myRepeat').textContent()), true);
+  await p.click('#myRepeat');
+  await p.waitForTimeout(600);
+  check('the quantities came across',
+        await p.evaluate(() => indentOf(DATE, ROLE).lines['2']), 10);
+  check('all of them', await p.evaluate(() => Object.keys(indentOf(DATE, ROLE).lines).length), 2);
+  check('and it shows only what was copied, to be checked',
+        await p.locator('#mylist tbody tr[data-k]:visible').count(), 2);
+  await p.click('#myOnly');
+  await p.waitForTimeout(300);
+  /* back to an empty day for the sections below */
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines = {}; save(); render(); });
+  await p.waitForTimeout(400);
 
   console.log('\nthere is no closing time');
   check('the screen says so',
