@@ -42,6 +42,8 @@ const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
 const INDENTS        = [];   // indent headers, so their ids can be looked up
 const ILINES         = [];   // and their lines, so a second device can read them
+const PACKED         = [];   // what was packed, so the other device sees it
+const SHIPS          = [];   // and where the lorry is
 let LAST_CODE = '';          // the six digit code the mock last 'emailed'
 
 // what list_people() returns; mutated by the rpc handlers below
@@ -229,6 +231,19 @@ const srv = http.createServer((req, res) => {
         const s = (url.searchParams.get('shop_id') || '').replace(/^eq\./, '');
         return send(200, INDENTS.filter(i => (!d || i.trade_date === d) &&
                                              (!s || i.shop_id === s)));
+      }
+      if (req.method === 'GET' && (name === 'packed' || name === 'shipments')) {
+        const store = name === 'packed' ? PACKED : SHIPS;
+        const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
+        return send(200, store.filter(r => !d || r.trade_date === d));
+      }
+      if (req.method === 'POST' && (name === 'packed' || name === 'shipments')) {
+        const store = name === 'packed' ? PACKED : SHIPS;
+        (body ? JSON.parse(body) : []).forEach(r => {
+          const had = store.filter(x => x.trade_date === r.trade_date && x.shop_id === r.shop_id &&
+                                        (name === 'shipments' || x.product_code === r.product_code))[0];
+          if (had) Object.assign(had, r); else store.push(Object.assign({}, r));
+        });
       }
       if (req.method === 'GET' && name === 'indent_lines') {
         const inp = (url.searchParams.get('indent_id') || '');

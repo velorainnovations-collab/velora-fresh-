@@ -236,6 +236,8 @@ tbody tr.vgrp:hover td{background:var(--brand-soft)}
 .skipped td{background:var(--red-soft);color:var(--red)}
 tbody tr.skipped:hover td{background:var(--red-soft)}
 .row-inp{width:86px;text-align:center;padding:6px 6px;font-variant-numeric:tabular-nums}
+/* typed but not yet applied — see applyRates() */
+.row-inp.dirty{border-color:var(--amber);background:var(--amber-soft);font-weight:600}
 
 /* ---------- pills ---------- */
 .pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;
@@ -2726,7 +2728,10 @@ function vMyDeliveries(){
   const packed = day.packed[ROLE] || {};
   const codes = Object.keys(packed).filter(c=>packed[c]>0);
   if(st!=='out' && st!=='received')
-    return '<h2>Deliveries</h2><p class="sub">'+fmtDate(DATE)+'</p><div class="card"><div class="empty">Nothing out for delivery yet.</div></div>';
+    return '<h2>Deliveries</h2><p class="sub">'+fmtDate(DATE)+' &middot; '
+      + statusPill(indentOf(DATE, ROLE).status)+'</p>'
+      + '<div class="card"><div class="empty">Nothing has left for you yet. This fills in as '
+      + 'soon as it is out for delivery.</div></div>';
 
   let rows='', tot=0;
   codes.forEach((c,i)=>{
@@ -2736,7 +2741,10 @@ function vMyDeliveries(){
       +'<td class="r mono">'+money(pr)+'</td><td class="r mono">'+money(amt)+'</td></tr>';
   });
   return '<h2>Delivery for '+fmtDate(DATE)+'</h2>'
-   +'<p class="sub">Check the weights against the crates, then confirm.</p>'
+   /* the state of the day in the same words the office uses, so a shop
+      can see at a glance that the lorry has left */
+   +'<p class="sub">'+statusPill(st==='received'?'received':'shipped')
+   +' &middot; check the weights against the crates, then confirm.</p>'
    +(st==='received'?'<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Received and confirmed. The invoice can now be raised.</div>'
      :'<div class="note">If a weight or product differs, tell Velora Fresh before confirming — they will adjust it and send it again.</div>')
    +'<div class="card"><table><thead><tr><th class="c">#</th><th>Product</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
@@ -2973,20 +2981,110 @@ function vRates(){
       + ' <span style="font-size:11.5px;color:var(--ink-4)">'+esc(e.unit)+'</span></td>'
       + '<td class="c" style="width:130px"><input type="number" min="0" step="any" class="row-inp mono" '
       + (big?'style="border-color:#e0a92c;background:#fdf9ef"':'')
-      + ' value="'+(r===undefined||r===null?'':r)+'" onchange="setRate(\''+c+'\',this.value)"></td></tr>';
+      + ' data-rate="'+esc(c)+'"'
+      + ' value="'+(RATEDRAFT[c]!==undefined ? esc(RATEDRAFT[c]) : (r===undefined||r===null?'':r))+'"'
+      + ' oninput="rateDraft(\''+c+'\',this.value)"></td></tr>';
    });
   });
   const done = codes.filter(c=>day.rates[c]!==undefined && day.rates[c]!=='').length;
+  const pend = Object.keys(RATEDRAFT).length;
   return '<h2>Rates &mdash; '+fmtDate(DATE)+'</h2>'
    + '<p class="sub">Market rate per kg, same for every shop. '+done+' of '+codes.length+' entered, grouped by vendor bill.</p>'
+   + rateNoteHtml()
+   /* nothing typed here reaches another screen until this is pressed */
+   + '<div class="bar"><button class="btn pri" id="rateApply" onclick="applyRates()"'
+   + (pend?'':' disabled')+'>'+(pend?('Update '+pend+' rate'+(pend===1?'':'s')):'Update rates')+'</button>'
+   + '<span class="sub" id="rateCount" style="margin:0">'
+   + (pend ? pend+' changed, not yet saved' : 'No changes to update')+'</span>'
+   + '<span class="spacer"></span></div>'
    + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th>'
    + '<th class="r">Buying</th><th class="c">Market &#8377;/kg</th></tr></thead>'
    + '<tbody>'+rows+'</tbody></table></div>';
 }
+/* Setting one rate outright. The screen no longer works this way — see
+   rateDraft below — but a rate arriving from anywhere else, or from a
+   test, still has one door to go through. */
 function setRate(code, v){
   const day = dayOf(DATE);
   if(v==='' || v===null) delete day.rates[code]; else day.rates[code] = parseFloat(v)||0;
   save(); render();
+}
+
+/* Typing a rate no longer writes it. The morning's rates are read off a
+   vendor's bill one after another, and a half-entered list going out to
+   every screen as it is typed is how a shop ends up billed at a number
+   nobody meant. They are held until Update is pressed, and then they go
+   together — all of them or none. */
+let RATEDRAFT = {};      /* code -> what has been typed but not applied */
+let RATENOTE = '';       /* what to say about the last attempt */
+
+function rateDraft(code, v){
+  const day = dayOf(DATE);
+  const now = day.rates[code];
+  const same = (v === '' || v === null)
+    ? (now === undefined || now === '' || now === null)
+    : (parseFloat(v) === parseFloat(now));
+  if(same) delete RATEDRAFT[code]; else RATEDRAFT[code] = v;
+  paintRateBar();
+}
+
+/* The button and the count are repainted on their own, so the box being
+   typed in keeps the cursor and the list does not jump. */
+function paintRateBar(){
+  const n = Object.keys(RATEDRAFT).length;
+  const btn = document.getElementById('rateApply');
+  const lbl = document.getElementById('rateCount');
+  if(btn){
+    btn.disabled = !n;
+    btn.textContent = n ? ('Update ' + n + ' rate' + (n===1?'':'s')) : 'Update rates';
+  }
+  if(lbl) lbl.textContent = n ? (n + ' changed, not yet saved') : 'No changes to update';
+  document.querySelectorAll('#main input[data-rate]').forEach(inp=>{
+    inp.classList.toggle('dirty', RATEDRAFT[inp.getAttribute('data-rate')] !== undefined);
+  });
+}
+
+async function applyRates(){
+  const codes = Object.keys(RATEDRAFT);
+  if(!codes.length) return;
+  const day = dayOf(DATE);
+  /* taken all at once, so a failure leaves the day as it was rather than
+     half a vendor's bill */
+  const before = Object.assign({}, day.rates);
+  codes.forEach(c=>{
+    const v = RATEDRAFT[c];
+    if(v === '' || v === null) delete day.rates[c]; else day.rates[c] = parseFloat(v) || 0;
+  });
+  RATEDRAFT = {};
+  save();
+  RATENOTE = 'saving';
+  render();
+  try{
+    if(typeof VFSync !== 'undefined' && VFSync.enabled()) await VFSync.push();
+    RATENOTE = (typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.queueLength())
+      ? 'queued' : 'ok';
+  }catch(e){
+    day.rates = before;         /* nothing half applied */
+    save();
+    RATENOTE = 'failed:' + (e.message || e);
+  }
+  render();
+}
+
+function rateNoteHtml(){
+  if(!RATENOTE) return '';
+  if(RATENOTE === 'saving') return '';
+  if(RATENOTE === 'ok'){
+    return '<div class="note" style="background:var(--green-soft);border-color:#bfe0cd;'
+      + 'border-left-color:var(--green);color:var(--green)">Market rates updated successfully.</div>';
+  }
+  if(RATENOTE === 'queued'){
+    return '<div class="note">Market rates saved on this device. The connection is down, so they '
+      + 'will reach the other screens as soon as it is back.</div>';
+  }
+  return '<div class="note" style="background:var(--red-soft);border-color:#f2d3d1;'
+    + 'border-left-color:var(--red);color:var(--red)">Could not save the rates, so nothing was '
+    + 'changed: ' + esc(RATENOTE.slice(7)) + '</div>';
 }
 function prevRates(date){
   const ds = Object.keys(DB.days).filter(d=>d<date).sort();
@@ -3009,20 +3107,47 @@ function vPack(){
   Object.keys(ind.lines).forEach(c=>{ if(ind.lines[c]>0) codes.push(c); });
   Object.keys(packed).forEach(c=>{ if(codes.indexOf(c)<0) codes.push(c); });
 
-  let rows='', tot=0;
+  /* What was asked for against what was packed. What agrees stays where
+     it is; what does not sinks, and what has no figure at all sinks
+     below that — nothing was bought for it. Everything needing a second
+     look ends up together at the bottom, in the order it needs looking
+     at. */
+  const packState = c => {
+    const want = Number(ind.lines[c]) || 0;
+    const got  = packed[c];
+    if(got === undefined || got === null || got === '') return 'none';
+    const g = Number(got) || 0;
+    if(!want) return 'extra';                 /* packed but never indented */
+    if(g === want) return 'done';
+    return g < want ? 'short' : 'over';
+  };
+  const RANK = { done: 0, extra: 0, short: 1, over: 1, none: 2 };
+  codes.sort((a,b)=> RANK[packState(a)] - RANK[packState(b)]);
+
+  let rows='', tot=0, off=0;
   codes.forEach(c=>{
     const e=CAT[c]; if(!e) return;
+    const state = packState(c);
+    if(RANK[state]) off++;
     const pr = purchaseRate(PACKSHOP, c);
     const q  = packed[c];
     const has = q!==undefined && q!==null && q!=='' && parseFloat(q)>0;
     const nk = has ? netKg(c,q,e.unit) : 0;
     const amt = (has && pr!==null) ? nk*pr : 0;
     tot += amt;
-    const extra = !(ind.lines[c]>0);
+    const extra = (state === 'extra');
     const skipped = (q!==undefined && parseFloat(q)===0);
+    const flag = {
+      done:  '<span class="pill p-green">Completed</span>',
+      extra: '<span class="pill p-green">Completed</span>',
+      short: '<span class="pill p-amber">Short packed</span>',
+      over:  '<span class="pill p-blue">Over packed</span>',
+      none:  '<span class="pill p-red">Not bought</span>',
+    }[state] || '';
     rows += '<tr class="'+(skipped?'skipped':'')+'">'
       + '<td class="mono" style="width:58px">'+esc(c)+'</td>'
-      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+(extra?' &middot; not indented':'')+'</span></td>'
+      + '<td>'+esc(e.name)+(flag?' '+flag:'')
+      + '<span class="tam">'+esc(e.tamil)+(extra?' &middot; not indented':'')+'</span></td>'
       + '<td class="c mono" style="width:88px;color:var(--ink-3)">'+(ind.lines[c]>0?num(ind.lines[c])+' '+esc(e.unit):'&mdash;')+'</td>'
       + '<td class="c" style="width:120px"><input type="number" min="0" step="any" class="row-inp mono" value="'+(q===undefined?'':q)+'" onchange="setPacked(\''+c+'\',this.value)"></td>'
       + '<td class="r mono" style="width:82px">'+(has ? (nk>0?num(nk,3):'<span style="color:#a33">no weight</span>') : '&mdash;')+'</td>'
@@ -3041,6 +3166,9 @@ function vPack(){
       ? '<div class="note">This shop\'s indent has not been accepted yet. Accept it on the Indents tab first.</div>' : '')
    + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Indent</th><th class="c">Packed</th><th class="r">Net kg</th><th class="r">Rate/kg</th><th class="r">Amount</th></tr></thead>'
    + '<tbody>'+(rows||'<tr><td colspan="7" class="empty">Nothing to pack for this shop.</td></tr>')+'</tbody></table></div>'
+   + (off ? '<div class="bar"><span class="sub" style="margin:0">'+off+' product'+(off===1?'':'s')
+            + ' still to settle &mdash; short, over or not bought. They are at the bottom of '
+            + 'the list.</span></div>' : '')
    + '<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong></span>'
    + '<span class="spacer"></span>'
    + '<button class="btn pri" onclick="markOut(\''+PACKSHOP+'\')"'+(canShip?'':' disabled')+'>Out for delivery</button></div>';
@@ -3730,7 +3858,9 @@ let WATCHING = false;
 async function watchIndents(){
   if(WATCHING) return;
   if(typeof VFSync === 'undefined' || !VFSync.enabled() || !VFSync.signedIn()) return;
-  if(TAB !== 'indents' && TAB !== 'myindent') return;
+  /* the screens where somebody is waiting on somebody else: an indent
+     coming in, a weight going on, a lorry leaving */
+  if(['indents','myindent','pack','ship','mydel'].indexOf(TAB) < 0) return;
   WATCHING = true;
   try{
     const changed = await VFSync.refreshIndents(DB, DATE);

@@ -737,16 +737,18 @@ const VFSync = (function () {
     return r.json();
   }
 
-  /* ---------- one day's indents, on demand ----------
+  /* ---------- one day, on demand ----------
      A shop submits on its own phone; the office is looking at a screen
-     that was drawn before that happened. Rather than make somebody press
-     reload — and rather than pull the whole history every half minute —
-     this reads just the indents of the day on screen and merges them in.
+     that was drawn before that happened. The lorry leaves the office;
+     the shop is looking at a screen drawn before that. Rather than make
+     somebody press reload — and rather than pull the whole history every
+     half minute — this reads just the day on screen and merges it in:
+     the indents, what was packed, and where the lorry is.
      Returns true when something actually changed, so the caller only
      redraws when there is a reason to. */
   async function refreshIndents(DB, date) {
     if (!enabled() || !signedIn() || !date) return false;
-    const before = JSON.stringify(DB.indents[date] || {});
+    const before = JSON.stringify([DB.indents[date] || {}, DB.days[date] || {}]);
     let inds;
     try {
       inds = await get('indents', '*', 'trade_date=eq.' + encodeURIComponent(date));
@@ -776,7 +778,23 @@ const VFSync = (function () {
       const shop = byId[l.indent_id];
       if (shop && day[shop]) day[shop].lines[l.product_code] = Number(l.qty);
     });
-    const changed = JSON.stringify(day) !== before;
+    /* packing and the lorry, so a shop sees "out for delivery" the
+       moment the office marks it, and the packing screen picks up a
+       weight entered on another device */
+    const D = DB.days[date] = DB.days[date] ||
+              { rates: {}, packed: {}, ship: {}, sent: {} };
+    try {
+      const pk = await get('packed', '*', 'trade_date=eq.' + encodeURIComponent(date));
+      pk.forEach(r => {
+        (D.packed[r.shop_id] = D.packed[r.shop_id] || {})[r.product_code] = Number(r.qty);
+      });
+    } catch (e) { /* leave what is on this device */ }
+    try {
+      const sh = await get('shipments', '*', 'trade_date=eq.' + encodeURIComponent(date));
+      sh.forEach(r => { D.ship[r.shop_id] = r.state; });
+    } catch (e) { /* same */ }
+
+    const changed = JSON.stringify([day, D]) !== before;
     if (changed) { synced = flatten(DB); writeJSON(SKEY, synced); }
     return changed;
   }

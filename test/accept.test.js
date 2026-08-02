@@ -198,6 +198,26 @@ async function device(b) {
   check('with the quantity left alone',
         await shop.p.evaluate(() => indentOf(DATE, ROLE).lines['1']), 3);
 
+  console.log('\nand the lorry leaving reaches the shop on its own');
+  /* the office packs and sends it out; the shop is looking at a screen
+     drawn before any of that happened */
+  await office.p.evaluate(d => {
+    setPacked && (PACKSHOP = 'KLP');
+    const day = dayOf(d);
+    day.packed = day.packed || {}; day.packed['KLP'] = { '1': 3 };
+    day.ship = day.ship || {}; day.ship['KLP'] = 'out';
+    save();
+  }, today);
+  await office.p.waitForTimeout(1200);
+  await shop.p.evaluate(() => go('mydel'));
+  await shop.p.waitForTimeout(1500);
+  check('the shop sees it is out for delivery',
+        await shop.p.evaluate(d => dayOf(d).ship['KLP'], today), 'out');
+  check('and it says so on their screen',
+        /Out for delivery/i.test(await shop.p.locator('#main').textContent()), true);
+  check('without anybody reloading anything',
+        await shop.p.evaluate(() => TAB), 'mydel');
+
   await shop.ctx.close();
   await office.ctx.close();
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
