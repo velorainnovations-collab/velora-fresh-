@@ -120,7 +120,10 @@ function check(label, got, want) {
         after.slice(1, 3).sort().join(','), 'Cauliflower,Potato');
   check('and the one nobody bought is last', after[3], 'Cabbage');
   const cell = name => p.locator('#main tbody tr', { hasText: name }).first().textContent();
-  check('right is called completed',  /Completed/.test(await cell('Lemon')), true);
+  /* a line that agrees needs no label — only what needs attention is
+     labelled, or the labels stop meaning anything */
+  check('right is called nothing at all',
+        /Completed|packed/i.test(await cell('Lemon')), false);
   check('short is called short',      /Short packed/.test(await cell('Cauliflower')), true);
   check('over is called over',        /Over packed/.test(await cell('Potato')), true);
   check('and missing is called not bought', /Not bought/.test(await cell('Cabbage')), true);
@@ -190,9 +193,25 @@ function check(label, got, want) {
   await sp.waitForTimeout(400);
   check('and one that came short says that',
         /Short packed/.test(await dline('Lemon').textContent()), true);
+  console.log('  (and what did not come as asked goes to the bottom)');
+  /* the shop reads the note from the top: the lines it has nothing to
+     say about first, and the ones worth a phone call gathered at the end */
+  const dorder = () => sp.evaluate(() => Array.prototype.slice.call(
+    document.querySelectorAll('#main tbody tr'))
+    .map(tr => (tr.children[1].childNodes[0].textContent || '').trim()));
+  const sunk = await dorder();
+  check('the short one is last', sunk[sunk.length - 1], 'Lemon');
+  check('and the ones that came as asked are above it',
+        sunk.slice(0, -1).join(',').indexOf('Lemon'), -1);
+  check('with a word about how many need settling',
+        /1 product did not come as asked/.test(await sp.locator('#main').textContent()), true);
+
   /* put it back to what was actually packed for the checks below */
   await sp.evaluate(() => { dayOf(DATE).packed[ROLE]['1'] = 10; save(); render(); });
   await sp.waitForTimeout(400);
+  check('put right, it climbs back to the top', (await dorder())[0], 'Lemon');
+  check('and the note goes with it',
+        /did not come as asked/.test(await sp.locator('#main').textContent()), false);
   check('and every line offers the edit that is coming',
         await sp.locator('#main tbody button:has-text("Edit")').count(),
         await sp.locator('#main tbody tr').count());

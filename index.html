@@ -4362,6 +4362,21 @@ function vMyDeliveries(){
 
   const ind = indentOf(DATE, ROLE);
 
+  /* What came as asked stays where it is; what is short or over sinks to
+     the bottom, so the lines needing a word with the office are together
+     at the end of the note instead of scattered through it. A product
+     that was never indented is not a mismatch — it came as a bonus and
+     stays in its place, the same as on the packing list. */
+  const delState = c => {
+    const want = Number(ind.lines[c]) || 0;
+    const got  = Number(packed[c]) || 0;
+    if(!want) return 'extra';
+    if(got === want) return 'done';
+    return got < want ? 'short' : 'over';
+  };
+  const DRANK = { done: 0, extra: 0, short: 1, over: 1 };
+  codes.sort((a,b)=> DRANK[delState(a)] - DRANK[delState(b)]);
+
   let rows='', tot=0, unpriced=0, off=0;
   codes.forEach((c,i)=>{
     const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit);
@@ -4375,11 +4390,12 @@ function vMyDeliveries(){
     /* what they asked for against what came. Only a difference is worth
        a word: a line that came as ordered needs nothing said about it. */
     const want = Number(ind.lines[c]) || 0;
-    const got  = Number(q) || 0;
-    const flag = !want ? '<span class="pill p-blue">Not indented</span>'
-               : got > want ? '<span class="pill p-blue">Over packed</span>'
-               : got < want ? '<span class="pill p-amber">Short packed</span>' : '';
-    if(flag) off++;
+    const state = delState(c);
+    const flag = { extra: '<span class="pill p-blue">Not indented</span>',
+                   over:  '<span class="pill p-blue">Over packed</span>',
+                   short: '<span class="pill p-amber">Short packed</span>',
+                   done:  '' }[state];
+    if(DRANK[state]) off++;
 
     rows+='<tr><td class="c mono">'+(i+1)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
       +'<td class="c mono" style="color:var(--ink-3)">'+(want?num(want)+' '+esc(e.unit):'&mdash;')+'</td>'
@@ -4400,6 +4416,9 @@ function vMyDeliveries(){
    +'<th class="c">Indent</th><th class="c">Delivered</th><th class="r">Net kg</th>'
    +'<th class="r">Rate/kg</th><th class="r">Amount</th><th class="c">Status</th><th></th></tr></thead>'
    +'<tbody>'+(rows||'<tr><td colspan="9" class="empty">No lines.</td></tr>')+'</tbody></table></div>'
+   +(off ? '<div class="bar"><span class="sub" style="margin:0">'+off+' product'+(off===1?'':'s')
+           + ' did not come as asked &mdash; short or over. They are at the bottom of the '
+           + 'list.</span></div>' : '')
    +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong>'
    +(unpriced ? ' <span style="color:var(--ink-3)">&middot; '+unpriced+' line'+(unpriced===1?'':'s')
                 + ' not priced yet</span>' : '')+'</span><span class="spacer"></span>'
@@ -4799,9 +4818,11 @@ function vPack(){
     tot += amt;
     const extra = (state === 'extra');
     const skipped = (q!==undefined && parseFloat(q)===0);
+    /* A line that agrees with the indent says nothing. Only what needs
+       attention is labelled, so the labels mean something. */
     const flag = {
-      done:  '<span class="pill p-green">Completed</span>',
-      extra: '<span class="pill p-green">Completed</span>',
+      done:  '',
+      extra: '',
       short: '<span class="pill p-amber">Short packed</span>',
       over:  '<span class="pill p-blue">Over packed</span>',
       none:  '<span class="pill p-red">Not bought</span>',
