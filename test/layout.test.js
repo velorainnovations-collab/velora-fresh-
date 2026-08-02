@@ -48,7 +48,10 @@ async function open(b, who, width, scheme) {
     setAnytime && setAnytime(true);
     const d = DATE;
     DB.indents[d] = DB.indents[d] || {};
-    DB.indents[d]['KLP'] = { status:'submitted', lines: { '1': 12, '11': 5, '2': 30 } };
+    /* accepted, or the rates and orders screens have nothing on them and
+       the checks below are looking at empty tables */
+    DB.indents[d]['KLP'] = { status:'accepted', lines: { '1': 12, '11': 5, '2': 30 } };
+    DB.indents[d]['NGB'] = { status:'submitted', lines: { '1': 4 } };
     DB.days[d] = DB.days[d] || { rates:{}, packed:{}, ship:{}, sent:{} };
     DB.days[d].rates = { '1': 80, '11': 20 };
     DB.days[d].packed = { KLP: { '1': 10, '11': 5 } };
@@ -101,6 +104,30 @@ const audit = tab => ({
     });
     return out.slice(0, 4);
   })(),
+  /* "1 items". Small, and it is the first thing a reader's eye catches
+     on a screen that is otherwise careful. */
+  plural: (() => {
+    const t = (document.querySelector('#main') || {}).textContent || '';
+    const m = t.match(/\b1 (items|products|users|shops|invoices|lines|days|rows|vendors|orders)\b/g);
+    return m ? m.slice(0, 3) : [];
+  })(),
+
+  /* a table squeezed into a corner of a wide screen. The invoice is
+     deliberately the width of paper; nothing else should be. */
+  narrow: (() => {
+    if (document.documentElement.clientWidth < 1000) return [];
+    const main = document.querySelector('#main');
+    const room = main.clientWidth - 48;
+    const out = [];
+    document.querySelectorAll('#main .card').forEach(c => {
+      if (c.id === 'inv' || c.closest('#inv')) return;
+      if (!c.querySelector('table')) return;
+      const w = c.getBoundingClientRect().width;
+      if (w < room * 0.85) out.push(Math.round(w) + 'px of ' + Math.round(room) + 'px');
+    });
+    return out.slice(0, 2);
+  })(),
+
   offscreen: (() => {
     const vw = document.documentElement.clientWidth, out = [];
     document.querySelectorAll('#main > *, header > *').forEach(el => {
@@ -135,6 +162,8 @@ function check(label, problems) {
           if (r.cells.length) problems.push('cell count: ' + r.cells.join('; '));
           if (r.faint.length) problems.push('faint: ' + r.faint.join('; '));
           if (r.offscreen.length) problems.push('past the edge: ' + r.offscreen.join('; '));
+          if (r.plural.length) problems.push('plural: "' + r.plural.join('", "') + '"');
+          if (r.narrow.length) problems.push('table squeezed: ' + r.narrow.join('; '));
           check([who, width + 'px', scheme, t].join(' / '), problems);
         }
         await ctx.close();
