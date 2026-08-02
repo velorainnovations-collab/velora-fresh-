@@ -7,13 +7,16 @@ made, it is marked **provisional**.
 
 | Time | What happens |
 |---|---|
-| 6:00 pm | Indent window opens. Nothing is pre-filled — a shop that does not order simply has no indent |
-| 9:00 pm | Window closes |
-| 9:00–11:30 pm | Still accepted, but flagged `late` on the record and the owner is notified |
-| after 11:30 pm | Closed. No submission |
+| evening | A shop sends its indent whenever it is ready. Nothing is pre-filled — a shop that does not order simply has no indent |
 | night | Admin cuts the indent and accepts it, then sends one order per vendor group over WhatsApp |
 | next morning | Vendor bills arrive together. Rates entered first, then packed quantities shop by shop |
 | | Out for delivery → shop manager confirms weights → invoice generated |
+
+**The indent window is switched off.** It was 6–9 pm, with anything up to 11:30 pm
+recorded as `late`. `WINDOW_ON` in `src/template.html` turns the rule back on, and
+nothing else has to change: the hours, the late flag, the notes on the shop's screen
+and the owner's override are all still there and still work. While it is off, no
+indent is refused for being early or late and nothing is flagged.
 
 Shop managers over-order, so cutting lines is a normal part of acceptance, not an
 exception. The owner is himself part of the client chain and knows the real quantities.

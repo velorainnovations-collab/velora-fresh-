@@ -112,6 +112,16 @@ async function tryShop(p, name, phone, pw) {
   check('and nothing can be submitted yet',
         await p.locator('button:has-text("Submit indent")').isDisabled(), true);
 
+  console.log('\nthere is no closing time');
+  check('the screen says so',
+        /no closing time/.test(await p.locator('#main .note').first().textContent()), true);
+  check('the window is open whatever the hour',
+        await p.evaluate(() => windowState()), 'open');
+  check('even with the old setting switched off',
+        await p.evaluate(() => { DB.settings.anytime = false; return windowState(); }), 'open');
+  check('and the clock says only the time',
+        /^\d\d:\d\d$/.test((await p.locator('#clock').textContent()).trim()), true);
+
   console.log('\nthe search narrows the list rather than adding to it');
   await p.fill('#myq', 'tomato');
   await p.waitForTimeout(250);

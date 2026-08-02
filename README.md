@@ -22,8 +22,9 @@ python3 -m http.server 8080     # or just open index.html
 
 Open <http://localhost:8080>. Switch roles from the dropdown in the header.
 
-**Turn on "Ignore indent timings"** (Owner role, header) before testing, or the
-6 pm–9 pm indent window will block you outside those hours.
+There is no indent window: a shop can send its indent at any hour. The 6 pm–9 pm
+rule is still in the code behind `WINDOW_ON` in `src/template.html` if it is ever
+wanted back.
 
 ## Build
 

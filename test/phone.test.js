@@ -76,8 +76,12 @@ const box = (p, sel) => p.evaluate(s => {
   const mid = r => Math.round((r.top + r.bottom) / 2);
   check('on the one line, not stacked', mid(nm), mid(dt));
   check('the date is to the right of the name', dt.left > nm.left, true);
-  check('the indent window switch under them',
-        await p.locator('#sideTop #anyBox').isVisible(), true);
+  /* the switch that overrules the 6–9 pm window is hidden while no hours
+     are enforced at all — there is nothing for it to overrule */
+  check('no window switch while there is no window',
+        await p.locator('#sideTop #anyBox').isVisible(), false);
+  check('the sync mark is in the drawer',
+        await p.locator('#sideTop #syncState').count(), 1);
 
   console.log('\nand the way out is at the bottom');
   const so = await box(p, '#sideFoot #signOutBtn');

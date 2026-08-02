@@ -532,6 +532,15 @@ const SHOPS = [
 ];
 
 const CLIENT = 'Kalpaviruksha Pazhamudir Nilayam';
+/* The indent window: shops were meant to send between 6 and 9 pm, with
+   anything up to 11:30 recorded as late.
+
+   It is switched off. A shop sends its indent whenever it is ready, at
+   any hour, and nothing is marked late. The hours below and every
+   screen that reads them are left where they are — turning WINDOW_ON
+   back to true restores the rule exactly as it was, and is the only
+   change needed to do it. */
+const WINDOW_ON = false;
 const OPEN_H = 18, CLOSE_H = 21, LATE_H = 23.5;   /* 6pm / 9pm / 11:30pm */
 
 /* ---------- catalogue parse ---------- */
@@ -1094,6 +1103,7 @@ function uniqueCodes(date){
   return Object.keys(set).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
 }
 function windowState(){
+  if(!WINDOW_ON) return 'open';      /* no hours are enforced — see WINDOW_ON */
   if(DB.settings.anytime) return 'open';
   const n = new Date(); const h = n.getHours() + n.getMinutes()/60;
   if(h >= OPEN_H && h < CLOSE_H) return 'open';
@@ -2101,7 +2111,8 @@ function render(){
   rs.value = ROLE;
   document.getElementById('dateSel').value = DATE;
   const ab = document.getElementById('anyBox');
-  ab.className = (ROLE==='owner') ? '' : 'hidden';
+  /* nothing to overrule while no hours are enforced */
+  ab.className = (ROLE==='owner' && WINDOW_ON) ? '' : 'hidden';
   document.getElementById('anyChk').checked = !!DB.settings.anytime;
 
   const tabs = tabsFor();
@@ -2137,7 +2148,9 @@ function vMyIndent(){
   const codes = Object.keys(ind.lines);
 
   let note = '';
-  if(w==='open')   note = '<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Indent window is open until 9:00 pm.</div>';
+  if(w==='open')   note = WINDOW_ON
+    ? '<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Indent window is open until 9:00 pm.</div>'
+    : '<div class="note" style="background:#e6f4ec;border-color:#bfe0cd;color:#14663f">Send your indent whenever it is ready. There is no closing time.</div>';
   if(w==='late')   note = '<div class="note">Late window. Submitting now is recorded as a late indent and the owner is notified.</div>';
   if(w==='closed') note = '<div class="note" style="background:#fbeaea;border-color:#f0c4c4;color:#8c2020">Indent window is closed. It opens again at 6:00 pm.</div>';
   if(ind.status==='submitted') note = '<div class="note" style="background:#e7f0fa;border-color:#c4d8ee;color:#1b4f80">Submitted'+(ind.late?' (late)':'')+'. You can still change it until Velora accepts it.</div>';
@@ -3176,9 +3189,11 @@ window.VF = {
 function tick(){
   const n = new Date();
   const w = windowState();
-  const lbl = {open:'Indent window open', late:'Late window', closed:'Indent window closed'}[w];
+  const lbl = WINDOW_ON
+    ? {open:'Indent window open', late:'Late window', closed:'Indent window closed'}[w] + ' · '
+    : '';
   const el = document.getElementById('clock');
-  if(el) el.textContent = lbl + ' · ' + String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+  if(el) el.textContent = lbl + String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
 }
 /* Restore the screen from the address bar, so a refresh comes back
    where you were instead of the first tab. This has to run after the
