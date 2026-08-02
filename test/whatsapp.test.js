@@ -88,6 +88,40 @@ function check(label, got, want) {
         /Lemon/.test(decodeURIComponent(orderUrl || '')), true);
   check('marked as sent', await p.evaluate(() => !!dayOf(VF.DATE).sent['Others']), true);
 
+  console.log('\nbuying more than the shops asked for');
+  /* a vendor sells by the crate, and the rate is better for ten kilos
+     than for seven — so what is bought is not always what was asked
+     for, and the shops' own figures must not move with it */
+  await p.evaluate(() => { go('orders'); });
+  await p.waitForTimeout(400);
+  const box = p.locator('#main input.row-inp').first();
+  check('every line can be changed before it goes',
+        await box.count(), 1);
+  check('and starts at what the shops asked for', await box.inputValue(), '12');
+  await box.fill('15');
+  await box.blur();
+  await p.waitForTimeout(400);
+  check('the change is kept', await p.evaluate(() => dayOf(VF.DATE).order['1']), 15);
+  check('the shop is untouched',
+        await p.evaluate(() => indentOf(VF.DATE, 'KLP').lines['1']), 12);
+  check('the screen still shows what they asked for',
+        /shops asked for/.test(await p.locator('#main').textContent()), true);
+
+  await p.evaluate(() => { window.__opened = null; sendOrder('Others'); });
+  await p.waitForTimeout(300);
+  const changed = decodeURIComponent(await p.evaluate(() => window.__opened) || '');
+  check('the vendor is asked for the new quantity', /Lemon — 15/.test(changed), true);
+  check('and the shop split is still theirs', /Kilpauk 12/.test(changed), true);
+
+  console.log('\nand the rates screen shows what is being bought');
+  await p.evaluate(() => go('rates'));
+  await p.waitForTimeout(400);
+  const rateRow = p.locator('#main tbody tr', { hasText: 'Lemon' }).first();
+  check('the column is there',
+        /Buying/.test(await p.locator('#main thead').textContent()), true);
+  check('and it is the quantity bought, not the one asked for',
+        /15/.test(await rateRow.textContent()), true);
+
   console.log('\na vendor ordered by hand');
   await p.evaluate(() => {
     DB.vendors['Manual order'] = DB.vendors['Manual order'] || {};

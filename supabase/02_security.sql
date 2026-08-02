@@ -304,6 +304,11 @@ create policy write_ship on shipments for all
 create policy rw_vendor_orders on vendor_orders for all
   using (is_velora()) with check (is_velora());
 
+-- What is bought is Velora's business and its cost base: a shop asked
+-- for a quantity, it does not decide what is purchased.
+create policy rw_vendor_order_lines on vendor_order_lines for all
+  using (is_velora()) with check (is_velora());
+
 -- ---------- invoices ----------
 create policy read_invoices on invoices for select using (may_see_shop(shop_id));
 create policy write_invoices on invoices for all

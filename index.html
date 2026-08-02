@@ -987,7 +987,8 @@ const VFSync = (function () {
   function flatten(DB) {
     const out = {
       indents: {}, indent_lines: {}, day_rates: {}, packed: {},
-      shipments: {}, vendor_orders: {}, invoices: {}, invoice_lines: {},
+      shipments: {}, vendor_orders: {}, vendor_order_lines: {},
+      invoices: {}, invoice_lines: {},
       payments: {}, vendors: {}, vendor_bank: {}, margin_comm: {},
       margin_selling: {}, settings: {},
     };
@@ -1052,6 +1053,19 @@ const VFSync = (function () {
       Object.keys(day.sent || {}).forEach(g => {
         if (!day.sent[g]) return;
         out.vendor_orders[date + '|' + g] = { trade_date: date, group_name: g };
+      });
+
+      /* only what was changed from the sum of the indents: no row means
+         buy exactly what the shops asked for */
+      Object.keys(day.order || {}).forEach(code => {
+        const q = day.order[code];
+        if (q === '' || q === null || q === undefined) return;
+        const g = groupNameFor(code);
+        if (!g) return;
+        out.vendor_order_lines[date + '|' + code] = {
+          trade_date: date, group_name: g,
+          product_code: code, qty: Number(q) || 0,
+        };
       });
     });
 
@@ -1132,6 +1146,14 @@ const VFSync = (function () {
 
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
+  /* which vendor's bill a product belongs to. The mapping lives in the
+     app, which is inlined into the same script; if it is not there the
+     row is dropped rather than guessed at. */
+  function groupNameFor(code) {
+    try { return (typeof groupOf === 'function') ? (groupOf(code) || '') : ''; }
+    catch (e) { return ''; }
+  }
+
   /* Stable uuid from a string, so the same logical record keeps the same
      id on every device without a server round trip. Not a real v5 hash —
      it only has to be deterministic and collision-free over our keys. */
@@ -1164,6 +1186,7 @@ const VFSync = (function () {
     packed:         'trade_date,shop_id,product_code',
     shipments:      'trade_date,shop_id',
     vendor_orders:  'trade_date,group_name',
+    vendor_order_lines: 'trade_date,group_name,product_code',
     invoices:       'trade_date,shop_id',
     invoice_lines:  'invoice_id,line_no',
     payments:       'id',
@@ -1210,7 +1233,8 @@ const VFSync = (function () {
      Deletes run in reverse for the same reason. */
   const ORDER = ['settings', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                  'indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
-                 'vendor_orders', 'invoices', 'invoice_lines', 'payments'];
+                 'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
+                 'payments'];
 
   function sortOps(ops) {
     return ops.slice().sort((x, y) => {
@@ -1252,6 +1276,8 @@ const VFSync = (function () {
     admin: null,
     ho:    ['indents', 'indent_lines'],
     shop:  ['indents', 'indent_lines', 'shipments'],
+    /* vendor_order_lines is Velora's: a shop asks for a quantity, it
+       does not decide what is bought */
   };
   let WHO = { role: '', shop: '' };
 
@@ -1548,6 +1574,16 @@ const VFSync = (function () {
     if (!r.ok) throw await httpError(r, table);
   }
 
+  /* A project that has not been given the newest schema yet answers
+     "relation does not exist" for a table this build knows about. That
+     is not a failure of the day's work: everything else still goes, and
+     these rows wait in the queue until the migration is run. */
+  function isMissingTable(e) {
+    const b = e && e.body;
+    if (b && (b.code === 'PGRST205' || b.code === '42P01')) return true;
+    return !!(e && /does not exist|schema cache/i.test(e.message || ''));
+  }
+
   async function httpError(r, table) {
     let body = null;
     try { body = await r.json(); } catch (e) { /* empty or non-JSON */ }
@@ -1573,19 +1609,29 @@ const VFSync = (function () {
     emit('pushing', queue.length);
     const batch = sortOps(queue);
 
+    const held = [];        // ops for a table this project does not have yet
     try {
       // group consecutive ops of the same table and direction
       let i = 0;
       while (i < batch.length) {
         const t = batch[i].table, isDel = batch[i].op === 'delete';
-        const rows = [];
+        const rows = [], ops = [];
         while (i < batch.length && batch[i].table === t && (batch[i].op === 'delete') === isDel) {
-          rows.push(batch[i].row); i++;
+          rows.push(batch[i].row); ops.push(batch[i]); i++;
         }
-        await send(t, rows, isDel, CONFLICT[t].split(','));
+        try {
+          await send(t, rows, isDel, CONFLICT[t].split(','));
+        } catch (e) {
+          if (!isMissingTable(e)) throw e;
+          if (typeof console !== 'undefined') {
+            console.warn('[VFSync] ' + t + ' is not in this project yet — '
+                         + ops.length + ' row(s) held back until it is');
+          }
+          held.push.apply(held, ops);
+        }
       }
-      queue = []; writeJSON(QKEY, queue);
-      emit('synced', 0);
+      queue = held; writeJSON(QKEY, queue);
+      emit('synced', held.length);
     } catch (err) {
       if (err.status === 401 && await refresh()) { pushing = false; return push(); }
       // keep the queue; the next attempt retries it
@@ -1613,10 +1659,10 @@ const VFSync = (function () {
   async function pull(DB) {
     if (!enabled() || !signedIn()) return DB;
 
-    const [inds, ilines, rates, pk, ship, vo, invs, ivl, pays, vend, vbank, mc, ms, st] =
+    const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
-                         'vendor_orders', 'invoices', 'invoice_lines', 'payments',
-                         'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
+                         'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
+                         'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                          'settings'].map(t => get(t).catch(() => [])));
 
     const indById = {};
@@ -1642,6 +1688,10 @@ const VFSync = (function () {
     });
     ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
     vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
+    vol.forEach(l => {
+      const D = day(l.trade_date);
+      (D.order = D.order || {})[l.product_code] = Number(l.qty);
+    });
 
     const invById = {};
     invs.forEach(v => {
@@ -3769,6 +3819,7 @@ function acceptIndent(shopId){
 function vRates(){
   const day = dayOf(DATE);
   const codes = uniqueCodes(DATE);
+  const need = dayRequirement(DATE);
   if(!codes.length) return '<h2>Rates</h2><p class="sub">'+fmtDate(DATE)+'</p><div class="card"><div class="empty">No accepted indents for this date yet.</div></div>';
   const yest = prevRates(DATE);
   const byGroup = {};
@@ -3793,9 +3844,13 @@ function vRates(){
       } else hint = 'y\'day &#8377;'+money(y);
     }
     const big = (y && r && Math.abs((parseFloat(r)-parseFloat(y))/parseFloat(y))>=0.15);
+    /* what was actually bought from the vendor, so the rate is entered
+       against the quantity on the bill rather than from memory */
+    const bought = orderQty(DATE, c, (need[c] ? need[c].total : 0));
     rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
       + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+(hint?' &middot; '+hint:'')+'</span></td>'
-      + '<td class="c mono" style="width:70px;color:#7a7a74">'+esc(e.unit)+'</td>'
+      + '<td class="r mono" style="width:96px">'+(bought?num(bought):'&mdash;')
+      + ' <span style="font-size:11.5px;color:var(--ink-4)">'+esc(e.unit)+'</span></td>'
       + '<td class="c" style="width:130px"><input type="number" min="0" step="any" class="row-inp mono" '
       + (big?'style="border-color:#e0a92c;background:#fdf9ef"':'')
       + ' value="'+(r===undefined||r===null?'':r)+'" onchange="setRate(\''+c+'\',this.value)"></td></tr>';
@@ -3804,7 +3859,8 @@ function vRates(){
   const done = codes.filter(c=>day.rates[c]!==undefined && day.rates[c]!=='').length;
   return '<h2>Rates &mdash; '+fmtDate(DATE)+'</h2>'
    + '<p class="sub">Market rate per kg, same for every shop. '+done+' of '+codes.length+' entered, grouped by vendor bill.</p>'
-   + '<div class="card narrow"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Unit</th><th class="c">Market &#8377;/kg</th></tr></thead>'
+   + '<div class="card narrow"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="r">Buying</th><th class="c">Market &#8377;/kg</th></tr></thead>'
    + '<tbody>'+rows+'</tbody></table></div>';
 }
 function setRate(code, v){
@@ -4086,12 +4142,36 @@ function groupedRequirement(date){
   Object.keys(out).forEach(g=> out[g].sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0)));
   return {need:need, groups:out};
 }
+/* What is actually bought from the vendor. It starts as the sum of what
+   the shops asked for, and can be changed before the order goes out — a
+   vendor sells by the crate, a rate is better for ten kilos than for
+   seven, and something is worth buying in hand. The shops' own figures
+   are never touched by this: packing still divides what arrives between
+   them line by line. */
+function orderQty(date, code, fallback){
+  const o = (dayOf(date).order || {});
+  return (o[code] === undefined || o[code] === null || o[code] === '')
+    ? fallback : Number(o[code]);
+}
+function setOrderQty(code, v){
+  const day = dayOf(DATE);
+  day.order = day.order || {};
+  const q = parseFloat(v);
+  if(v === '' || isNaN(q) || q < 0) delete day.order[code]; else day.order[code] = q;
+  save(); render();
+}
+function orderEdited(date, code){
+  const o = (dayOf(date).order || {});
+  return o[code] !== undefined && o[code] !== null && o[code] !== '';
+}
+
 function orderText(date, g, codes, need){
   const v = DB.vendors[g] || {name:g};
   let t = 'VELORA FRESH — order for ' + fmtDate(date) + '\n' + (v.name||g) + '\n';
   codes.forEach(c=>{
     const e = CAT[c]; if(!e) return;
-    t += '\n' + c + ' ' + e.name + ' — ' + num(need[c].total) + ' ' + e.unit + '\n   ';
+    const q = orderQty(date, c, need[c].total);
+    t += '\n' + c + ' ' + e.name + ' — ' + num(q) + ' ' + e.unit + '\n   ';
     t += SHOPS.filter(s=>need[c].byShop[s.id]).map(s=> s.name+' '+num(need[c].byShop[s.id])).join(' | ');
   });
   t += '\n\n' + codes.length + ' items. Please pack shop-wise.';
@@ -4119,9 +4199,18 @@ function vOrders(){
       const e=CAT[c]; if(!e) return;
       const split = SHOPS.filter(s=>gr.need[c].byShop[s.id])
         .map(s=>esc(s.name)+' <span class="mono">'+num(gr.need[c].byShop[s.id])+'</span>').join(' &nbsp;&middot;&nbsp; ');
+      const asked = gr.need[c].total;
+      const buy = orderQty(DATE, c, asked);
+      const changed = orderEdited(DATE, c) && Number(buy) !== Number(asked);
       rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
-        + '<td>'+esc(e.name)+'<span class="tam">'+split+'</span></td>'
-        + '<td class="r mono" style="width:100px">'+num(gr.need[c].total)+' '+esc(e.unit)+'</td></tr>';
+        + '<td>'+esc(e.name)+'<span class="tam">'+split
+        + (changed ? ' &nbsp;&middot;&nbsp; shops asked for <b>'+num(asked)+'</b>' : '')
+        + '</span></td>'
+        + '<td class="c" style="width:150px">'
+        + '<input type="number" min="0" step="any" class="row-inp mono"'
+        + (changed ? ' style="border-color:var(--brand);font-weight:600"' : '')
+        + ' value="'+num(buy)+'" onchange="setOrderQty(\''+c+'\',this.value)"> '
+        + '<span style="font-size:12px;color:var(--ink-4)">'+esc(e.unit)+'</span></td></tr>';
     });
     const badge = sent ? '<span class="pill p-green">'+(v.manual?'Ordered':'Sent')+'</span>'
                 : v.manual ? '<span class="pill p-amber">Order manually</span>' : '<span class="pill p-grey">Not sent</span>';
@@ -4139,6 +4228,8 @@ function vOrders(){
   const pend = names.filter(g=>!day.sent[g]).length;
   return '<h2>Orders &mdash; '+fmtDate(DATE)+'</h2>'
    + '<p class="sub">One order per vendor group, already split shop-wise for packing. '
+   + 'Change a quantity to buy more or less than the shops asked for &mdash; the '
+   + 'split below each line stays as they asked. '
    + (pend? pend+' still to place.' : 'All placed.')+'</p>' + html;
 }
 /* ============================================================

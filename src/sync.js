@@ -38,7 +38,8 @@ const VFSync = (function () {
   function flatten(DB) {
     const out = {
       indents: {}, indent_lines: {}, day_rates: {}, packed: {},
-      shipments: {}, vendor_orders: {}, invoices: {}, invoice_lines: {},
+      shipments: {}, vendor_orders: {}, vendor_order_lines: {},
+      invoices: {}, invoice_lines: {},
       payments: {}, vendors: {}, vendor_bank: {}, margin_comm: {},
       margin_selling: {}, settings: {},
     };
@@ -103,6 +104,19 @@ const VFSync = (function () {
       Object.keys(day.sent || {}).forEach(g => {
         if (!day.sent[g]) return;
         out.vendor_orders[date + '|' + g] = { trade_date: date, group_name: g };
+      });
+
+      /* only what was changed from the sum of the indents: no row means
+         buy exactly what the shops asked for */
+      Object.keys(day.order || {}).forEach(code => {
+        const q = day.order[code];
+        if (q === '' || q === null || q === undefined) return;
+        const g = groupNameFor(code);
+        if (!g) return;
+        out.vendor_order_lines[date + '|' + code] = {
+          trade_date: date, group_name: g,
+          product_code: code, qty: Number(q) || 0,
+        };
       });
     });
 
@@ -183,6 +197,14 @@ const VFSync = (function () {
 
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
+  /* which vendor's bill a product belongs to. The mapping lives in the
+     app, which is inlined into the same script; if it is not there the
+     row is dropped rather than guessed at. */
+  function groupNameFor(code) {
+    try { return (typeof groupOf === 'function') ? (groupOf(code) || '') : ''; }
+    catch (e) { return ''; }
+  }
+
   /* Stable uuid from a string, so the same logical record keeps the same
      id on every device without a server round trip. Not a real v5 hash —
      it only has to be deterministic and collision-free over our keys. */
@@ -215,6 +237,7 @@ const VFSync = (function () {
     packed:         'trade_date,shop_id,product_code',
     shipments:      'trade_date,shop_id',
     vendor_orders:  'trade_date,group_name',
+    vendor_order_lines: 'trade_date,group_name,product_code',
     invoices:       'trade_date,shop_id',
     invoice_lines:  'invoice_id,line_no',
     payments:       'id',
@@ -261,7 +284,8 @@ const VFSync = (function () {
      Deletes run in reverse for the same reason. */
   const ORDER = ['settings', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                  'indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
-                 'vendor_orders', 'invoices', 'invoice_lines', 'payments'];
+                 'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
+                 'payments'];
 
   function sortOps(ops) {
     return ops.slice().sort((x, y) => {
@@ -303,6 +327,8 @@ const VFSync = (function () {
     admin: null,
     ho:    ['indents', 'indent_lines'],
     shop:  ['indents', 'indent_lines', 'shipments'],
+    /* vendor_order_lines is Velora's: a shop asks for a quantity, it
+       does not decide what is bought */
   };
   let WHO = { role: '', shop: '' };
 
@@ -599,6 +625,16 @@ const VFSync = (function () {
     if (!r.ok) throw await httpError(r, table);
   }
 
+  /* A project that has not been given the newest schema yet answers
+     "relation does not exist" for a table this build knows about. That
+     is not a failure of the day's work: everything else still goes, and
+     these rows wait in the queue until the migration is run. */
+  function isMissingTable(e) {
+    const b = e && e.body;
+    if (b && (b.code === 'PGRST205' || b.code === '42P01')) return true;
+    return !!(e && /does not exist|schema cache/i.test(e.message || ''));
+  }
+
   async function httpError(r, table) {
     let body = null;
     try { body = await r.json(); } catch (e) { /* empty or non-JSON */ }
@@ -624,19 +660,29 @@ const VFSync = (function () {
     emit('pushing', queue.length);
     const batch = sortOps(queue);
 
+    const held = [];        // ops for a table this project does not have yet
     try {
       // group consecutive ops of the same table and direction
       let i = 0;
       while (i < batch.length) {
         const t = batch[i].table, isDel = batch[i].op === 'delete';
-        const rows = [];
+        const rows = [], ops = [];
         while (i < batch.length && batch[i].table === t && (batch[i].op === 'delete') === isDel) {
-          rows.push(batch[i].row); i++;
+          rows.push(batch[i].row); ops.push(batch[i]); i++;
         }
-        await send(t, rows, isDel, CONFLICT[t].split(','));
+        try {
+          await send(t, rows, isDel, CONFLICT[t].split(','));
+        } catch (e) {
+          if (!isMissingTable(e)) throw e;
+          if (typeof console !== 'undefined') {
+            console.warn('[VFSync] ' + t + ' is not in this project yet — '
+                         + ops.length + ' row(s) held back until it is');
+          }
+          held.push.apply(held, ops);
+        }
       }
-      queue = []; writeJSON(QKEY, queue);
-      emit('synced', 0);
+      queue = held; writeJSON(QKEY, queue);
+      emit('synced', held.length);
     } catch (err) {
       if (err.status === 401 && await refresh()) { pushing = false; return push(); }
       // keep the queue; the next attempt retries it
@@ -664,10 +710,10 @@ const VFSync = (function () {
   async function pull(DB) {
     if (!enabled() || !signedIn()) return DB;
 
-    const [inds, ilines, rates, pk, ship, vo, invs, ivl, pays, vend, vbank, mc, ms, st] =
+    const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
-                         'vendor_orders', 'invoices', 'invoice_lines', 'payments',
-                         'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
+                         'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
+                         'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                          'settings'].map(t => get(t).catch(() => [])));
 
     const indById = {};
@@ -693,6 +739,10 @@ const VFSync = (function () {
     });
     ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
     vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
+    vol.forEach(l => {
+      const D = day(l.trade_date);
+      (D.order = D.order || {})[l.product_code] = Number(l.qty);
+    });
 
     const invById = {};
     invs.forEach(v => {

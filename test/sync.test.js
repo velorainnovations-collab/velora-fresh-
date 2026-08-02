@@ -58,6 +58,7 @@ const DB = {
       packed: { KLP: { '1': 12, '280': 0 } },                    // 0 = vendor skipped
       ship:   { KLP: 'received' },
       sent:   { 'Nellai Traders': true, 'Ooty': false },
+      order:  { '1': 15 },        // bought 15 though the shops asked for 12
     },
   },
   invoices: {
@@ -115,6 +116,10 @@ check('filled bank sent',     F.vendor_bank['SUK(Tomoto)'].ac_no, '91');
 check('commission',           F.margin_comm['KLP'].pct, 4);
 check('selling margin',       F.margin_selling['KLP|1'].pct, 30);
 check('settings',             F.settings['KPN'].anytime, true);
+check('what was bought, when it differs from what was asked for',
+      F.vendor_order_lines['2026-07-30|1'].qty, 15);
+check('and it carries the vendor whose bill it is on',
+      !!F.vendor_order_lines['2026-07-30|1'].group_name, true);
 
 /* ---------------- determinism ---------------- */
 console.log('\ndeterminism');
@@ -215,6 +220,7 @@ const CONFLICT_COLS = {
   vendor_bank: ['group_name'],
   margin_comm: ['shop_id'],
   margin_selling: ['shop_id', 'product_code'],
+  vendor_order_lines: ['trade_date', 'group_name', 'product_code'],
   settings: ['client_id'],
 };
 

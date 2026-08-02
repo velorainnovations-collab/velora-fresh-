@@ -150,6 +150,20 @@ create table vendor_orders (
   primary key (trade_date, group_name)
 );
 
+-- What is actually bought, when it differs from the sum of the indents.
+-- A vendor sells by the crate and a rate is better for ten kilos than
+-- for seven, so the quantity ordered is not always the quantity asked
+-- for. Only the difference is stored: no row means buy exactly what the
+-- shops asked for. The shops' own lines are never touched by this —
+-- packing still divides whatever arrives between them.
+create table vendor_order_lines (
+  trade_date   date not null,
+  group_name   text not null references vendor_groups(name) on delete cascade,
+  product_code text not null references products(code) on delete restrict,
+  qty          numeric(12,3) not null check (qty >= 0),
+  primary key (trade_date, group_name, product_code)
+);
+
 -- ---------- invoices ----------
 
 create table invoices (

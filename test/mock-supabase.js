@@ -250,6 +250,7 @@ const srv = http.createServer((req, res) => {
         packed:         ['trade_date', 'shop_id', 'product_code', 'qty'],
         shipments:      ['trade_date', 'shop_id', 'state', 'out_at', 'received_at'],
         vendor_orders:  ['trade_date', 'group_name', 'sent_at'],
+        vendor_order_lines: ['trade_date', 'group_name', 'product_code', 'qty'],
         invoices:       ['id', 'bill_no', 'trade_date', 'shop_id', 'total', 'round_off',
                          'net_amount', 'created_at'],
         invoice_lines:  ['invoice_id', 'line_no', 'product_code', 'name', 'tamil', 'unit',
