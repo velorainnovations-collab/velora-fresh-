@@ -76,6 +76,16 @@ const srv = http.createServer((req, res) => {
         if (who) USERS[who].pw = a.password;
         return send(200, { id: a.user_id, email: who || null, reset: true });
       }
+      if (a.action === 'delete') {
+        if (!a.user_id) return send(400, { error: 'Which user?' });
+        if (a.user_id === 'aaaa0000-0000-0000-0000-00000000000a')
+          return send(400, { error: 'You cannot delete your own login' });
+        const i = PEOPLE.findIndex(p => p.id === a.user_id);
+        if (i > -1) PEOPLE.splice(i, 1);
+        const em = Object.keys(USERS).find(e => USERS[e].uid === a.user_id);
+        if (em) delete USERS[em];
+        return send(200, { id: a.user_id, deleted: true });
+      }
       const byInvite = a.action === 'invite' || !a.password;
       if (!a.email) return send(400, { error: 'An email address is required' });
       if (!byInvite && a.password.length < 8)

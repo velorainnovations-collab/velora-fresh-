@@ -285,11 +285,55 @@ const VFSync = (function () {
   let queue = readJSON(QKEY, []);
   let synced = readJSON(SKEY, null);
 
+  /* What each role is allowed to write, read straight off the policies
+     in supabase/02_security.sql. Anything else is dropped before it is
+     ever queued.
+
+     Without this a shop's browser queued the whole local blob — rates,
+     vendors, margins, settings, every shop's packing — because the
+     first render happens before anyone has signed in, when the baseline
+     is empty and every default therefore looks like new work. The push
+     that followed was refused by the database, correctly, and the badge
+     read "Sync problem" for work the shop had never done.
+
+     null means no limit. An unknown role writes nothing, which is what
+     the moment before sign-in should queue. */
+  const WRITABLE = {
+    owner: null,
+    admin: null,
+    ho:    ['indents', 'indent_lines'],
+    shop:  ['indents', 'indent_lines', 'shipments'],
+  };
+  let WHO = { role: '', shop: '' };
+
+  function mayWrite(table) {
+    if (!WHO.role) return false;
+    const list = WRITABLE[WHO.role];
+    if (list === null) return true;
+    return !!list && list.indexOf(table) > -1;
+  }
+
+  /* Told by the app as soon as whoami() answers. Also prunes anything
+     already waiting that this role may not send — a device that queued
+     the wrong rows before this existed clears itself on the next open
+     rather than retrying every fifteen seconds for ever. */
+  function setWho(role, shopId) {
+    WHO = { role: role || '', shop: shopId || '' };
+    const kept = queue.filter(o => mayWrite(o.table));
+    if (kept.length !== queue.length) { queue = kept; writeJSON(QKEY, queue); }
+    return queue.length;
+  }
+
   function record(DB) {
     if (!enabled()) return 0;
     const now = flatten(DB);
-    const ops = diff(synced || {}, now);
-    if (!ops.length) return 0;
+    /* the baseline still moves for rows this role may not send, so a
+       change it is not allowed to make is dropped once, not every time */
+    const ops = diff(synced || {}, now).filter(o => mayWrite(o.table));
+    if (!ops.length) {
+      if (synced !== now) { synced = now; writeJSON(SKEY, synced); }
+      return 0;
+    }
     queue = collapse(queue.concat(ops));
     writeJSON(QKEY, queue);
     synced = now;          // optimistic: rolled back if the push fails
@@ -449,6 +493,7 @@ const VFSync = (function () {
 
   function signOut() {
     auth = null; writeJSON(AKEY, null);
+    WHO = { role: '', shop: '' };   /* nothing is queued until somebody is back */
   }
 
   const signedIn = () => !!(auth && auth.access_token);
@@ -730,6 +775,39 @@ const VFSync = (function () {
     return body;
   }
 
+  /* Removing somebody for good. The edge function takes both halves —
+     the row that grants access and the account that can sign in. If it
+     is not deployed the row can still be removed here, because an owner
+     may write app_users directly; the sign-in survives that, which is
+     why the caller is told which of the two happened. */
+  async function removePerson(userId) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    let r;
+    try {
+      r = await fetch(CFG.url + '/functions/v1/create-user', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ action: 'delete', user_id: userId }),
+      });
+    } catch (e) {
+      const err = new Error('NOT_DEPLOYED'); err.notDeployed = true; throw err;
+    }
+    if (r.status === 404) { const e = new Error('NOT_DEPLOYED'); e.notDeployed = true; throw e; }
+    if (r.status === 401 && await refresh()) return removePerson(userId);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || ('Could not delete (' + r.status + ')'));
+    return body;
+  }
+
+  /* the fallback: access goes, the sign-in stays */
+  async function removeAccess(userId) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/app_users?id=eq.' + encodeURIComponent(userId), {
+      method: 'DELETE', headers: headers({ 'Prefer': 'return=minimal' }),
+    });
+    if (!r.ok) throw await httpError(r, 'app_users');
+    return { id: userId, deleted: true, accessOnly: true };
+  }
+
   async function createUser(o) {
     if (!enabled() || !signedIn()) throw new Error('Not signed in');
     let r;
@@ -866,15 +944,17 @@ const VFSync = (function () {
   }
 
   return {
-    enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record,
+    enabled, signIn, signUp, signOut, signedIn, refresh, pull, push, record, setWho,
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
+    removePerson, removeAccess,
     addShop, addProduct, addVendorGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
-    _uuidFor: uuidFor, _reset: function () { queue = []; synced = null; },
+    _uuidFor: uuidFor, _mayWrite: mayWrite,
+    _reset: function () { queue = []; synced = null; WHO = { role: '', shop: '' }; },
   };
 })();
 

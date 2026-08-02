@@ -72,9 +72,97 @@ async function tryShop(p, name, phone, pw) {
         /ask the office/i.test(await p.locator('#gateLinks').textContent()), true);
 
   console.log('\nall three right');
+  received.length = 0;
   await tryShop(p, 'Kilpauk Mgr', '9000000004', 'shoppass1');
+  await p.waitForTimeout(600);
   check('gets in', await p.locator('#gate').isVisible(), false);
   check('as their own shop', await p.evaluate(() => ROLE), 'KLP');
+
+  console.log('\nand sends nothing it is not allowed to send');
+  /* The first render happens before anyone has signed in, when the
+     baseline is empty, so every default in the local blob looked like
+     new work: rates, vendors, margins, settings, every shop's packing.
+     Pushed as a shop, the database refused it — correctly — and the
+     badge read "Sync problem" for work the shop never did. */
+  const sent = received.filter(r => r.method === 'POST' && /^[a-z_]+$/.test(r.table));
+  const forbidden = sent.filter(r => ['indents', 'indent_lines', 'shipments'].indexOf(r.table) < 0);
+  check('nothing outside a shop’s own three tables',
+        forbidden.map(r => r.table).join(',') || 'none', 'none');
+  check('the badge is not showing a problem',
+        /problem/i.test(await p.locator('#syncState').textContent()), false);
+  check('and the queue is empty', await p.evaluate(() => VFSync.queueLength()), 0);
+  check('the sync layer knows what a shop may write',
+        await p.evaluate(() => [VFSync._mayWrite('indents'), VFSync._mayWrite('day_rates'),
+                                VFSync._mayWrite('vendors'), VFSync._mayWrite('settings'),
+                                VFSync._mayWrite('shipments')].join(',')),
+        'true,false,false,false,true');
+
+  await ctx.close();
+
+  console.log('\nthe indent screen lists everything they can order');
+  ({ ctx, p } = await fresh(b));
+  await tryShop(p, 'Kilpauk Mgr', '9000000004', 'shoppass1');
+  await p.waitForTimeout(400);
+  const all = await p.locator('#mylist tbody tr[data-k]').count();
+  check('every product is on the list', all > 200, true);
+  check('grouped the way the vendors are',
+        await p.locator('#mylist tbody tr.vgrp').count() > 1, true);
+  check('nothing chosen to begin with',
+        await p.locator('#mylist tbody tr[data-has]').count(), 0);
+  check('and nothing can be submitted yet',
+        await p.locator('button:has-text("Submit indent")').isDisabled(), true);
+
+  console.log('\nthe search narrows the list rather than adding to it');
+  await p.fill('#myq', 'tomato');
+  await p.waitForTimeout(250);
+  const few = await p.locator('#mylist tbody tr[data-k]:visible').count();
+  check('fewer rows shown', few > 0 && few < all, true);
+  check('no heading left standing on its own',
+        await p.evaluate(() => {
+          const rows = Array.prototype.slice.call(
+            document.querySelectorAll('#mylist tbody tr'))
+            .filter(r => r.style.display !== 'none');
+          return rows.some((r, i) => r.className === 'vgrp' &&
+                           (!rows[i+1] || rows[i+1].className === 'vgrp'));
+        }), false);
+
+  console.log('\na quantity is all it takes');
+  const row = p.locator('#mylist tbody tr[data-k]:visible').first();
+  const code = await row.locator('td.mono').textContent();
+  await row.locator('input').fill('4');
+  await row.locator('input').blur();
+  await p.waitForTimeout(500);
+  check('it is in the indent now',
+        await p.evaluate(c => indentOf(DATE, ROLE).lines[c], code.trim()), 4);
+  check('the row is marked as chosen',
+        await p.locator('#mylist tbody tr[data-has]').count(), 1);
+  check('the count says so', /1 item/.test(await p.locator('#main .bar').last().textContent()), true);
+  check('what was searched for is still searched for', await p.inputValue('#myq'), 'tomato');
+  check('and the list is still narrowed',
+        await p.locator('#mylist tbody tr[data-k]:visible').count(), few);
+
+  console.log('\nand clearing the box takes it out again');
+  await p.locator('#mylist tbody tr[data-has] input').fill('');
+  await p.locator('#mylist tbody tr[data-has] input').blur();
+  await p.waitForTimeout(500);
+  check('gone from the indent',
+        await p.evaluate(() => Object.keys(indentOf(DATE, ROLE).lines).length), 0);
+
+  console.log('\nreviewing what has been chosen');
+  await p.fill('#myq', '');
+  await p.waitForTimeout(200);
+  const one = p.locator('#mylist tbody tr[data-k]').first();
+  await one.locator('input').fill('2');
+  await one.locator('input').blur();
+  await p.waitForTimeout(500);
+  await p.click('#myOnly');
+  await p.waitForTimeout(300);
+  check('only the chosen one is left on screen',
+        await p.locator('#mylist tbody tr[data-k]:visible').count(), 1);
+  await p.click('#myOnly');
+  await p.waitForTimeout(300);
+  check('and the whole list comes back',
+        await p.locator('#mylist tbody tr[data-k]:visible').count(), all);
   await ctx.close();
 
   console.log('\nthe name has to match');

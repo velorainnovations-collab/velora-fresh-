@@ -115,6 +115,47 @@ Deno.serve(async (req) => {
     return json({ id: userId, email: updated.email ?? null, reset: true })
   }
 
+  // ---------- removing somebody for good ----------
+  // Deactivating is the usual answer and is what the screen recommends.
+  // This is for the row that should never have existed — a typo, a test,
+  // a person who never joined. Both halves go: the app_users row that
+  // grants the access, and the auth account that can sign in at all.
+  // Order matters. If the auth account went first and the row delete then
+  // failed, a row would be left granting access to nobody.
+  if (body.action === 'delete') {
+    const userId = String(body.user_id ?? '')
+    if (!userId) return json({ error: 'Which user?' }, 400)
+    if (userId === me.id) return json({ error: 'You cannot delete your own login' }, 400)
+
+    const svc = {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    }
+    // an invite they sent points at them; it outlives them, unattributed
+    await fetch(`${SUPABASE_URL}/rest/v1/user_invites?invited_by=eq.${userId}`, {
+      method: 'PATCH', headers: svc, body: JSON.stringify({ invited_by: null }),
+    })
+    const delRow = await fetch(`${SUPABASE_URL}/rest/v1/app_users?id=eq.${userId}`, {
+      method: 'DELETE', headers: svc,
+    })
+    if (!delRow.ok) {
+      return json({ error: `Could not remove their access: ${await delRow.text()}` }, delRow.status)
+    }
+    // 404 here means there was no auth account behind the row — a
+    // hand-written insert. The access is gone either way, so it is done.
+    const delUser = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+      method: 'DELETE', headers: svc,
+    })
+    if (!delUser.ok && delUser.status !== 404) {
+      return json({
+        error: 'Their access is removed, but the sign-in itself could not be deleted: ' +
+               await delUser.text(),
+      }, delUser.status)
+    }
+    return json({ id: userId, deleted: true })
+  }
+
   const email = String(body.email ?? '').trim().toLowerCase()
   const password = String(body.password ?? '')
   const fullName = String(body.full_name ?? '').trim()

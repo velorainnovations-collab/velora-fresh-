@@ -224,6 +224,39 @@ function check(label, got, want) {
   await p.click('button:has-text("Done")');
   await p.waitForTimeout(400);
 
+  console.log('\ndeleting somebody for good');
+  const before = await p.locator('#main .card:nth-of-type(2) tbody tr').count();
+  received.length = 0;
+  let asked = '';
+  p.once('dialog', async d => { asked = d.message(); await d.dismiss(); });
+  await p.locator('#main tbody tr', { hasText: 'Kilpauk Mgr' })
+         .locator('button:has-text("Delete")').click();
+  await p.waitForTimeout(600);
+  check('the name is put in front of them', /Kilpauk Mgr/.test(asked), true);
+  check('and what it means is spelt out', /cannot sign in again/.test(asked), true);
+  check('says what to do instead', /Deactivate/.test(asked), true);
+  check('saying no sends nothing', received.length, 0);
+  check('and changes nothing',
+        await p.locator('#main .card:nth-of-type(2) tbody tr').count(), before);
+
+  received.length = 0;
+  p.once('dialog', async d => { await d.accept(); });
+  await p.locator('#main tbody tr', { hasText: 'Kilpauk Mgr' })
+         .locator('button:has-text("Delete")').click();
+  await p.waitForTimeout(1200);
+  const gone = received.find(r => r.table === 'fn:create-user' && r.rows.action === 'delete');
+  check('the edge function was asked to delete', !!gone, true);
+  check('by id', !!(gone && gone.rows.user_id), true);
+  check('the list is one shorter',
+        await p.locator('#main .card:nth-of-type(2) tbody tr').count(), before - 1);
+  check('and that person is off the screen',
+        await p.locator('#main tbody tr', { hasText: 'Kilpauk Mgr' }).count(), 0);
+
+  console.log('\nnot your own, though');
+  check('no delete button on your own row',
+        await p.locator('#main tbody tr', { hasText: 'you' })
+               .locator('button:has-text("Delete")').count(), 0);
+
   console.log('\nthe owner cannot reset their own');
   check('no reset button on your own row',
         await p.locator('#main tbody tr', { hasText: 'you' })
