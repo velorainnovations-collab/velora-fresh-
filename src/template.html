@@ -294,6 +294,20 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
 .addform .chk{display:flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;white-space:nowrap}
 .addform .chk input{width:auto}
 .addform .pair{display:flex;gap:6px}
+
+/* the day's likely cost, read before pressing send */
+.estbar{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px;
+  background:var(--brand-soft);border:1px solid #cbe3d6;border-radius:var(--r);
+  padding:11px 14px;margin:0 0 14px}
+.estbar .lbl{font-size:12.5px;font-weight:600;color:var(--green);
+  text-transform:uppercase;letter-spacing:.04em}
+.estbar .amt{font-size:20px;font-weight:700;color:var(--green);
+  font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.estbar .note2{font-size:12px;color:var(--ink-3)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .estbar{border-color:#2c5442}
+}
+:root[data-theme="dark"] .estbar{border-color:#2c5442}
 .srch{position:relative;max-width:360px;flex:1;min-width:200px}
 .sug{position:absolute;left:0;right:0;top:100%;background:var(--surface);border:1px solid var(--line);
   border-radius:0 0 var(--r) var(--r);max-height:260px;overflow:auto;z-index:30;display:none;box-shadow:var(--sh-2)}
@@ -2256,6 +2270,7 @@ function vMyIndent(){
       + '<button class="btn sm" id="myImport" onclick="myImportOpen()">Add from a sheet</button>'
       + '<span class="spacer"></span>'
       + '<span class="sub" id="myCount" style="margin:0">'+codes.length+' chosen</span></div>')
+   + estimateLine(ROLE, DATE)
    + (locked ? '' : vImportPanel())
    + '<div class="card" id="mylist"><table><thead><tr><th>Code</th><th>Product</th>'
    + '<th class="r">Last order</th><th class="r">Last price</th>'
@@ -2341,6 +2356,36 @@ function unitPlural(u, n){
   if(s === 'piece') return 'pcs';
   if(s === 'box')   return 'boxes';
   return unitShort(u);
+}
+
+/* What the indent is likely to cost, at the last price paid for each
+   product. Only lines with a price behind them are counted: a product
+   never bought before has no price to use, and standing in a zero
+   would quietly understate the total. How many were left out is
+   returned with it, so the screen can say so rather than imply the
+   figure is complete. */
+function indentEstimate(shopId, date){
+  const ind = indentOf(date, shopId);
+  let total = 0, priced = 0, missing = 0;
+  Object.keys(ind.lines || {}).forEach(c=>{
+    const q = Number(ind.lines[c]) || 0;
+    if(q <= 0) return;
+    const l = myLastFor(shopId, c, date);
+    if(l && l.rate){ total += q * l.rate; priced++; }
+    else missing++;
+  });
+  return { total: total, priced: priced, missing: missing };
+}
+
+function estimateLine(shopId, date){
+  const e = indentEstimate(shopId, date);
+  if(!e.priced && !e.missing) return '';
+  return '<div class="estbar"><span class="lbl">Estimated purchase value</span>'
+    + '<span class="amt">&#8377;'+money(e.total)+'</span>'
+    + (e.missing ? '<span class="note2">'+e.missing+' line'+(e.missing===1?'':'s')
+                   + ' not counted &mdash; no earlier price for '
+                   + (e.missing===1?'it':'them')+'</span>' : '')
+    + '</div>';
 }
 
 /* Last order and last price, as two cells. Blank when they have never
@@ -2780,12 +2825,14 @@ function vIndents(){
     const n = Object.keys(ind.lines).filter(c=>ind.lines[c]>0).length;
     rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td>'
       + '<td>'+statusPill(ind.status, ind.late)+'</td>'
-      /* "Review & accept" only when there is something to review — on a
-         shop that has sent nothing it promises work that is not there */
-      + '<td class="r"><button class="btn'+(ind.status==='submitted'?' sm pri':' sm')
+      /* One button, always the same one. Dead until the shop has sent
+         something: there is nothing to review, and a button that opens
+         an empty screen teaches people to distrust it. */
+      + '<td class="r"><button class="btn sm'
+      + (ind.status==='submitted' ? ' pri' : '')
+      + (ind.status==='draft' ? '" disabled title="This shop has not submitted an indent yet' : '')
       + '" onclick="OPENIND=\''+s.id+'\';render()">'
-      + (ind.status==='submitted' ? 'Review &amp; accept'
-         : indentLocked(DATE, s.id) ? 'View' : 'Open')+'</button></td></tr>';
+      + (indentLocked(DATE, s.id) ? 'View' : 'Review &amp; accept')+'</button></td></tr>';
   });
   /* A shop submits for the day it is ordering for, which is not always
      the day this screen happens to be showing — and an empty list then
@@ -2818,7 +2865,10 @@ function vIndentOne(id){
   let rows='';
   codes.forEach(c=>{
     const e=CAT[c]; if(!e) return;
+    /* the office sees exactly what the shop saw when it was written:
+       what they last had, what it cost, and what they are asking for */
     rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
+      + myLastCells(id, c, DATE)
       + '<td class="c" style="width:150px">'
       + (editable?'<input type="number" min="0" step="any" class="row-inp mono" value="'+ind.lines[c]+'" onchange="adminQty(\''+id+'\',\''+c+'\',this.value)"> <span style="font-size:12px;color:#7a7a74">'+esc(e.unit)+'</span>'
                  :'<span class="mono">'+num(ind.lines[c])+' '+esc(e.unit)+'</span>')
@@ -2838,8 +2888,11 @@ function vIndentOne(id){
                         + ' at '+esc(ind.acceptedAt.slice(11,16)) : '')
       + '. This is the record of what was ordered; it cannot be changed, here or at the '
       + 'shop.</div>')
-   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Quantity</th><th></th></tr></thead>'
-   + '<tbody>'+(rows||'<tr><td colspan="4" class="empty">Nothing indented.</td></tr>')+'</tbody></table></div>'
+   + estimateLine(id, DATE)
+   + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="r">Last order</th><th class="r">Last price</th>'
+   + '<th class="c">Quantity</th><th></th></tr></thead>'
+   + '<tbody>'+(rows||'<tr><td colspan="6" class="empty">Nothing indented.</td></tr>')+'</tbody></table></div>'
    + '<div class="bar"><span class="spacer"></span>'
    + (editable && ind.status==='submitted' && ROLE!=='ho'
       ? '<button class="btn pri" onclick="acceptIndent(\''+id+'\')">Accept indent</button>' : '')
@@ -3236,7 +3289,10 @@ function orderText(date, g, codes, need){
   codes.forEach(c=>{
     const e = CAT[c]; if(!e) return;
     const q = orderQty(date, c, need[c].total);
-    t += '\n' + c + ' ' + e.name + ' — ' + num(q) + ' ' + e.unit + '\n   ';
+    /* the name in both languages: the man loading the crates reads one
+       of them, the man writing the bill reads the other */
+    t += '\n' + c + ' ' + e.name + (e.tamil ? ' / ' + e.tamil : '')
+       + ' — ' + num(q) + ' ' + e.unit + '\n   ';
     t += SHOPS.filter(s=>need[c].byShop[s.id]).map(s=> s.name+' '+num(need[c].byShop[s.id])).join(' | ');
   });
   t += '\n\n' + codes.length + ' items. Please pack shop-wise.';
@@ -3268,7 +3324,9 @@ function vOrders(){
       const buy = orderQty(DATE, c, asked);
       const changed = orderEdited(DATE, c) && Number(buy) !== Number(asked);
       rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
-        + '<td>'+esc(e.name)+'<span class="tam">'+split
+        /* the vendor reads Tamil; the shop split is what it is for */
+        + '<td>'+esc(e.name)+(e.tamil ? ' <span style="color:var(--ink-3)">'+esc(e.tamil)+'</span>' : '')
+        + '<span class="tam">'+split
         + (changed ? ' &nbsp;&middot;&nbsp; shops asked for <b>'+num(asked)+'</b>' : '')
         + '</span></td>'
         + '<td class="c" style="width:150px">'
@@ -3287,7 +3345,11 @@ function vOrders(){
                   : '<button class="btn sm'+(sent?'':' pri')+'" onclick="sendOrder(\''+g.replace(/'/g,"\\'")+'\')">'+(sent?'Send again':'Confirm &amp; send')+'</button>')
       + '</h3>'
       + '<table><tbody>'+rows+'</tbody></table>'
-      + (ORDEROPEN===g ? '<pre style="margin:0;padding:12px 14px;border-top:1px solid #e2e2de;background:#fafaf8;font-size:12.5px;white-space:pre-wrap;font-family:ui-monospace,monospace">'+esc(orderText(DATE,g,codes,gr.need))+'</pre>' : '')
+      /* the preview follows the theme: it was white paper with white ink
+         once the page went dark */
+      + (ORDEROPEN===g ? '<pre style="margin:0;padding:12px 14px;border-top:1px solid var(--line);'
+        + 'background:var(--surface-2);color:var(--ink);font-size:12.5px;white-space:pre-wrap;'
+        + 'font-family:ui-monospace,monospace">'+esc(orderText(DATE,g,codes,gr.need))+'</pre>' : '')
       + '</div>';
   });
   const pend = names.filter(g=>!day.sent[g]).length;

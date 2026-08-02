@@ -186,6 +186,32 @@ async function tryShop(p, name, phone, pw) {
         await p.locator('#mylist tbody tr[data-k]', { hasText: 'Beetroot' })
                .first().locator('td').nth(4).locator('input').count(), 1);
 
+  console.log('\nwhat the day is likely to cost');
+  check('nothing chosen, nothing claimed', await p.locator('.estbar').count(), 0);
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines = { '1': 12 }; save(); render(); });
+  await p.waitForTimeout(400);
+  check('twelve kilos at a hundred',
+        /₹1,200\.00/.test(await p.locator('.estbar').textContent()), true);
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines['11'] = 20; save(); render(); });
+  await p.waitForTimeout(400);
+  check('and it follows the quantities as they are typed',
+        /₹1,560\.00/.test(await p.locator('.estbar').textContent()), true);
+
+  /* a product nobody has bought before has no price to use, and a zero
+     would quietly understate the total */
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines['3'] = 5; save(); render(); });
+  await p.waitForTimeout(400);
+  const bar = (await p.locator('.estbar').textContent()).replace(/\s+/g, ' ');
+  check('one with no history does not move the figure', /₹1,560\.00/.test(bar), true);
+  check('but is not hidden either', /1 line not counted/.test(bar), true);
+
+  await p.evaluate(() => { myDel('11'); });
+  await p.waitForTimeout(500);
+  check('removing a line takes its money with it',
+        /₹1,200\.00/.test(await p.locator('.estbar').textContent()), true);
+  await p.evaluate(() => { indentOf(DATE, ROLE).lines = {}; save(); render(); });
+  await p.waitForTimeout(400);
+
   console.log('\na sheet can be handed over whole');
   await p.click('#myImport');
   await p.waitForTimeout(300);

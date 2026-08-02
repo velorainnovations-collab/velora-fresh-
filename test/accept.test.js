@@ -58,16 +58,31 @@ async function device(b) {
   await office.p.click('#gateBtn');
   await office.p.waitForTimeout(1500);
   const today = await shop.p.evaluate(() => DATE);
+  /* The same week-old bill on both devices. In the trade it gets there
+     by itself — the office raises it and both pull it — but the mock
+     does not carry invoices between browsers, so it is set on each. */
+  const bill = () => {
+    const back = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    DB.invoices[back] = { KLP: { no: 'W1', total: 0, roundOff: 0, lines: [
+      { code: '1', name: 'Lemon', unit: 'kg', qty: 9, net: 9, rate: 100, amount: 900, sell: 130 },
+    ] } };
+    save(); render();
+  };
+  await shop.p.evaluate(bill);
+  await office.p.evaluate(bill);
   await office.p.evaluate(d => { setDate(d); go('indents'); }, today);
   await office.p.waitForTimeout(800);
 
   console.log('\nbefore anything is sent');
   check('the office sees nothing from this shop',
         /Not submitted/.test(await office.p.locator('#main tbody tr').first().textContent()), true);
-  /* nothing has been sent, so the button must not promise a review */
-  check('and does not offer to review what is not there',
-        /Review/.test(await office.p.locator('#main tbody tr').first().textContent()), false);
-  check('it just opens', /Open/.test(await office.p.locator('#main tbody tr').first().textContent()), true);
+  /* one button, always the same words, dead until there is something */
+  const btn0 = office.p.locator('#main tbody tr').first().locator('button');
+  check('the button is there', /Review & accept/.test(await btn0.textContent()), true);
+  check('but cannot be pressed', await btn0.isDisabled(), true);
+  check('and says why', /has not submitted/.test(await btn0.getAttribute('title') || ''), true);
+  check('no Open button anywhere',
+        /Open/.test(await office.p.locator('#main').textContent()), false);
 
   console.log('\nthe shop fills it in and presses the button');
   await shop.p.evaluate(() => {
@@ -94,17 +109,30 @@ async function device(b) {
   check('with its lines counted', (await row.locator('td').nth(1).textContent()).trim(), '2');
   check('and the button is the one to press',
         /Review & accept/.test(await row.textContent()), true);
+  check('now it can be pressed', await row.locator('button').isDisabled(), false);
 
-  console.log('\nthe office opens it and changes what it likes');
+  console.log('\nthe office opens it and sees what the shop saw');
   await row.locator('button').click();
   await office.p.waitForTimeout(600);
   check('both lines are there', await office.p.locator('#main tbody tr').count(), 2);
+  check('the same columns as the shop',
+        (await office.p.locator('#main thead th').allTextContents())
+          .map(t => t.trim()).filter(Boolean).join(' | '),
+        'Code | Product | Last order | Last price | Quantity');
+  /* five kilos of lemon at the hundred it was billed at; the other line
+     has no price behind it and is left out and said so */
+  check('and the same estimate the shop was shown',
+        /₹500\.00/.test(await office.p.locator('.estbar').textContent()), true);
+  check('with the uncounted line named',
+        /1 line not counted/.test(await office.p.locator('.estbar').textContent()), true);
   const first = office.p.locator('#main tbody tr').first();
   await first.locator('input').fill('3');
   await first.locator('input').blur();
   await office.p.waitForTimeout(600);
   check('a quantity can be cut before accepting',
         await office.p.evaluate(d => indentOf(d, 'KLP').lines['1'], today), 3);
+  check('and the estimate follows the cut',
+        /₹300\.00/.test(await office.p.locator('.estbar').textContent()), true);
   await office.p.locator('#main tbody tr').nth(1).locator('button.rm').click();
   await office.p.waitForTimeout(600);
   check('and a line removed',

@@ -110,7 +110,10 @@ function check(label, got, want) {
   await p.evaluate(() => { window.__opened = null; sendOrder('Others'); });
   await p.waitForTimeout(300);
   const changed = decodeURIComponent(await p.evaluate(() => window.__opened) || '');
-  check('the vendor is asked for the new quantity', /Lemon — 15/.test(changed), true);
+  /* the name now carries its Tamil too, so the quantity is matched
+     after it rather than straight after the English name */
+  check('the vendor is asked for the new quantity', /Lemon[^—]*— 15/.test(changed), true);
+  check('and reads it in Tamil as well', /லெமன்/.test(changed), true);
   check('and the shop split is still theirs', /Kilpauk 12/.test(changed), true);
 
   console.log('\nand the rates screen shows what is being bought');
