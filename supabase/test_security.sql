@@ -272,6 +272,59 @@ select t('the owner is the one override',
           then 'ok' else 'REFUSED' end), 'ok');
 
 -- ============================================================
+-- 11. clearing a day, for testing
+--
+-- TEMPORARY, with wipe_day() itself: delete this section when the
+-- function goes. While the flow is being tried out, any login must be
+-- able to throw a test day away — a shop clearing only its own indent
+-- would leave the rates, the packing and the bill behind and the day
+-- would come back half full on the next refresh.
+-- ============================================================
+set role authenticated;
+select login(:ADMIN);
+
+select t('a day is set up to be thrown away',
+  (select case when cnt($$with x as (insert into indents (trade_date, shop_id, status)
+        values ('2026-09-10','KLP','accepted') returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+select t('with a market rate on it',
+  (select case when cnt($$with x as (insert into day_rates (trade_date, product_code, rate)
+        values ('2026-09-10','1',60) returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+select t('and something packed against it',
+  (select case when cnt($$with x as (insert into packed (trade_date, shop_id, product_code, qty)
+        values ('2026-09-10','KLP','1',4) returning 1) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+select login(:KLP);
+select t('on its own a shop cannot delete the market rate',
+  (select case when cnt($$with x as (delete from day_rates where trade_date = '2026-09-10'
+                                      returning 1) select count(*) from x$$) = 0
+          then 'ok' else 'DELETED' end), 'ok');
+select t('nor the packing',
+  (select case when cnt($$with x as (delete from packed where trade_date = '2026-09-10'
+                                      returning 1) select count(*) from x$$) = 0
+          then 'ok' else 'DELETED' end), 'ok');
+
+select t('but it may clear the whole day through the function',
+  (select case when cnt($$with x as (select wipe_day('2026-09-10')) select count(*) from x$$) = 1
+          then 'ok' else 'REFUSED' end), 'ok');
+
+select login(:ADMIN);
+select t('the indent is gone',
+  (select case when cnt($$select count(*) from indents where trade_date = '2026-09-10'$$) = 0
+          then 'ok' else 'LEFT' end), 'ok');
+select t('the market rate with it',
+  (select case when cnt($$select count(*) from day_rates where trade_date = '2026-09-10'$$) = 0
+          then 'ok' else 'LEFT' end), 'ok');
+select t('and the packing too',
+  (select case when cnt($$select count(*) from packed where trade_date = '2026-09-10'$$) = 0
+          then 'ok' else 'LEFT' end), 'ok');
+select t('while the day beside it is untouched',
+  (select case when cnt($$select count(*) from indents where trade_date = '2026-09-09'$$) = 1
+          then 'ok' else 'TOUCHED' end), 'ok');
+
+-- ============================================================
 reset role;
 
 select n, label,

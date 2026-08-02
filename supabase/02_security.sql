@@ -168,6 +168,45 @@ returns numeric language sql stable security definer set search_path = public as
 $$;
 
 -- ------------------------------------------------------------
+-- clearing a day, for testing
+--
+-- TEMPORARY. Delete this function and its grant before the desk is
+-- used for real trading — see the same note on TESTING_TOOLS in
+-- src/template.html. It exists so that a day of test data can be thrown
+-- away from any login, not only the office's: while the flow is being
+-- tried out, whoever is holding the phone needs to be able to start the
+-- day again.
+--
+-- It is SECURITY DEFINER because that is the whole point. Row level
+-- security lets a shop delete its own indent and nothing else, so a
+-- shop clearing a day by itself would leave the rates, the packing and
+-- the bill behind and the day would come back half full on the next
+-- refresh. This clears the lot, in one transaction, for anyone signed
+-- in. It is deliberately narrow: one date, only the tables a trading
+-- day is made of, and never the catalogue, the shops or the people.
+create or replace function wipe_day(p_date date)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first' using errcode = 'insufficient_privilege';
+  end if;
+
+  -- children before parents where there is no cascade to rely on
+  delete from indent_lines  where indent_id in (select id from indents where trade_date = p_date);
+  delete from indents       where trade_date = p_date;
+  delete from day_rates     where trade_date = p_date;
+  delete from packed        where trade_date = p_date;
+  delete from shipments     where trade_date = p_date;
+  delete from vendor_order_lines where trade_date = p_date;
+  delete from vendor_orders      where trade_date = p_date;
+  -- invoice_lines follow their invoice on delete cascade
+  delete from invoices           where trade_date = p_date;
+  -- payments are chain level and dated by when they were paid, not by a
+  -- trading day, so they are none of this function's business
+end;
+$$;
+
+-- ------------------------------------------------------------
 -- bill numbers, issued inside a transaction
 --
 -- docs/DATA_MODEL.md: "On a server this must be issued inside a

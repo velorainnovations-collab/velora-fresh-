@@ -10,7 +10,7 @@
  * both of them.
  */
 const { chromium } = require('playwright');
-const { received } = require('./mock-supabase.js');
+const { received, opts } = require('./mock-supabase.js');
 
 let pass = 0, fail = 0;
 function check(label, got, want) {
@@ -222,6 +222,8 @@ async function device(b) {
   /* testing only — TESTING_TOOLS takes the button away for good */
   check('the button is there for the office',
         await office.p.locator('#wipeDay').isVisible(), true);
+  check('and for the shop as well, not only the office',
+        await shop.p.locator('#wipeDay').isVisible(), true);
   let warned = '';
   office.p.once('dialog', async d => { warned = d.message(); await d.dismiss(); });
   await office.p.click('#wipeDay');
@@ -231,13 +233,50 @@ async function device(b) {
   check('saying no leaves the day alone',
         await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 1);
 
+  console.log('\nthe shop clears it, and the whole day goes — not just its own part');
+  /* row level security lets a shop delete its own indent and nothing
+     else, so clearing a day from a shop phone used to leave the rates,
+     the packing and the lorry behind and the day came back half full.
+     wipe_day() in 02_security.sql does the lot, for whoever is signed
+     in, in one call. */
   received.length = 0;
-  /* two in a row: the warning, then the confirmation it is done */
-  const acceptAll = async d => { await d.accept(); };
+  let said = '';
+  const acceptAll = async d => { said = d.message(); await d.accept(); };
+  shop.p.on('dialog', acceptAll);
+  await shop.p.click('#wipeDay');
+  await shop.p.waitForTimeout(2500);
+  check('it went in one call, not table by table',
+        received.filter(r => r.table === 'rpc:wipe_day').length, 1);
+  check('the shop is told it all went, not only its own records',
+        /All data for/.test(said), true);
+  check('the day is empty on the shop phone',
+        await shop.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 0);
+  await office.p.evaluate(() => { go('indents'); });
+  await office.p.waitForTimeout(2500);
+  check('and the office sees it gone too',
+        await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 0);
+  check('with the packing and the lorry gone with it',
+        await office.p.evaluate(d => JSON.stringify([dayOf(d).packed['KLP'] || {},
+                                                     dayOf(d).ship['KLP'] || '']), today),
+        '[{},""]');
+  shop.p.off('dialog', acceptAll);
+
+  console.log('\nand on a project that has not been given the function yet');
+  /* it falls back to deleting a table at a time, which is all the
+     office's login can do anyway — and says what was left behind */
+  opts.noWipeFn = true;
+  await office.p.evaluate(d => {
+    const day = dayOf(d);
+    day.rates['1'] = 90; day.packed['KLP'] = { '1': 4 }; day.ship['KLP'] = 'out';
+    indentOf(d, 'KLP').lines['1'] = 4;
+    save();
+  }, today);
+  await office.p.waitForTimeout(1500);
+  received.length = 0;
   office.p.on('dialog', acceptAll);
   await office.p.click('#wipeDay');
   await office.p.waitForTimeout(2500);
-  check('the day is empty afterwards',
+  check('the office still clears the day',
         await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 0);
   check('the indent is gone from the server too',
         received.some(r => r.method === 'DELETE' && r.table === 'indents'), true);
@@ -246,7 +285,33 @@ async function device(b) {
           received.some(r => r.method === 'DELETE' && r.table === t)), true);
   check('and a table this project has not got yet does not stop it',
         received.some(r => r.method === 'DELETE' && r.table === 'vendor_order_lines'), true);
+  check('nothing was said to have been kept back',
+        /keeps the rest/.test(said), false);
   office.p.off('dialog', acceptAll);
+
+  console.log('\nbut a shop on that project is told what it could not clear');
+  await office.p.evaluate(d => {
+    const day = dayOf(d);
+    day.rates['1'] = 90; day.packed['KLP'] = { '1': 4 };
+    indentOf(d, 'KLP').lines['1'] = 4;
+    save();
+  }, today);
+  await office.p.waitForTimeout(1500);
+  await shop.p.evaluate(() => go('myindent'));
+  await shop.p.waitForTimeout(2500);
+  received.length = 0;
+  shop.p.on('dialog', acceptAll);
+  await shop.p.click('#wipeDay');
+  await shop.p.waitForTimeout(2500);
+  check('its own indent still goes',
+        await shop.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 0);
+  check('it did not even ask to delete the rates',
+        received.some(r => r.method === 'DELETE' && r.table === 'day_rates'), false);
+  check('and it is told the packing and the bills stay',
+        /keeps the rest/.test(said) && /the packing/.test(said), true);
+  check('and how to make the whole day clearable', /wipe_day/.test(said), true);
+  shop.p.off('dialog', acceptAll);
+  opts.noWipeFn = false;
 
   await shop.ctx.close();
   await office.ctx.close();

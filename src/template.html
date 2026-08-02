@@ -2128,7 +2128,7 @@ const HEADER_ORDER = Array.prototype.slice.call(document.querySelector('header')
    pressed by accident. Light or dark stays in the header on a desk and
    is left out of the drawer — the phone follows its own setting. */
 const SIDE_WHO  = ['whoami','roleSel','dateSel'];   /* one line, together */
-const SIDE_TOP  = ['anyBox','syncState'];
+const SIDE_TOP  = ['anyBox','wipeDay','syncState'];
 const SIDE_FOOT = ['signOutBtn','clock'];
 
 function placeHeaderControls(){
@@ -2223,9 +2223,10 @@ function render(){
   }
   rs.value = ROLE;
   document.getElementById('dateSel').value = DATE;
+  /* every login, not just the office: whoever is holding the phone while
+     the flow is being tried out needs to be able to start the day again */
   const wd = document.getElementById('wipeDay');
-  if(wd) wd.className = (TESTING_TOOLS && (ROLE === 'owner' || ROLE === 'admin'))
-    ? 'btn sm danger' : 'btn sm danger hidden';
+  if(wd) wd.className = TESTING_TOOLS ? 'btn sm danger' : 'btn sm danger hidden';
   const ab = document.getElementById('anyBox');
   /* nothing to overrule while no hours are enforced */
   ab.className = (ROLE==='owner' && WINDOW_ON) ? '' : 'hidden';
@@ -4004,6 +4005,19 @@ window.VF = {
    rates, the packing, the lorry, the vendor orders and the bill, on
    this device and on the server. There is no undo, which is why it is
    asked twice and why it goes with TESTING_TOOLS. */
+/* the tables in the words the desk uses, so the message reads like a
+   sentence rather than a schema */
+function keptWords(kept){
+  const NAMES = { day_rates:'the market rates', packed:'the packing',
+                  shipments:'the delivery', vendor_orders:'the vendor orders',
+                  vendor_order_lines:'the vendor orders', invoices:'the bills',
+                  indents:'the indents', indent_lines:'the indents' };
+  const seen = [];
+  kept.forEach(t=>{ const w = NAMES[t] || t; if(seen.indexOf(w) < 0) seen.push(w); });
+  return seen.length > 1 ? seen.slice(0,-1).join(', ') + ' and ' + seen[seen.length-1]
+                         : (seen[0] || 'nothing');
+}
+
 async function wipeDayAsk(){
   const d = DATE;
   if(!confirm('Delete all data for ' + fmtDate(d) + '?\n\n'
@@ -4013,17 +4027,38 @@ async function wipeDayAsk(){
   const btn = document.getElementById('wipeDay');
   if(btn){ btn.disabled = true; btn.textContent = 'Clearing…'; }
   try{
-    let skipped = [];
+    let skipped = [], kept = [];
     if(typeof VFSync !== 'undefined' && VFSync.enabled()){
       const r = await VFSync.wipeDay(d);
       skipped = (r && r.skipped) || [];
+      kept    = (r && r.kept)    || [];
     }
-    delete DB.indents[d];
-    delete DB.days[d];
-    delete DB.invoices[d];
+    if(!kept.length){
+      delete DB.indents[d];
+      delete DB.days[d];
+      delete DB.invoices[d];
+    }else{
+      /* the database would not let this login clear the rest, so it is
+         still there and must stay on screen too — wiping it here only
+         to have it come back on the next refresh would be a lie */
+      const mine = (ROLE === 'ho') ? SHOPS.map(s=>s.id) : [ROLE];
+      if(DB.indents[d]) mine.forEach(id=> delete DB.indents[d][id]);
+      if(DB.days[d] && DB.days[d].ship && kept.indexOf('shipments') < 0)
+        mine.forEach(id=> delete DB.days[d].ship[id]);
+    }
     OPENIND = null; PACKSHOP = null; RATEDRAFT = {}; RATENOTE = '';
+    save();
+    /* read the day back, so what is on screen is what the server holds */
+    try{
+      if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn())
+        await VFSync.refreshIndents(DB, d);
+    }catch(e){ /* offline: the local clear stands */ }
     save(); render();
-    alert('All data for ' + fmtDate(d) + ' has been deleted.'
+    alert((kept.length ? 'Your records for ' + fmtDate(d) + ' have been deleted.'
+                       : 'All data for ' + fmtDate(d) + ' has been deleted.')
+      + (kept.length ? '\n\n' + VELORA + ' keeps the rest — ' + keptWords(kept)
+                       + '. Ask the office to clear those, or run wipe_day from '
+                       + 'supabase/02_security.sql so any login can clear the whole day.' : '')
       + (skipped.length ? '\n\nNot on the server yet, so left alone: ' + skipped.join(', ') : ''));
   }catch(e){
     alert('Could not clear the day: ' + (e.message || e) + '\n\nNothing has been left half done '

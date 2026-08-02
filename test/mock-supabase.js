@@ -27,7 +27,7 @@ const USERS = {
 const received = [];
 /* what the deployed project can do, so the tests can pretend it is
    older than the code in this repository */
-const opts = { oldCreateUser: false };          // every write the app sent
+const opts = { oldCreateUser: false, noWipeFn: false };   // every write the app sent
 
 /* Tokens are shaped like a real JWT — header.claims.signature — because
    the app reads its own user id out of the claims rather than asking. */
@@ -184,6 +184,23 @@ const srv = http.createServer((req, res) => {
       if (fn === 'purchase_rate') {
         const mk = RATES[args.p_date + '|' + args.p_code];
         return send(200, mk === undefined ? null : Math.round(mk * 1.04 * 10000) / 10000);
+      }
+      /* clearing a day outright, for anybody signed in — the testing
+         function in 02_security.sql. A project that has not been given
+         it yet answers as PostgREST does when a function is missing,
+         and the app falls back to deleting table by table. */
+      if (fn === 'wipe_day') {
+        if (opts.noWipeFn) return send(404, { code: 'PGRST202',
+          message: "Could not find the function public.wipe_day(p_date) in the schema cache" });
+        const d = args.p_date;
+        const drop = arr => { for (let i = arr.length - 1; i >= 0; i--)
+                                if (arr[i].trade_date === d) arr.splice(i, 1); };
+        const gone = INDENTS.filter(x => x.trade_date === d).map(x => x.id);
+        for (let i = ILINES.length - 1; i >= 0; i--)
+          if (gone.indexOf(ILINES[i].indent_id) > -1) ILINES.splice(i, 1);
+        drop(INDENTS); drop(PACKED); drop(SHIPS);
+        Object.keys(RATES).forEach(k => { if (k.indexOf(d + '|') === 0) delete RATES[k]; });
+        return send(200, null);
       }
       if (fn === 'list_people') return send(200, PEOPLE);
       if (fn === 'invite_person') {

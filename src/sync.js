@@ -783,16 +783,46 @@ const VFSync = (function () {
        weight entered on another device */
     const D = DB.days[date] = DB.days[date] ||
               { rates: {}, packed: {}, ship: {}, sent: {} };
+    let gotPacked = false, gotShip = false;
+    const sawPacked = {}, sawShip = {};
     try {
       const pk = await get('packed', '*', 'trade_date=eq.' + encodeURIComponent(date));
       pk.forEach(r => {
+        sawPacked[date + '|' + r.shop_id + '|' + r.product_code] = 1;
         (D.packed[r.shop_id] = D.packed[r.shop_id] || {})[r.product_code] = Number(r.qty);
       });
+      gotPacked = true;
     } catch (e) { /* leave what is on this device */ }
     try {
       const sh = await get('shipments', '*', 'trade_date=eq.' + encodeURIComponent(date));
-      sh.forEach(r => { D.ship[r.shop_id] = r.state; });
+      sh.forEach(r => { sawShip[date + '|' + r.shop_id] = 1; D.ship[r.shop_id] = r.state; });
+      gotShip = true;
     } catch (e) { /* same */ }
+
+    /* A day cleared on another device has to empty here too, or the
+       office goes on showing an indent the shop has just thrown away.
+       Only rows this device is known to have synced are dropped: one it
+       has never sent is work in progress and stays. Nothing is dropped
+       while anything is still waiting to be sent, so a weight typed a
+       moment ago is never mistaken for a row somebody else deleted. */
+    if (!queue.length) {
+      const wasSynced = (t, k) => !!(synced && synced[t] && synced[t][k]);
+      const seen = {};
+      inds.forEach(i => { seen[i.shop_id] = 1; });
+      Object.keys(day).forEach(shop => {
+        if (!seen[shop] && wasSynced('indents', date + '|' + shop)) delete day[shop];
+      });
+      if (gotPacked) Object.keys(D.packed).forEach(shop => {
+        Object.keys(D.packed[shop] || {}).forEach(code => {
+          const k = date + '|' + shop + '|' + code;
+          if (!sawPacked[k] && wasSynced('packed', k)) delete D.packed[shop][code];
+        });
+      });
+      if (gotShip) Object.keys(D.ship).forEach(shop => {
+        const k = date + '|' + shop;
+        if (!sawShip[k] && wasSynced('shipments', k)) delete D.ship[shop];
+      });
+    }
 
     const changed = JSON.stringify([day, D]) !== before;
     if (changed) { synced = flatten(DB); writeJSON(SKEY, synced); }
@@ -980,10 +1010,52 @@ const VFSync = (function () {
   const DAY_TABLES = ['indent_lines', 'indents', 'day_rates', 'packed', 'shipments',
                       'vendor_order_lines', 'vendor_orders', 'invoices'];
 
+  /* Which of them a login may delete from on its own. Row level security
+     decides this in the database whatever is asked here; the point of
+     the list is to be able to say afterwards what was left and why,
+     because a delete that matches no rows it is allowed to see comes
+     back as a plain success having removed nothing. */
+  const CAN_DELETE = {
+    owner: null,                          /* null: everything */
+    admin: null,
+    ho:    ['indents'],
+    shop:  ['indents', 'shipments'],
+  };
+
+  /* the whole-day clear, which any signed-in login may call, is a
+     database function; a project that has not been given it yet says so
+     and the caller clears what it can by itself instead */
+  function isMissingFunction(e) {
+    const b = e && e.body;
+    if (b && (b.code === 'PGRST202' || b.code === '42883')) return true;
+    return !!(e && e.status === 404);
+  }
+
   async function wipeDay(date) {
-    if (!enabled() || !signedIn()) return { cleared: [], skipped: [] };
-    const cleared = [], skipped = [];
+    if (!enabled() || !signedIn()) return { whole: false, cleared: [], skipped: [], kept: [] };
+
+    /* One call, one transaction, the same for everybody: whoever is
+       signed in clears the day outright. Testing tool — see wipe_day in
+       supabase/02_security.sql for why it is allowed to. */
+    try {
+      const r = await fetch(CFG.url + '/rest/v1/rpc/wipe_day', {
+        method: 'POST', headers: headers(), body: JSON.stringify({ p_date: date }),
+      });
+      if (r.ok) {
+        queue = queue.filter(o => JSON.stringify(o.row || {}).indexOf(date) < 0);
+        writeJSON(QKEY, queue);
+        return { whole: true, cleared: DAY_TABLES.slice(), skipped: [], kept: [] };
+      }
+      const e = await httpError(r, 'wipe_day');
+      if (!isMissingFunction(e)) throw e;
+    } catch (e) {
+      if (!isMissingFunction(e)) throw e;
+    }
+
+    const allowed = CAN_DELETE[WHO.role] === undefined ? [] : CAN_DELETE[WHO.role];
+    const cleared = [], skipped = [], kept = [];
     for (const t of DAY_TABLES) {
+      if (t !== 'indent_lines' && allowed !== null && allowed.indexOf(t) < 0) { kept.push(t); continue; }
       /* indent_lines is keyed by its header, so it has no date of its
          own; deleting the headers takes the lines with them */
       if (t === 'indent_lines') continue;
@@ -1004,7 +1076,7 @@ const VFSync = (function () {
        this device is not read as new work and pushed straight back */
     queue = queue.filter(o => JSON.stringify(o.row || {}).indexOf(date) < 0);
     writeJSON(QKEY, queue);
-    return { cleared: cleared, skipped: skipped };
+    return { whole: false, cleared: cleared, skipped: skipped, kept: kept };
   }
 
   async function rpc(fn, args) {
