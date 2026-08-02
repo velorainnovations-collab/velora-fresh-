@@ -24,7 +24,10 @@ const USERS = {
   'stranger@velora.example':{ pw: 'right', uid: 'ffff0000-0000-0000-0000-00000000000f', row: null },
 };
 
-const received = [];          // every write the app sent
+const received = [];
+/* what the deployed project can do, so the tests can pretend it is
+   older than the code in this repository */
+const opts = { oldCreateUser: false };          // every write the app sent
 
 /* Tokens are shaped like a real JWT — header.claims.signature — because
    the app reads its own user id out of the claims rather than asking. */
@@ -77,6 +80,9 @@ const srv = http.createServer((req, res) => {
         return send(200, { id: a.user_id, email: who || null, reset: true });
       }
       if (a.action === 'delete') {
+        /* a deployment that predates the delete action does not know it,
+           falls through to the create path and asks for an email */
+        if (opts.oldCreateUser) return send(400, { error: 'An email address is required' });
         if (!a.user_id) return send(400, { error: 'Which user?' });
         if (a.user_id === 'aaaa0000-0000-0000-0000-00000000000a')
           return send(400, { error: 'You cannot delete your own login' });
@@ -187,6 +193,16 @@ const srv = http.createServer((req, res) => {
     if (url.pathname === '/rest/v1/app_users') {
       const u = Object.values(USERS).find(x => x.uid === uidOf(req));
       if (!u || !u.row) return send(200, []);
+      /* an owner may write app_users, which is what the screen falls back
+         to when the project's function cannot delete */
+      if (req.method === 'DELETE') {
+        if (u.row.role !== 'owner') return send(403, { message: 'permission denied' });
+        const id = (url.searchParams.get('id') || '').replace(/^eq\./, '');
+        received.push({ table: 'app_users?id=eq.' + id, method: 'DELETE', rows: null });
+        const i = PEOPLE.findIndex(r => r.id === id);
+        if (i > -1) PEOPLE.splice(i, 1);
+        return send(204, null);
+      }
       /* RLS as the database has it: an owner may read everyone in the
          client, anybody else only themselves. Their own row is put last
          on purpose — an unfiltered read must not be allowed to pass for
@@ -235,4 +251,4 @@ srv.on('error', (e) => {
 srv.listen(8123, () => console.log('mock supabase on 8123'));
 process.on('message', m => { if (m === 'dump') process.send(received); });
 global.__received = received;
-module.exports = { received, srv };
+module.exports = { received, srv, opts };

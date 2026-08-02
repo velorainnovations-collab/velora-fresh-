@@ -958,9 +958,26 @@ async function afterSignIn(known){
 
 let ME = null;
 
+/* "Sync problem" on its own cannot be acted on, and the reason was only
+   ever in the browser console — which nobody at a shop is going to open.
+   The last one is kept and the badge hands it over when tapped. */
+let SYNC_ERR = '';
+
+function showSyncErr(){
+  if(!SYNC_ERR){ alert('Everything has been saved to the server.'); return; }
+  alert('The last thing that could not be saved:\n\n' + SYNC_ERR
+        + '\n\nIt is still on this device and will be tried again. '
+        + 'Read this out to whoever set the app up.');
+}
+
 function syncBadge(state, detail){
   const el = document.getElementById('syncState');
   if(!el) return;
+  if(state === 'error'){ SYNC_ERR = String(detail || ''); }
+  else if(state === 'synced'){ SYNC_ERR = ''; }
+  el.style.cursor = 'pointer';
+  el.title = state === 'error' ? String(detail || '') : '';
+  el.onclick = showSyncErr;
   el.classList.remove('hidden','busy','bad','off');
   const label = el.lastElementChild;
   if(state === 'pushing'){ el.classList.add('busy'); label.textContent = 'Saving ' + detail; }
@@ -1818,9 +1835,11 @@ function deletePerson(id, name){
   const done = (r)=>{
     PEOPLE = null; loadPeople();
     if(r && r.accessOnly){
-      alert('Their access is removed and they can no longer see anything.\n\n'
-            + 'The sign-in itself is still on the server: deleting that needs the '
-            + 'create-user function, which is not deployed for this project yet.');
+      alert('Deleted. They are off the list and can no longer see anything.\n\n'
+            + 'The sign-in behind them is still on the server — removing that needs the '
+            + 'create-user function, which this project has not been given yet '
+            + '(docs/DEPLOY.md). Until it is, adding the same phone number or email '
+            + 'again will say the login already exists.');
     }
   };
   VFSync.removePerson(id)

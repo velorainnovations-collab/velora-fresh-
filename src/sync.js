@@ -794,7 +794,21 @@ const VFSync = (function () {
     if (r.status === 404) { const e = new Error('NOT_DEPLOYED'); e.notDeployed = true; throw e; }
     if (r.status === 401 && await refresh()) return removePerson(userId);
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || ('Could not delete (' + r.status + ')'));
+    if (!r.ok) {
+      /* A deployment that predates the delete action does not recognise
+         it, falls through to the create path and asks for an email
+         address — which is nonsense in answer to "remove this person",
+         and it stopped the delete outright. Anything a deployment says
+         it cannot do is treated as "this one cannot delete", and the
+         caller falls back to removing the access on its own. The one
+         real refusal, deleting yourself, is passed through. */
+      const why = String(body.error || '');
+      if (/your own/i.test(why)) throw new Error(why);
+      if (r.status === 400 || r.status === 404 || r.status === 405) {
+        const e = new Error('NOT_DEPLOYED'); e.notDeployed = true; e.said = why; throw e;
+      }
+      throw new Error(why || ('Could not delete (' + r.status + ')'));
+    }
     return body;
   }
 

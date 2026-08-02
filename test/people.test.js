@@ -9,7 +9,7 @@
  * itself from the wrong role, and sends the right arguments.
  */
 const { chromium } = require('playwright');
-const { received } = require('./mock-supabase.js');
+const { received, opts } = require('./mock-supabase.js');
 
 let pass = 0, fail = 0;
 function check(label, got, want) {
@@ -251,6 +251,28 @@ function check(label, got, want) {
         await p.locator('#main .card:nth-of-type(2) tbody tr').count(), before - 1);
   check('and that person is off the screen',
         await p.locator('#main tbody tr', { hasText: 'Kilpauk Mgr' }).count(), 0);
+
+  console.log('\nand when the project has an older function than this code');
+  /* it does not know the delete action, falls through to the create path
+     and asks for an email address — which is no answer to "remove this
+     person", and it used to stop the delete outright */
+  opts.oldCreateUser = true;
+  received.length = 0;
+  let told = '';
+  p.on('dialog', async d => { told = d.message(); await d.accept(); });
+  const left = await p.locator('#main .card:nth-of-type(2) tbody tr').count();
+  await p.locator('#main tbody tr', { hasText: 'Day Manager' })
+         .locator('button:has-text("Delete")').click();
+  await p.waitForTimeout(1400);
+  const rowGone = received.find(r => r.method === 'DELETE' && /^app_users/.test(r.table));
+  check('the access is removed anyway', !!rowGone, true);
+  check('by id', /id=eq\./.test(rowGone ? rowGone.table : ''), true);
+  check('and it is gone from the list',
+        await p.locator('#main .card:nth-of-type(2) tbody tr').count(), left - 1);
+  check('no nonsense about an email address', /email address is required/i.test(told), false);
+  check('told the sign-in itself is still there', /still on the server/.test(told), true);
+  opts.oldCreateUser = false;
+  p.removeAllListeners('dialog');
 
   console.log('\nnot your own, though');
   check('no delete button on your own row',
