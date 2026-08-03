@@ -139,10 +139,18 @@ afterwards never re-prices a bill that has already been raised.
   for now and are left out rather than printed empty; the bank lines print as
   `Xxxx` until they are filled in, because a missing line reads as an oversight
   and a placeholder reads as a job to do.
-* The bill is A4 portrait and is held to 186mm on screen — the width of the paper
-  less its margins — so the preview is the print. `npm run test:print` switches
-  the browser to print media, measures the sheet against that width, and fails if
-  anything runs past the edge, if a column heading no longer fits, if the totals
-  stop lining up under Amount, or if it spills onto a second page.
+* The seven characters at the right of the header are the **build id** — a
+  fingerprint of everything the page is made of. It changes whenever the app does,
+  so "did the change reach me, or am I looking at a cached copy?" is answered by
+  reading it rather than guessing. Same source, same id: `python3 src/build.py`
+  twice in a row produces a byte-identical `index.html`, which is what lets
+  `scripts/check.sh` tell a stale build from a fresh one.
+* On screen the bill takes the width it is given, like every other screen. On paper
+  it is 186mm — A4 portrait less its margins. The columns are fixed widths either
+  way, so the only thing that differs between the two is how much room Product gets.
+  `npm run test:print` switches the browser to print media, measures the sheet at
+  the paper's width, and fails if anything runs past the edge, if a column heading
+  no longer fits, if the totals stop lining up under Amount, or if it spills onto a
+  second page.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

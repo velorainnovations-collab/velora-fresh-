@@ -135,6 +135,8 @@ header select,header input[type=date]{width:auto;max-width:100%;min-width:0;back
   display:flex;flex-direction:column;align-items:stretch;gap:8px;flex:none;background:var(--surface)}
 #sideFoot .btn{width:100%;height:38px}
 #sideFoot #clock{font-size:11.5px;color:var(--ink-4);text-align:center}
+#buildId{font-size:10.5px;color:var(--ink-4);opacity:.7;letter-spacing:.04em}
+#sideFoot #buildId{text-align:center;display:block}
 
 /* ---------- nav ---------- */
 /* ---------- sidebar ---------- */
@@ -336,8 +338,14 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
    whole of the paper. Holding the sheet to that on screen means what is
    on the screen is what comes out of the printer, at the width it will
    come out at — no surprise on the first print run. */
+/* On screen the sheet takes the width it is given, like every other
+   screen in the app — held to paper width it sat in the left half of a
+   desk monitor with the page empty beside it. On paper the width is the
+   paper: 210mm less 12mm of margin each side, which the print rules set
+   below. The columns are fixed pixel widths either way, so the only
+   thing that changes between the two is how much room Product gets. */
 #inv{background:#fff;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);
-  box-shadow:var(--sh);max-width:186mm;box-sizing:border-box}
+  box-shadow:var(--sh);box-sizing:border-box}
 /* The sheet is one stack of boxes, each 1px black, each dropping the
    border it shares with the box above it. Nothing doubles up, nothing is
    left open, and the left and right edges of every box land on the same
@@ -516,7 +524,7 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
      right edge of the sheet. */
   header,nav,aside,#side,.noprint{display:none!important}
   main{padding:0;margin:0;max-width:none;width:auto}
-  #inv{border:none;border-radius:0;padding:0;box-shadow:none;max-width:none;width:auto}
+  #inv{border:none;border-radius:0;padding:0;box-shadow:none;max-width:186mm;width:auto}
   /* A4 less its margins is 186mm, which the browser counts as 703px —
      under the 720px the phone rules watch for, so printing was getting
      the phone's invoice: the header band stacked into two full width
@@ -556,6 +564,10 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   <span id="syncState" class="syncdot hidden"><i></i><span></span></span>
   <button id="signOutBtn" class="btn sm hidden" type="button" onclick="doSignOut()">Sign out</button>
   <span id="clock" class="mono" style="font-size:13px;color:var(--ink-3)"></span>
+  <!-- which build is on the screen. Changes whenever the app does, so
+       "did the change reach me?" is answered by looking rather than by
+       guessing at a cache. -->
+  <span id="buildId" class="mono" title="Build">fee59cd</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
@@ -4395,7 +4407,7 @@ const HEADER_ORDER = Array.prototype.slice.call(document.querySelector('header')
    is left out of the drawer — the phone follows its own setting. */
 const SIDE_WHO  = ['whoami','roleSel','dateSel'];   /* one line, together */
 const SIDE_TOP  = ['anyBox','wipeDay','syncState'];
-const SIDE_FOOT = ['signOutBtn','clock'];
+const SIDE_FOOT = ['signOutBtn','clock','buildId'];
 
 function placeHeaderControls(){
   const top  = document.getElementById('sideTop');
