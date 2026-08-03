@@ -195,6 +195,39 @@ async function readyToBill(p) {
         'No 91, Mount Road');
   check('and its bank details', await p.evaluate(() => (Object.values(DB.contacts)[0].bank||{}).ifsc),
         'HDFC0000123');
+
+  /* Not every customer is registered, so a bill must come out clean
+     without one rather than printing an empty GSTIN line. */
+  console.log('\na contact with no GST number');
+  await p.click('button:has-text("Add a contact")');
+  await p.waitForTimeout(300);
+  const glabels = await p.locator('#main label').allTextContents();
+  check('the form says it is optional',
+    glabels.some(l => /GST number\s*optional/i.test(l.replace(/\s+/g, ' '))), true);
+  await p.fill('#ct_company', 'Nungambakkam Stores');
+  await p.selectOption('#ct_shopId', 'NGB');
+  await p.click('button:has-text("Add contact")');
+  await p.waitForTimeout(800);
+  check('saved without one', await p.evaluate(() =>
+    Object.values(DB.contacts).some(c => c.company === 'Nungambakkam Stores' && !c.gstin)), true);
+
+  await p.evaluate(() => {
+    setAnytime && setAnytime(true);
+    const d = DATE;
+    DB.indents[d] = DB.indents[d] || {};
+    DB.indents[d].NGB = { status: 'accepted', lines: { '1': 5 } };
+    DB.days[d] = DB.days[d] || { rates: {}, packed: {}, ship: {}, sent: {} };
+    DB.days[d].rates['1'] = 80;
+    DB.days[d].packed.NGB = { '1': 5 };
+    DB.days[d].ship.NGB = 'received';
+    save(); INVSHOP = null; go('inv');
+  });
+  await p.waitForTimeout(400);
+  await p.click('tr:has-text("Nungambakkam") button:has-text("Generate")');
+  await p.waitForTimeout(800);
+  const ngb = await p.locator('#inv').textContent();
+  check('the bill still names the customer', /Nungambakkam Stores/.test(ngb), true);
+  check('and prints no empty GSTIN line', /GSTIN/.test(ngb), false);
   await ctx.close();
 
   console.log('\nwho may touch it');
