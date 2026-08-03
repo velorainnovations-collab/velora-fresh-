@@ -116,5 +116,15 @@ afterwards never re-prices a bill that has already been raised.
   there could not be priced or billed, so the app names the day and refuses. Bills
   already raised are never affected: an invoice line keeps its own copy of the name,
   unit and rate.
+* **Master → Contact** holds the customer details a bill is made out to: company
+  name, GST number, one billing address (which is the delivery address — there is
+  no separate shipping address by design), and bank details for the owner alone.
+  Entered once. On the invoice screen, **Bill to** picks the customer and fills in
+  the name, GST number and address, and takes the vehicle number and driver name.
+  The bill keeps its own copy of what it printed, so a contact that moves premises
+  never rewrites a bill already raised.
+* The invoice letterhead is `COMPANY` in `src/template.html` — name, city, phone,
+  GSTIN. The phone and GSTIN are blank for now and are left out rather than
+  printed empty.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

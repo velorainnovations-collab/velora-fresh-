@@ -429,6 +429,11 @@ table.ibl tbody tr:hover td{background:none}
   .twrap table th:first-child{background:var(--surface-2)}
   .vgrp td:first-child{background:var(--brand-soft)}
   .skipped td:first-child{background:var(--red-soft)}
+  /* The invoice is a sheet of paper, white whatever the app's theme is.
+     Left to the rule above, its sticky first column painted itself the
+     app's surface — dark ink on a dark column, on a phone at night. */
+  #inv table td:first-child{background:#fff}
+  #inv table th:first-child{background:#f4f4f2}
 
   /* the search box and whatever sits beside it get a line each */
   .srch{max-width:none;width:100%;flex:1 1 100%}
@@ -568,6 +573,15 @@ const CLIENT = 'Kalpaviruksha Pazhamudir Nilayam';
 /* us, as opposed to CLIENT which is the chain we supply. Written out
    wherever a shop is told who did something to their indent. */
 const VELORA = 'Velora Fresh';
+/* The letterhead. Kept here and not in the invoice markup so it changes
+   in one place when the printed name, the city or the phone number
+   does. An empty line is left out rather than printed blank. */
+const COMPANY = {
+  name: 'Vellore Freshworks Private Limited',
+  city: 'Chennai',
+  phone: '',                       /* added later */
+  gstin: '',                       /* added later */
+};
 /* The indent window: shops were meant to send between 6 and 9 pm, with
    anything up to 11:30 recorded as late.
 
@@ -648,6 +662,7 @@ function load(){
                                         manual:(g.toLowerCase()==='others' || g===UNGROUPED),
                                         bank:{acName:'',acNo:'',ifsc:'',upi:''}};
   });
+  DB.contacts = DB.contacts || {};   /* [id] = {company, gstin, addr1..3, state, pincode, bank:{}} */
   DB.payments = DB.payments || [];   /* [{id,date,amount,mode,ref}] chain-level, oldest-bill-first */
   SHOPS.forEach(s=>{ if(DB.master.comm[s.id]===undefined) DB.master.comm[s.id] = s.comm; });
   DB.shopPhones = DB.shopPhones || {};
@@ -1320,7 +1335,8 @@ const MENU = {
     {t:'Contacts',   ic:'contacts', kids:[{id:'vendors', t:'Vendors'},
                                          {id:'shops',   t:'Shops'}]},
     {t:'Product',    ic:'product', kids:[{id:'products', t:'Product list'}]},
-    {t:'Master',     ic:'master', kids:[{id:'master', t:'Margin master'},
+    {t:'Master',     ic:'master', kids:[{id:'contact', t:'Contact'},
+                                         {id:'master', t:'Margin master'},
                                          {id:'people', t:'Users'}]},
   ],
   admin: [
@@ -2622,7 +2638,7 @@ function render(){
     board:vBoard, indents:vIndents, rates:vRates, pack:vPack, ship:vShip, inv:vInvoices,
     orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent,
     mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops,
-    people:vPeople
+    people:vPeople, contact:vContacts
   }[TAB];
   m.innerHTML = fn ? fn() : '';
   wrapTables(m);
@@ -3812,8 +3828,39 @@ function makeInvoice(shopId){
   DB.serial[key] = (DB.serial[key]||0)+1;
   const no = s.prefix+'/'+mk+'/'+String(DB.serial[key]).padStart(4,'0');
   DB.invoices[DATE] = DB.invoices[DATE] || {};
-  DB.invoices[DATE][shopId] = {no, date:DATE, shopId, lines, total, roundOff: Math.round(total)-total};
+  const inv = {no, date:DATE, shopId, lines, total, roundOff: Math.round(total)-total,
+               contactId:'', vehicle:'', driver:'', billTo:{name:'',gstin:'',address:''}};
+  /* the contact this shop's bills are made out to, if there is one.
+     Nothing is guessed: with two contacts and neither tied to the shop,
+     it is left empty and asked for on the invoice. */
+  setInvoiceContact(inv, contactForShop(shopId));
+  DB.invoices[DATE][shopId] = inv;
   save(); INVSHOP = shopId; render();
+}
+
+/* The invoice keeps its own copy of the three things it prints. A
+   contact that moves premises in October must not quietly reprint July's
+   bill with the new address, for the same reason a line keeps the rate
+   it was billed at. Re-picking the customer takes a fresh copy. */
+function setInvoiceContact(inv, id){
+  const c = id ? DB.contacts[id] : null;
+  inv.contactId = c ? id : '';
+  inv.billTo = c
+    ? { name: c.company || '', gstin: c.gstin || '', address: contactAddress(c) }
+    : { name: '', gstin: '', address: '' };
+  return inv;
+}
+function setInvContact(shopId, id){
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv) return;
+  setInvoiceContact(inv, id);
+  save(); render();
+}
+function setInvField(shopId, key, val){
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv) return;
+  inv[key] = val;
+  save();
 }
 function vInvoiceOne(shopId){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
@@ -3831,17 +3878,36 @@ function vInvoiceOne(shopId){
   });
   const cols = showSell?8:7;
   const net = Math.round(inv.total);
+
+  /* Billing address, and only that. It is the delivery address too, so
+     there is no shipped-to half to fill in and nothing to reconcile.
+     Falls back to the shop's own name until a contact is picked, so a
+     bill is never blank at the top. */
+  const bt = inv.billTo || {};
+  const billTo = '<strong>'+esc(bt.name || CLIENT)+'</strong>'
+    + (bt.address ? '<br>'+esc(bt.address).replace(/\n/g,'<br>')
+                  : '<br>'+esc(s.name)+' branch')
+    + (bt.gstin ? '<br>GSTIN : <span class="mono">'+esc(bt.gstin)+'</span>' : '');
+
+  const hd = (lbl, val) => val
+    ? '<div>'+lbl+' : <span class="mono">'+esc(val)+'</span></div>' : '';
+
   return '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
    + '<span class="spacer"></span>'
    + '<button class="btn sm" onclick="waInvoice(\''+shopId+'\')">Send on WhatsApp</button>'
    + '<button class="btn sm pri" onclick="window.print()">Print</button></div>'
+   + invBillToPanel(shopId, inv)
    + '<div id="inv">'
-   + '<div class="ihead"><div style="width:74px;font-size:11px;line-height:1.25;font-weight:700">VELORA<br>FRESH</div>'
-   + '<div class="mid"><div class="cn">VELORA FRESH</div><div class="le">Velora Innovations Private Limited &middot; Chennai</div></div>'
-   + '<div style="width:150px;text-align:right;font-size:12px">Mobile-9342011780</div></div>'
+   + '<div class="ihead"><div class="mid"><div class="cn">'+esc(COMPANY.name)+'</div>'
+   + '<div class="le">'+[COMPANY.city, COMPANY.phone && 'Mobile '+COMPANY.phone,
+                         COMPANY.gstin && 'GSTIN '+COMPANY.gstin]
+       .filter(Boolean).map(esc).join(' &middot; ')+'</div></div></div>'
    + '<div class="ititle">INVOICE</div>'
-   + '<div class="iband"><div class="lft"><strong>'+esc(CLIENT)+'</strong><br>'+esc(s.name)+' branch</div>'
-   + '<div class="rgt">Bill No : <span class="mono">'+esc(inv.no)+'</span><br>Date : <span class="mono">'+fmtDate(inv.date)+'</span></div></div>'
+   + '<div class="iband"><div class="lft">'+billTo+'</div>'
+   + '<div class="rgt">'
+   + hd('Bill No', inv.no) + hd('Date', fmtDate(inv.date))
+   + hd('Vehicle No', inv.vehicle) + hd('Driver', inv.driver)
+   + '</div></div>'
    + '<table class="ibl"><thead><tr><th class="c" style="width:34px">S.No</th><th class="c" style="width:50px">Code</th><th>Product</th>'
    + '<th class="c" style="width:82px">Quantity</th><th class="r" style="width:70px">Net Kg</th>'
    + '<th class="r" style="width:76px">Rate/Kg</th><th class="r" style="width:92px">Amount</th>'
@@ -3851,8 +3917,44 @@ function vInvoiceOne(shopId){
    + '<tr><td colspan="'+(cols-1)+'" class="r"><strong>Net Amount</strong></td><td class="r mono"><strong>'+money(net)+'</strong></td></tr>'
    + '</tbody></table>'
    + '<div style="font-size:12px;margin-top:7px"><em>Rupees '+esc(words(net))+' only</em></div>'
-   + '<div class="isign"><div>Party\'s Signature</div><div style="text-align:right">For VELORA FRESH<br><br><br>Authorised Signatory</div></div>'
+   + '<div class="isign"><div>Party\'s Signature</div><div style="text-align:right">For '
+   + esc(COMPANY.name)+'<br><br><br>Authorised Signatory</div></div>'
    + '</div>';
+}
+
+/* The part of the bill that is chosen rather than calculated: which
+   customer it is made out to, and what it went out on. Never printed —
+   what it sets appears on the invoice below it. */
+function invBillToPanel(shopId, inv){
+  if(ROLE !== 'owner' && ROLE !== 'admin') return '';
+  const ids = contactList();
+  let opts = '<option value="">— not chosen —</option>';
+  ids.forEach(id=> opts += '<option value="'+esc(id)+'"'
+    + (inv.contactId===id?' selected':'')+'>'+esc(DB.contacts[id].company||id)+'</option>');
+  /* a contact removed from the list but still named on this bill stays
+     on the dropdown, or picking it up again would be impossible */
+  if(inv.contactId && ids.indexOf(inv.contactId) < 0 && DB.contacts[inv.contactId]){
+    opts += '<option value="'+esc(inv.contactId)+'" selected>'
+          + esc(DB.contacts[inv.contactId].company||inv.contactId)+' (removed)</option>';
+  }
+  const sj = shopId.replace(/'/g,"\\'");
+  return '<div class="card noprint"><h3>Bill to</h3><div style="padding:15px 16px">'
+   + '<div class="addform">'
+   + '<div><label>Customer</label><select id="invContact" '
+   + 'onchange="setInvContact(\''+sj+'\',this.value)">'+opts+'</select></div>'
+   + '<div><label>Vehicle number</label><input type="text" id="invVehicle" '
+   + 'value="'+esc(inv.vehicle||'')+'" placeholder="TN 01 AB 1234" '
+   + 'onchange="setInvField(\''+sj+'\',\'vehicle\',this.value)"></div>'
+   + '<div><label>Driver name</label><input type="text" id="invDriver" '
+   + 'value="'+esc(inv.driver||'')+'" '
+   + 'onchange="setInvField(\''+sj+'\',\'driver\',this.value)"></div>'
+   + '<p class="hintline" style="grid-column:1/-1;margin:0;font-size:12.5px;color:var(--ink-3)">'
+   + (ids.length
+       ? 'Picking a customer fills in the company name, GST number and billing address below. '
+         + 'The bill keeps its own copy of them, so changing the contact later never rewrites '
+         + 'a bill already raised.'
+       : 'No contacts on file yet. Add one under Master &rarr; Contact and it can be picked here.')
+   + '</p></div></div></div>';
 }
 function invoiceText(inv, shop){
   let t = 'Velora Fresh\n'
@@ -4352,6 +4454,176 @@ function vMasterShop(id){
    + '<p class="sub">Percentage on top of the purchase price. Blank prints no selling price for that product.</p>'
    + '<div class="card"><table><thead><tr><th>Code</th><th>Product</th><th class="c">Selling margin %</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
+/* ============================================================
+   CONTACT MASTER  —  who a bill is made out to
+   ============================================================
+   The customer's own details, entered once and read off the shelf every
+   time an invoice is raised: the company as it is registered, its GST
+   number and the address the goods go to. There is one address, not
+   two: the billing address is the delivery address, because two
+   addresses that have to agree are two chances to be wrong.
+
+   Fields are added here and nowhere else. The invoice takes a snapshot
+   of the three things it prints, so a contact can grow a dozen more
+   columns without the invoice workflow changing at all.
+   ============================================================ */
+
+/* a v4-shaped id, from the browser's own generator where there is one.
+   Real uuids, because that is what the database column is — a local key
+   hashed into one later would stop matching the moment it was read
+   back from the server. */
+function newId(){
+  if(typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, ch=>{
+    const r = Math.random()*16|0;
+    return (ch==='x' ? r : (r&0x3|0x8)).toString(16);
+  });
+}
+
+/* The address as it prints: blank lines left out, so a contact with two
+   address lines does not print a gap where the third would be. */
+function contactAddress(c){
+  return [c.addr1, c.addr2, c.addr3,
+          [c.state, c.pincode].filter(Boolean).join(' - ')]
+         .map(x=>String(x||'').trim()).filter(Boolean).join('\n');
+}
+function contactList(){
+  return Object.keys(DB.contacts || {})
+    .filter(id => DB.contacts[id] && DB.contacts[id].active !== false)
+    .sort((a,b)=> String(DB.contacts[a].company||'').localeCompare(String(DB.contacts[b].company||'')));
+}
+/* The one offered first when a shop's bill is generated: its own, and
+   failing that the only contact on file. Never a guess between two. */
+function contactForShop(shopId){
+  const ids = contactList();
+  const own = ids.filter(id => DB.contacts[id].shopId === shopId);
+  if(own.length) return own[0];
+  return ids.length === 1 ? ids[0] : '';
+}
+
+let CONTACTOPEN = null;              /* an id being edited, or 'new' */
+
+function vContacts(){
+  if(ROLE !== 'owner') return '<h2>Contact</h2><div class="empty">Owner only.</div>';
+  if(CONTACTOPEN) return vContactOne(CONTACTOPEN);
+  const ids = contactList();
+  let rows = '';
+  ids.forEach(id=>{
+    const c = DB.contacts[id];
+    const sh = c.shopId ? shopById(c.shopId) : null;
+    rows += '<tr><td>'+esc(c.company||'&mdash;')
+      + (c.person ? '<span class="tam">'+esc(c.person)+'</span>' : '')+'</td>'
+      + '<td class="mono">'+(c.gstin ? esc(c.gstin) : '&mdash;')+'</td>'
+      + '<td class="mono">'+(c.mobile ? esc(c.mobile) : '&mdash;')+'</td>'
+      + '<td style="font-size:12.5px;color:var(--ink-2)">'
+        + esc([c.addr1, c.addr2, c.addr3].filter(Boolean).join(', ') || '—')
+        + (c.pincode ? '<span class="tam">'+esc([c.state,c.pincode].filter(Boolean).join(' - '))+'</span>' : '')+'</td>'
+      + '<td>'+(sh ? '<span class="pill p-grey">'+esc(sh.name)+'</span>' : '&mdash;')+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="CONTACTOPEN=\''+id+'\';render()">Edit</button></td></tr>';
+  });
+  return '<h2>Contact</h2>'
+   + '<p class="sub">Who a bill is made out to. Entered once, and read off the shelf every time '
+   + 'an invoice is raised.</p>'
+   + '<div class="bar"><button class="btn pri" onclick="CONTACTOPEN=\'new\';render()">Add a contact</button></div>'
+   + '<div class="card"><div class="twrap"><table><thead><tr><th>Company</th><th>GST number</th>'
+   + '<th>Mobile</th><th>Billing address</th><th>Bills for</th><th></th></tr></thead><tbody>'
+   + (rows || '<tr><td colspan="6"><div class="empty">No contacts yet. '
+       + 'Add one and it can be picked from any invoice.</div></td></tr>')
+   + '</tbody></table></div></div>';
+}
+
+function vContactOne(id){
+  const isNew = (id === 'new');
+  const c = isNew ? {bank:{}} : (DB.contacts[id] || {bank:{}});
+  const b = c.bank || {};
+  const f = (lbl, key, val, ph, opt) => '<div><label>'+lbl
+    + (opt?' <span class="hint">optional</span>':'')+'</label>'
+    + '<input type="text" id="ct_'+key+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'"></div>';
+  let sopts = '<option value="">Any shop</option>';
+  SHOPS.forEach(s=> sopts += '<option value="'+esc(s.id)+'"'
+    + (c.shopId===s.id?' selected':'')+'>'+esc(s.name)+'</option>');
+
+  return '<div class="bar"><button class="btn sm" onclick="CONTACTOPEN=null;render()">&larr; Contact</button></div>'
+   + '<h2>'+(isNew ? 'Add a contact' : esc(c.company||'Contact'))+'</h2>'
+   + '<p class="sub">Everything here goes on the invoice as it is typed, so type it the way it '
+   + 'should print.</p>'
+
+   + '<div class="card"><h3>Basic details</h3><div style="padding:15px 16px"><div class="addform">'
+   + f('Company name','company',c.company,'SSR AGRPCOM')
+   + f('Contact person','person',c.person,'','opt')
+   + f('GST number','gstin',c.gstin,'33AABCU9603R1ZM')
+   + f('Mobile number','mobile',c.mobile,'9342011780')
+   + f('Email','email',c.email,'','opt')
+   + '<div><label>Bills for <span class="hint">optional</span></label>'
+   + '<select id="ct_shopId">'+sopts+'</select></div>'
+   + '</div></div></div>'
+
+   + '<div class="card"><h3>Billing address</h3><div style="padding:15px 16px"><div class="addform">'
+   + f('Address line 1','addr1',c.addr1)
+   + f('Address line 2','addr2',c.addr2)
+   + f('Address line 3','addr3',c.addr3)
+   + f('State','state',c.state,'Tamil Nadu')
+   + f('Pincode','pincode',c.pincode,'600010')
+   + '<p class="hintline" style="grid-column:1/-1;margin:0;font-size:12.5px;color:var(--ink-3)">'
+   + 'This is the delivery address too. There is no separate shipping address &mdash; the goods '
+   + 'go where the bill goes.</p>'
+   + '</div></div></div>'
+
+   + '<div class="card"><h3>Bank details &mdash; owner only</h3><div style="padding:15px 16px"><div class="addform">'
+   + f('Bank name','bankName',b.bankName)
+   + f('Account name','acName',b.acName)
+   + f('Account number','acNo',b.acNo)
+   + f('IFSC code','ifsc',b.ifsc)
+   + f('Branch','branch',b.branch)
+   + '</div></div></div>'
+
+   + '<div class="bar">'
+   + '<button class="btn pri" onclick="saveContact(\''+id+'\')">'
+     + (isNew ? 'Add contact' : 'Save changes')+'</button>'
+   + '<button class="btn" onclick="CONTACTOPEN=null;render()">Cancel</button>'
+   + (isNew ? '' : '<span class="spacer"></span>'
+       + '<button class="btn danger" onclick="removeContact(\''+id+'\')">Remove contact</button>')
+   + '</div>';
+}
+
+function saveContact(id){
+  if(ROLE !== 'owner'){ alert('Only the owner may edit a contact.'); return; }
+  const v = k => { const e = document.getElementById('ct_'+k); return e ? e.value.trim() : ''; };
+  const company = v('company');
+  if(!company){ alert('A contact needs a company name — it is what prints on the bill.'); return; }
+
+  const isNew = (id === 'new');
+  const key = isNew ? newId() : id;
+  const was = DB.contacts[key] || {};
+  DB.contacts[key] = {
+    id: key, active: true, shopId: (document.getElementById('ct_shopId')||{}).value || '',
+    company: company, person: v('person'), gstin: v('gstin').toUpperCase(),
+    mobile: v('mobile'), email: v('email'),
+    addr1: v('addr1'), addr2: v('addr2'), addr3: v('addr3'),
+    state: v('state'), pincode: v('pincode'),
+    bank: { bankName: v('bankName'), acName: v('acName'), acNo: v('acNo'),
+            ifsc: v('ifsc').toUpperCase(), branch: v('branch') },
+  };
+  if(was.created) DB.contacts[key].created = was.created;
+  CONTACTOPEN = null;
+  save();
+  render();
+}
+
+/* Marked inactive rather than deleted: a bill raised last month names
+   this contact, and a row an invoice points at cannot simply vanish. */
+function removeContact(id){
+  if(ROLE !== 'owner'){ alert('Only the owner may remove a contact.'); return; }
+  const c = DB.contacts[id]; if(!c) return;
+  if(!confirm('Remove “' + (c.company||'this contact') + '” from the list?\n\n'
+      + 'Bills already made out to it keep the name, GST number and address exactly as they '
+      + 'were printed. It simply stops being offered when a new invoice is raised.')) return;
+  c.active = false;
+  CONTACTOPEN = null;
+  save();
+  render();
+}
+
 function setAnytime(v){ DB.settings.anytime = !!v; save(); render(); }
 function setComm(id, v){ DB.master.comm[id] = v===''?0:(parseFloat(v)||0); save(); render(); }
 function setSell(id, code, v){

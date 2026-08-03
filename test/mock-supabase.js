@@ -6,6 +6,11 @@ const USERS = {
   'owner@velora.example':   { pw: 'right', uid: 'aaaa0000-0000-0000-0000-00000000000a',
                               row: { id: 'aaaa0000-0000-0000-0000-00000000000a', full_name: 'Velora Owner',
                                      role: 'owner', client_id: null, shop_id: null, active: true } },
+  // Velora's other side: runs the day, but no margins, payments or bank
+  // details — and no Master menu
+  'admin@velora.example':   { pw: 'right', uid: 'bbbb0000-0000-0000-0000-00000000000b',
+                              row: { id: 'bbbb0000-0000-0000-0000-00000000000b', full_name: 'Velora Manager',
+                                     role: 'admin', client_id: null, shop_id: null, active: true } },
   // a shop login as the app makes one: id derived from the phone, and the
   // name on the row is the third thing they have to type
   'p9000000004@shop.velorafresh.in':
@@ -42,6 +47,8 @@ const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
 const RENAMED        = [];   // names rename_group has moved off, so the
                              // catalogue read stops offering them
+const CONTACTS       = [];   // the contact master, so a bill can be
+const CBANK          = [];   // made out to somebody after a reload
 const LOCKED         = ['1'];// products a trading day elsewhere still
                              // points at, so the database refuses to
                              // delete them
@@ -397,6 +404,21 @@ const srv = http.createServer((req, res) => {
             });
           }
         }
+      }
+
+      /* the contact master: kept, so a contact survives a reload the
+         way it does on a real project */
+      if (req.method === 'GET' && name === 'contacts') return send(200, CONTACTS);
+      if (req.method === 'GET' && name === 'contact_bank') return send(200, CBANK);
+      if (req.method === 'POST' && (name === 'contacts' || name === 'contact_bank')) {
+        const store = name === 'contacts' ? CONTACTS : CBANK;
+        const key = name === 'contacts' ? 'id' : 'contact_id';
+        (body ? JSON.parse(body) : []).forEach(r => {
+          const ex = store.find(x => x[key] === r[key]);
+          if (ex) Object.assign(ex, r); else store.push(r);
+        });
+        received.push({ table: name, method: 'POST', rows: body ? JSON.parse(body) : null });
+        return send(201, {});
       }
 
       if (req.method === 'GET' && table.startsWith('products')) return send(200, EXTRA_PRODUCTS);

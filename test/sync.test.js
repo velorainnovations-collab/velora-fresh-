@@ -65,9 +65,22 @@ const DB = {
     '2026-07-30': {
       KLP: {
         no: 'VF/KLP/072026/0001', total: 998.4, roundOff: 0.6,
+        contactId: '33333333-0000-0000-0000-000000000001',
+        vehicle: 'TN 01 AB 1234', driver: 'Murugan',
+        billTo: { name: 'SSR AGRPCOM', gstin: '33AABCU9603R1ZM',
+                  address: 'No 4, Anna Salai\nChennai\nTamil Nadu - 600002' },
         lines: [{ code: '1', name: 'Lemon', unit: 'kg', qty: 12, net: 12,
                   rate: 83.2, amount: 998.4, sell: 129.792 }],
       },
+    },
+  },
+  contacts: {
+    '33333333-0000-0000-0000-000000000001': {
+      company: 'SSR AGRPCOM', person: 'Ravi', gstin: '33AABCU9603R1ZM',
+      mobile: '9342011780', email: '', shopId: 'KLP',
+      addr1: 'No 4, Anna Salai', addr2: 'Chennai', addr3: '',
+      state: 'Tamil Nadu', pincode: '600002', active: true,
+      bank: { bankName: 'HDFC', acName: 'SSR AGRPCOM', acNo: '50100', ifsc: 'HDFC0001', branch: 'Anna Salai' },
     },
   },
   payments: [{ id: 'p1', date: '2026-07-31', amount: 1000, mode: 'NEFT', ref: 'UTR1' }],
@@ -222,6 +235,8 @@ const CONFLICT_COLS = {
   margin_selling: ['shop_id', 'product_code'],
   vendor_order_lines: ['trade_date', 'group_name', 'product_code'],
   settings: ['client_id'],
+  contacts: ['id'],
+  contact_bank: ['contact_id'],
 };
 
 function dupKeys(table, rows) {
@@ -273,7 +288,7 @@ console.log('\nthe payload matches the schema');
 const schema = (() => {
   const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', '01_schema.sql'), 'utf8');
   const out = {};
-  const re = /create table (\w+) \(([\s\S]*?)\n\);/g;
+  const re = /create table (?:if not exists )?(\w+) \(([\s\S]*?)\n\);/g;
   let m;
   while ((m = re.exec(sql))) {
     out[m[1]] = m[2].split('\n').map(l => l.trim())
@@ -281,6 +296,11 @@ const schema = (() => {
       .map(l => l.split(/\s+/)[0].replace(/,$/, ''))
       .filter(c => !['primary', 'unique', 'constraint', 'check', 'foreign'].includes(c.toLowerCase()));
   }
+  /* a column added after the first release is not in its create table —
+     it is added by name at the foot of the file, so a live project can
+     catch up. Those count just the same. */
+  const alt = /alter table (\w+)\s+add column if not exists (\w+)/g;
+  while ((m = alt.exec(sql))) (out[m[1]] = out[m[1]] || []).push(m[2]);
   return out;
 })();
 check('the schema was read', Object.keys(schema).length > 10, true);

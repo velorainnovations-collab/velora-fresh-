@@ -440,6 +440,62 @@ select t('and a bill already raised still reads the same',
           then 'ok' else 'LOST' end), 'ok');
 
 -- ============================================================
+-- 14. the contact master
+--
+-- The customer's own details, kept once and printed on every bill.
+-- Velora keeps them and only the owner edits them; a chain may read its
+-- own, because the company name, GST number and delivery address on a
+-- contact are the client's own details and it learns nothing it did not
+-- give. Bank details are the owner's alone, the same as a vendor's.
+-- ============================================================
+set role authenticated;
+select login(:OWNER);
+
+select t('the owner adds a contact',
+  try($$insert into contacts (id, client_id, shop_id, company_name, gstin, addr1, state, pincode)
+        values ('44444444-0000-0000-0000-000000000001','KPN','KLP','SSR AGRPCOM',
+                '33AABCU9603R1ZM','No 4, Anna Salai','Tamil Nadu','600002')$$), 'ok');
+select t('with bank details',
+  try($$insert into contact_bank (contact_id, bank_name, ac_no, ifsc)
+        values ('44444444-0000-0000-0000-000000000001','HDFC','50100','HDFC0001')$$), 'ok');
+
+select login(:ADMIN);
+select t('an admin may read one, to make a bill out',
+  cnt($$select count(*) from contacts where company_name = 'SSR AGRPCOM'$$)::text, '1');
+select t('but may not edit it',
+  (select case when cnt($$with x as (update contacts set company_name = 'Changed'
+        where company_name = 'SSR AGRPCOM' returning 1) select count(*) from x$$) = 0
+          then 'ok' else 'CHANGED' end), 'ok');
+select t('and cannot see its bank details',
+  cnt('select count(*) from contact_bank')::text, '0');
+
+select login(:KLP);
+select t('a shop sees its own chain''s contact',
+  cnt($$select count(*) from contacts$$)::text, '1');
+select t('and no bank details at all',
+  cnt('select count(*) from contact_bank')::text, '0');
+-- an insert the policy refuses raises, where an update or a delete just
+-- matches nothing, so this one is asked a different way
+select t('nor may it add one',
+  try($$insert into contacts (client_id, company_name) values ('KPN','Sneaky')$$), 'refused');
+
+select login(:OWNER);
+select t('a bill can be made out to it',
+  try($$update invoices set contact_id = '44444444-0000-0000-0000-000000000001',
+            vehicle_no = 'TN 01 AB 1234', driver_name = 'Murugan',
+            bill_to_name = 'SSR AGRPCOM', bill_to_gstin = '33AABCU9603R1ZM',
+            bill_to_address = 'No 4, Anna Salai'
+        where bill_no = 'VF/KLP/072026/0001'$$), 'ok');
+-- on delete set null, deliberately: the bill does not need the contact
+-- row to survive, because it kept its own copy of what it printed
+select t('the contact can be deleted outright',
+  try($$delete from contacts where id = '44444444-0000-0000-0000-000000000001'$$), 'ok');
+select t('and the bill still says who it was for',
+  (select case when cnt($$select count(*) from invoices
+        where bill_no = 'VF/KLP/072026/0001' and bill_to_name = 'SSR AGRPCOM'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+
+-- ============================================================
 reset role;
 
 select n, label,

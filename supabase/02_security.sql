@@ -389,6 +389,20 @@ create policy write_vendors on vendors for all using (is_velora()) with check (i
 create policy owner_bank on vendor_bank for all
   using (is_owner()) with check (is_owner());
 
+-- ---------- contacts: who a bill is made out to ----------
+-- Velora keeps them and only the owner edits them, the same as the
+-- margin master they sit beside. A chain may read its own — the company
+-- name, GST number and delivery address on the contact are the client's
+-- own details, and a shop reading them learns nothing it did not give.
+create policy read_contacts on contacts for select
+  using (is_velora() or client_id = current_client());
+create policy write_contacts on contacts for all
+  using (is_owner()) with check (is_owner());
+
+-- Bank details: owner alone, for the same reason as vendor_bank.
+create policy owner_contact_bank on contact_bank for all
+  using (is_owner()) with check (is_owner());
+
 -- ---------- margins: owner alone ----------
 create policy owner_comm on margin_comm for all
   using (is_owner()) with check (is_owner());

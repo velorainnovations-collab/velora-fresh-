@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
 require('./mock-supabase.js');
 
 const OFFICE = ['board','indents','orders','rates','pack','ship','inv','vendors','shops',
-                'products','master','people','acct'];
+                'products','contact','master','people','acct'];
 const SHOP = ['myindent','mydel','mybills','products'];
 
 async function open(b, who, width, scheme) {
@@ -182,8 +182,19 @@ function problemsIn(r) {
             check([who, width + 'px', scheme, label].join(' / '),
                   problemsIn(await p.evaluate(audit, label)));
           };
+          await state('contact / the form', () => { CONTACTOPEN = 'new'; go('contact'); });
+          await state('inv / a bill made out', () => {
+            CONTACTOPEN = null;
+            const id = 'aaaaaaaa-0000-4000-a000-000000000001';
+            DB.contacts[id] = { id: id, active: true, shopId: 'KLP', company: 'SSR AGRPCOM',
+                                person: 'Ravi', gstin: '33AABCU9603R1ZM', mobile: '9342011780',
+                                addr1: 'No 4, Anna Salai', addr2: 'Chennai', addr3: '',
+                                state: 'Tamil Nadu', pincode: '600002', bank: {} };
+            DB.days[DATE].ship.KLP = 'received';
+            go('inv'); makeInvoice('KLP');
+          });
           await state('products / new group panel',
-                      () => { PRODOPEN = null; go('products'); gPanel('new'); });
+                      () => { PRODOPEN = null; INVSHOP = null; go('products'); gPanel('new'); });
           await state('products / rename group panel', () => gPanel('rename'));
           await state('products / editing a product', () => editProduct('1'));
           await state('products / editing, new group open', () => gPanel('new'));

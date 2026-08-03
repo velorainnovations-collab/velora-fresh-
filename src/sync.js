@@ -41,7 +41,7 @@ const VFSync = (function () {
       shipments: {}, vendor_orders: {}, vendor_order_lines: {},
       invoices: {}, invoice_lines: {},
       payments: {}, vendors: {}, vendor_bank: {}, margin_comm: {},
-      margin_selling: {}, settings: {},
+      margin_selling: {}, settings: {}, contacts: {}, contact_bank: {},
     };
     if (!DB) return out;
 
@@ -132,6 +132,14 @@ const VFSync = (function () {
           id: id, bill_no: inv.no, trade_date: date, shop_id: shop,
           total: round2(inv.total), round_off: round2(inv.roundOff || 0),
           net_amount: round2((inv.total || 0) + (inv.roundOff || 0)),
+          /* who it was made out to, and what it went out on. The three
+             bill_to values are the snapshot taken when it was raised —
+             see the invoices block in 01_schema.sql. */
+          contact_id: inv.contactId ? uuidFor(inv.contactId) : null,
+          vehicle_no: inv.vehicle || '', driver_name: inv.driver || '',
+          bill_to_name: (inv.billTo || {}).name || '',
+          bill_to_gstin: (inv.billTo || {}).gstin || '',
+          bill_to_address: (inv.billTo || {}).address || '',
         };
         (inv.lines || []).forEach((l, i) => {
           out.invoice_lines[date + '|' + shop + '|' + (i + 1)] = {
@@ -171,6 +179,28 @@ const VFSync = (function () {
         out.vendor_bank[g] = {
           group_name: g, ac_name: b.acName || '', ac_no: b.acNo || '',
           ifsc: b.ifsc || '', upi: b.upi || '',
+        };
+      }
+    });
+
+    // ---- contacts ----
+    Object.keys(DB.contacts || {}).forEach(id => {
+      const c = DB.contacts[id] || {};
+      out.contacts[id] = {
+        id: uuidFor(id), client_id: CFG.clientId, shop_id: c.shopId || null,
+        company_name: c.company || '', contact_person: c.person || '',
+        gstin: c.gstin || '', mobile: c.mobile || '', email: c.email || '',
+        addr1: c.addr1 || '', addr2: c.addr2 || '', addr3: c.addr3 || '',
+        state: c.state || '', pincode: c.pincode || '',
+        active: c.active !== false,
+      };
+      // only sent once something is in it; an empty row would be refused
+      // for any role but owner, the same as vendor_bank
+      const b = c.bank || {};
+      if (b.bankName || b.acName || b.acNo || b.ifsc || b.branch) {
+        out.contact_bank[id] = {
+          contact_id: uuidFor(id), bank_name: b.bankName || '', ac_name: b.acName || '',
+          ac_no: b.acNo || '', ifsc: b.ifsc || '', branch: b.branch || '',
         };
       }
     });
@@ -248,6 +278,8 @@ const VFSync = (function () {
     margin_comm:    'shop_id',
     margin_selling: 'shop_id,product_code',
     settings:       'client_id',
+    contacts:       'id',
+    contact_bank:   'contact_id',
   };
 
   function diff(before, after) {
@@ -285,6 +317,9 @@ const VFSync = (function () {
   /* Parents before children, so a line never arrives before its header.
      Deletes run in reverse for the same reason. */
   const ORDER = ['settings', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
+                 /* before invoices: an invoice names the contact it was
+                    made out to, and the row it points at must exist */
+                 'contacts', 'contact_bank',
                  'indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
                  'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                  'payments'];
@@ -832,11 +867,12 @@ const VFSync = (function () {
   async function pull(DB) {
     if (!enabled() || !signedIn()) return DB;
 
-    const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st] =
+    const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st,
+           cons, cbank] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
                          'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                          'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
-                         'settings'].map(t => get(t).catch(() => [])));
+                         'settings', 'contacts', 'contact_bank'].map(t => get(t).catch(() => [])));
 
     const indById = {};
     inds.forEach(i => {
@@ -872,7 +908,11 @@ const VFSync = (function () {
       invById[v.id] = v;
       const d = DB.invoices[v.trade_date] = DB.invoices[v.trade_date] || {};
       d[v.shop_id] = { id: v.id, no: v.bill_no, date: v.trade_date, shopId: v.shop_id,
-                       total: Number(v.total), roundOff: Number(v.round_off), lines: [] };
+                       total: Number(v.total), roundOff: Number(v.round_off), lines: [],
+                       contactId: v.contact_id || null,
+                       vehicle: v.vehicle_no || '', driver: v.driver_name || '',
+                       billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
+                                 address: v.bill_to_address || '' } };
     });
     ivl.sort((a, b) => a.line_no - b.line_no).forEach(l => {
       const h = invById[l.invoice_id];
@@ -897,6 +937,23 @@ const VFSync = (function () {
     vbank.forEach(b => {
       const rec = DB.vendors[b.group_name];
       if (rec) rec.bank = { acName: b.ac_name, acNo: b.ac_no, ifsc: b.ifsc, upi: b.upi };
+    });
+
+    DB.contacts = DB.contacts || {};
+    cons.forEach(c => {
+      const rec = DB.contacts[c.id] = DB.contacts[c.id] ||
+        { bank: { bankName: '', acName: '', acNo: '', ifsc: '', branch: '' } };
+      rec.id = c.id; rec.shopId = c.shop_id || '';
+      rec.company = c.company_name; rec.person = c.contact_person;
+      rec.gstin = c.gstin; rec.mobile = c.mobile; rec.email = c.email;
+      rec.addr1 = c.addr1; rec.addr2 = c.addr2; rec.addr3 = c.addr3;
+      rec.state = c.state; rec.pincode = c.pincode; rec.active = c.active !== false;
+    });
+    // empty for every role but owner — RLS returns no rows, not an error
+    cbank.forEach(b => {
+      const rec = DB.contacts[b.contact_id];
+      if (rec) rec.bank = { bankName: b.bank_name, acName: b.ac_name, acNo: b.ac_no,
+                            ifsc: b.ifsc, branch: b.branch };
     });
 
     mc.forEach(m => { DB.master.comm[m.shop_id] = Number(m.pct); });

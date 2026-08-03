@@ -73,14 +73,21 @@ from `src/template.html`, so the mistake is caught rather than shipped.
 ## Picking up a change to the database
 
 The SQL files under `supabase/` are meant to be run again on a project that
-already has data. `02_security.sql` drops its own policies before writing them
-back and steps over the type, the table and the index it made the first time,
-so running it a second time is how a new function or a tightened rule reaches a
-live project. It is one transaction: if anything in it fails, nothing changes.
+already has data. Run `01_schema.sql` and then `02_security.sql` in the Supabase
+SQL editor after pulling a change that touches either. Each is one transaction:
+if anything in it fails, nothing changes.
 
-Run it in the Supabase SQL editor after pulling a change that touches it —
-`wipe_day` and `rename_group` both live there, and the app says so plainly when
-it calls one that is not there yet.
+`01_schema.sql` creates nothing it already has, so a second run only adds what
+is new — a new table, and the columns listed at the foot of the file. **A column
+added to an existing table has to be added there, by name**, because
+`create table if not exists` does nothing at all to a table that is already
+there. Add to that list rather than editing the table above it, and a fresh
+install and a live project end up with the same schema.
+
+`02_security.sql` drops its own policies before writing them back and steps over
+the type, the table and the index it made the first time, so a new function or a
+tightened rule reaches a live project. `wipe_day` and `rename_group` both live
+there, and the app says so plainly when it calls one that is not there yet.
 
 ## What is safe to have in the repository
 
