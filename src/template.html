@@ -373,14 +373,18 @@ table.ibl tr:last-child td{border-bottom:none}
 /* the figure everybody looks for */
 table.ibl td.netlbl{font-weight:700}
 table.ibl td.netamt{font-weight:700;font-size:15px}
-/* Boxes typed straight onto the sheet. On screen they are faintly
-   marked so it is obvious they can be typed in; on paper the mark goes
-   and what is left is the line of text it always was. */
+/* Boxes typed straight onto the sheet. Underlined rather than boxed, and
+   with no padding of their own, so the words inside them start on the
+   same left edge as the printed lines above and below — a box with 5px
+   of padding sat its text 6px in from the address under it, and the two
+   read as a stagger. On paper the underline goes and what is left is the
+   line of text it always was. */
 .iedit{font:inherit;color:inherit;width:100%;box-sizing:border-box;
-  border:1px dashed #b9b3a8;background:#fffdf6;border-radius:3px;padding:1px 5px}
-.iedit::placeholder{color:#9a948a}
-.iedit.big{font-weight:700;font-size:13.5px;margin:1px 0 4px}
-.iedit.v{padding:0 4px}
+  border:none;border-bottom:1px dashed #b9b3a8;border-radius:0;
+  background:#fffdf6;padding:1px 0}
+.iedit:focus{outline:none;border-bottom-color:var(--brand);background:#fff}
+.iedit::placeholder{color:#a8a299}
+.iedit.big{font-weight:700;font-size:13.5px;margin:0 0 3px}
 #inv.draft{outline:2px dashed var(--line);outline-offset:5px}
 .btaddr{margin-top:1px}
 .iwords{padding:7px 10px;font-size:12.5px}
@@ -513,9 +517,6 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   header,nav,aside,#side,.noprint{display:none!important}
   main{padding:0;margin:0;max-width:none;width:auto}
   #inv{border:none;border-radius:0;padding:0;box-shadow:none;max-width:none;width:auto}
-  /* the selling price is Velora's own working, not the customer's
-     business, and it is not one of the columns a bill is meant to have */
-  table.ibl th.sell,table.ibl td.sell{display:none}
   /* A4 less its margins is 186mm, which the browser counts as 703px —
      under the 720px the phone rules watch for, so printing was getting
      the phone's invoice: the header band stacked into two full width
@@ -526,7 +527,8 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   table.ibl{table-layout:fixed}
   #inv table td:first-child,#inv table th:first-child{position:static}
   /* a box typed into prints as the words in it, not as a box */
-  .iedit{border:none;background:none;padding:0;-webkit-appearance:none;appearance:none}
+  .iedit{border:none;background:none;padding:0;margin:0;
+    -webkit-appearance:none;appearance:none}
   .iedit::placeholder{color:transparent}
   #inv.draft{outline:none}
   @page{size:A4;margin:12mm}
@@ -4073,6 +4075,10 @@ function vInvoiceOne(shopId){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
   if(!inv){ INVSHOP=null; return vInvoices(); }
   const s = shopById(shopId);
+  /* The shelf price is Velora's own working, not one of the seven
+     columns a bill has. On the sheet it pushed Amount in from the right
+     edge and left the totals floating in the middle of the page. It is
+     the same information, in a note the customer never sees. */
   const showSell = (ROLE==='owner');
   let rows='';
   inv.lines.forEach((l,i)=>{
@@ -4081,14 +4087,13 @@ function vInvoiceOne(shopId){
       + '<td class="r mono">'+num(l.net,3)+'</td>'
       + '<td class="r mono">'+money(l.rate)+'</td>'
       + '<td class="r mono">'+money(l.amount)+'</td>'
-      + (showSell?'<td class="r mono sell">'+(l.sell===null?'':money(l.sell))+'</td>':'') + '</tr>';
+      + '</tr>';
   });
   /* Six columns of description, then Amount. The totals line up under
      Amount and the selling column, which is Velora's own working and is
      never printed, gets an empty cell of its own — before this the
      figures sat one column right, under the Selling heading. */
   const span = 6;
-  const sellCell = showSell ? '<td class="sell"></td>' : '';
   const net = Math.round(inv.total);
 
   /* Billing address, and only that. It is the delivery address too, so
@@ -4184,14 +4189,14 @@ function vInvoiceOne(shopId){
    + '<th class="c" style="width:52px">Code</th><th>Product</th>'
    + '<th class="c" style="width:82px">Quantity</th><th class="r" style="width:70px">Net Kg</th>'
    + '<th class="r" style="width:76px">Rate / Kg</th><th class="r" style="width:94px">Amount</th>'
-   + (showSell?'<th class="r sell" style="width:82px">Selling</th>':'')+'</tr></thead><tbody>'+rows
+   + '</tr></thead><tbody>'+rows
    + '<tr><td colspan="'+span+'" class="r">Total</td>'
-     + '<td class="r mono">'+money(inv.total)+'</td>'+sellCell+'</tr>'
+     + '<td class="r mono">'+money(inv.total)+'</td></tr>'
    + (Math.abs(inv.roundOff)>=0.005
        ? '<tr><td colspan="'+span+'" class="r">Round Off</td>'
-         + '<td class="r mono">'+money(inv.roundOff)+'</td>'+sellCell+'</tr>' : '')
+         + '<td class="r mono">'+money(inv.roundOff)+'</td></tr>' : '')
    + '<tr><td colspan="'+span+'" class="r netlbl">Net Amount</td>'
-     + '<td class="r mono netamt">'+money(net)+'</td>'+sellCell+'</tr>'
+     + '<td class="r mono netamt">'+money(net)+'</td></tr>'
    + '</tbody></table>'
 
    + '<div class="ibox iwords"><span class="cap" style="display:inline;margin:0">'
@@ -4204,7 +4209,27 @@ function vInvoiceOne(shopId){
    + '</div><div class="rgt"><div>For '+esc(COMPANY.name)+'</div>'
    + '<div>Authorised Signatory</div></div></div>'
 
-   + '</div>';
+   + '</div>'
+   + sellNote(inv, showSell);
+}
+
+/* The shelf price beside the bill rather than on it. Owner only, never
+   printed: it is what the shop puts the goods out at, worked from the
+   selling margin, and it is nobody's business but ours and theirs. */
+function sellNote(inv, show){
+  if(!show) return '';
+  const priced = (inv.lines||[]).filter(l=> l.sell !== null && l.sell !== undefined && l.sell !== '');
+  if(!priced.length) return '';
+  let rows = '';
+  priced.forEach(l=>{
+    rows += '<tr><td class="mono" style="width:58px">'+esc(l.code)+'</td><td>'+esc(l.name)+'</td>'
+      + '<td class="r mono" style="width:110px">&#8377;'+money(l.rate)+'</td>'
+      + '<td class="r mono" style="width:110px">&#8377;'+money(l.sell)+'</td></tr>';
+  });
+  return '<div class="card noprint" style="margin-top:16px"><h3>Shelf prices &mdash; not on the bill</h3>'
+   + '<div class="twrap"><table><thead><tr><th>Code</th><th>Product</th>'
+   + '<th class="r">Billed / kg</th><th class="r">Shelf / kg</th></tr></thead><tbody>'+rows
+   + '</tbody></table></div></div>';
 }
 
 function invoiceText(inv, shop){

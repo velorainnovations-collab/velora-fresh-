@@ -131,6 +131,9 @@ afterwards never re-prices a bill that has already been raised.
   Entered once, and read off the shelf by the search box on the bill itself. The
   bill keeps its own copy of what it printed, so a contact that moves premises never
   rewrites a bill already raised.
+* The bill carries the seven columns a bill has and no more. The shelf price is
+  Velora's own working: it sits in a note under the sheet, for the owner, and never
+  prints.
 * The invoice letterhead is `COMPANY` in `src/template.html` — name, city, phone,
   GSTIN, and the bank details printed for payment. The phone and GSTIN are blank
   for now and are left out rather than printed empty; the bank lines print as

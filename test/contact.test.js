@@ -130,6 +130,21 @@ async function readyToBill(p) {
   check('and the city under it', /Chennai/.test(printed), true);
   check('place of supply came from the contact',
     await p.locator('#invplace').inputValue(), 'Tamil Nadu');
+  /* the words inside a box must start on the same left edge as the
+     printed lines under it, or the block reads as a stagger */
+  const stagger = await p.evaluate(() => {
+    const inp = document.getElementById('invCust');
+    const addr = document.querySelector('.btaddr');
+    if (!inp || !addr) return 999;
+    const cs = getComputedStyle(inp);
+    const textLeft = inp.getBoundingClientRect().left
+      + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+    return Math.round(Math.abs(textLeft - addr.getBoundingClientRect().left));
+  });
+  check('the customer box lines up with the address under it', stagger <= 1, true);
+  check('and the sheet shows only the seven columns a bill has',
+    await p.evaluate(() =>
+      Array.from(document.querySelectorAll('table.ibl thead th')).length), 7);
 
   console.log('\nwhat the sample asked to be left off');
   check('no e-way bill', /e-?way/i.test(printed), false);

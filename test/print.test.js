@@ -165,19 +165,26 @@ const measure = () => {
     await ctx.close();
   }
 
-  /* the owner sees the selling price on screen; the customer's copy of
-     the bill is not the place for Velora's own working */
-  console.log('\nthe selling column is screen only');
+  /* The shelf price is Velora's own working. It used to be an eighth
+     column on the sheet, which pushed Amount in from the right edge and
+     left the totals floating in the middle of the page. It is beside the
+     bill now, and never printed. */
+  console.log('\nthe shelf price is beside the bill, not on it');
   const { ctx, p } = await billFor(b, 'owner@velora.example');
   const onScreen = await p.evaluate(() =>
     Array.from(document.querySelectorAll('table.ibl thead th')).map(th => th.textContent.trim()));
-  check('there on screen for the owner', onScreen.includes('Selling'), true);
+  check('the sheet has seven columns on screen too',
+    onScreen.join('|'), 'S.No.|Code|Product|Quantity|Net Kg|Rate / Kg|Amount');
+  check('and Amount is the last of them', onScreen[onScreen.length - 1], 'Amount');
+  check('the owner still gets the shelf prices',
+    /Shelf prices/.test(await p.locator('#main').textContent()), true);
   await p.emulateMedia({ media: 'print' });
   await p.waitForTimeout(200);
-  const printed = await p.evaluate(() =>
-    Array.from(document.querySelectorAll('table.ibl thead th'))
-      .filter(th => getComputedStyle(th).display !== 'none').map(th => th.textContent.trim()));
-  check('gone on paper', printed.includes('Selling'), false);
+  check('but they do not print', await p.evaluate(() => {
+    const c = Array.from(document.querySelectorAll('.card'))
+      .find(x => /Shelf prices/.test(x.textContent));
+    return c ? getComputedStyle(c).display : 'none';
+  }), 'none');
   await ctx.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
