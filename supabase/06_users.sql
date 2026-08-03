@@ -61,6 +61,8 @@ alter table user_invites force row level security;
 -- Only an owner may invite, and only an owner may see who was invited.
 -- An owner can therefore hand out any tag, including owner — which is
 -- the "he will give access to the next person" rule.
+-- dropped first so this file, like 02_security.sql, can be run again
+drop policy if exists owner_invites on user_invites;
 create policy owner_invites on user_invites for all
   using (is_owner()) with check (is_owner());
 

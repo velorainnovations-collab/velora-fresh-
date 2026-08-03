@@ -70,6 +70,18 @@ Pushing without rebuilding puts stale code live. `.github/workflows/ci.yml`
 rebuilds on every push and fails the run if the committed `index.html` differs
 from `src/template.html`, so the mistake is caught rather than shipped.
 
+## Picking up a change to the database
+
+The SQL files under `supabase/` are meant to be run again on a project that
+already has data. `02_security.sql` drops its own policies before writing them
+back and steps over the type, the table and the index it made the first time,
+so running it a second time is how a new function or a tightened rule reaches a
+live project. It is one transaction: if anything in it fails, nothing changes.
+
+Run it in the Supabase SQL editor after pulling a change that touches it —
+`wipe_day` and `rename_group` both live there, and the app says so plainly when
+it calls one that is not there yet.
+
 ## What is safe to have in the repository
 
 `src/config.js` holds the project URL and the **anon** key. Both belong in the
