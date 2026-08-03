@@ -65,6 +65,10 @@ async function billFor(b, email) {
     go('inv'); makeInvoice('KLP');
     setInvField('KLP', 'vehicle', 'TN 01 AB 1234');
     setInvField('KLP', 'driver', 'Murugan');
+    setInvField('KLP', 'place', 'Tamil Nadu');
+    /* saved, because a saved bill is the one that gets printed and the
+       boxes have become plain text by then */
+    saveInvoice('KLP');
     render();
   });
   await p.waitForTimeout(400);

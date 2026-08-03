@@ -22,10 +22,11 @@ DB = {
 
   invoices: {
     "2026-07-30": {
-      "KLP": { no, date, shopId, total, roundOff,
+      "KLP": { no, saved,                       // no number until saved
+               date, shopId, total, roundOff,
                contactId,                        // who it is made out to
-               vehicle, driver,                  // what it went out on
-               billTo: { name, gstin, address }, // snapshot, see below
+               vehicle, driver, place,           // what it went out on, and where to
+               billTo: { name, gstin, address, state, pincode },  // snapshot, see below
                lines: [ {
         code, name, tamil, unit, qty, net, rate, amount, sell
       } ] }
@@ -62,6 +63,17 @@ DB = {
 `invoices[date][shop].lines[]` stores `rate`, `amount` and `sell` as values, not as
 formulas over the current master. Changing a margin later cannot alter a bill that has
 already been raised. Keep this property in any backend port.
+
+## A draft is not a bill
+
+`saved` is false until somebody presses Save invoice. Until then the invoice has no
+number, is not sent to the server at all, and nothing counts it — not the day board,
+not the accounts, not the shop's own list of bills. The number is issued by saving,
+so a draft that is thought better of and discarded leaves no gap in the run.
+
+Editing a saved bill puts it back to a draft, keeping its number. It disappears from
+the server while it is being edited and returns when it is saved again. That is the
+intended behaviour, not a side effect: a bill under revision is not a bill.
 
 ## So is who the bill was made out to
 

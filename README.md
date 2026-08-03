@@ -116,13 +116,21 @@ afterwards never re-prices a bill that has already been raised.
   there could not be priced or billed, so the app names the day and refuses. Bills
   already raised are never affected: an invoice line keeps its own copy of the name,
   unit and rate.
+* **Sales → Invoice** is two things on one screen: the deliveries waiting to be
+  billed, and the file of everything already saved. Creating one opens the sheet
+  itself as the working area — the customer is a search box inside the **BILL TO**
+  block that fills in the company name, address, GST number and place of supply from
+  Contact Master; the vehicle number, driver and place of supply are typed straight
+  onto the bill. Nothing is redrawn as you type, because the boxes are what prints.
+  Press **Save invoice** and the number is issued. Until then it is a draft: no
+  number, not sent to the server, and counted by nothing — so a draft discarded
+  leaves no gap in the numbering.
 * **Master → Contact** holds the customer details a bill is made out to: company
   name, GST number, one billing address (which is the delivery address — there is
   no separate shipping address by design), and bank details for the owner alone.
-  Entered once. On the invoice screen, **Bill to** picks the customer and fills in
-  the name, GST number and address, and takes the vehicle number and driver name.
-  The bill keeps its own copy of what it printed, so a contact that moves premises
-  never rewrites a bill already raised.
+  Entered once, and read off the shelf by the search box on the bill itself. The
+  bill keeps its own copy of what it printed, so a contact that moves premises never
+  rewrites a bill already raised.
 * The invoice letterhead is `COMPANY` in `src/template.html` — name, city, phone,
   GSTIN, and the bank details printed for payment. The phone and GSTIN are blank
   for now and are left out rather than printed empty; the bank lines print as

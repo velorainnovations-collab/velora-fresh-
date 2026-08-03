@@ -108,50 +108,106 @@ async function readyToBill(p) {
   await readyToBill(p);
   await p.evaluate(() => go('inv'));
   await p.waitForTimeout(400);
-  await p.click('button:has-text("Generate")');
+  await p.click('button:has-text("Create invoice")');
   await p.waitForTimeout(700);
-  check('a bill to panel is there', await p.locator('#invContact').count(), 1);
+
+  check('no separate bill to form above the sheet',
+    await p.locator('#invContact').count(), 0);
+  check('the customer box is on the sheet itself',
+    await p.locator('#inv #invCust').count(), 1);
+  check('and so is the vehicle box', await p.locator('#inv #invvehicle').count(), 1);
+  check('it starts as a draft with no number',
+    await p.evaluate(() => DB.invoices[DATE].KLP.no), '');
   check('the customer was chosen for us',
-    await p.evaluate(() => Object.values(DB.contacts)[0].company),
-    await p.evaluate(() => (DB.invoices[DATE].KLP.billTo || {}).name));
+    await p.locator('#invCust').inputValue(), 'SSR AGRPCOM');
+
   const printed = await p.locator('#inv').textContent();
-  check('company name on the bill', /SSR AGRPCOM/.test(printed), true);
   check('billing address on the bill', /No 4, Anna Salai/.test(printed), true);
   check('state and pincode together', /Tamil Nadu - 600002/.test(printed), true);
   check('GST number on the bill', /33AABCU9603R1ZM/.test(printed), true);
   check('our own name at the top',
     /Velora Innovations Pvt Ltd/.test(printed), true);
   check('and the city under it', /Chennai/.test(printed), true);
+  check('place of supply came from the contact',
+    await p.locator('#invplace').inputValue(), 'Tamil Nadu');
 
   console.log('\nwhat the sample asked to be left off');
   check('no e-way bill', /e-?way/i.test(printed), false);
   check('no shipping address', /shipp?(ing|ed)/i.test(printed), false);
   check('no receiver split', /receiver/i.test(printed), false);
+  check('no distance', /distance/i.test(printed), false);
+  check('no buyer order number', /buyer/i.test(printed), false);
+  check('no notes box', /\bnotes\b/i.test(printed), false);
+  check('no date of supply box', /Date of Supply/i.test(printed), false);
   check('but the footer is all there',
     /Round Off/.test(printed) && /Net Amount/.test(printed)
       && /Rupees/.test(printed) && /Authorised Signatory/.test(printed), true);
 
-  console.log('\nvehicle and driver');
-  await p.fill('#invVehicle', 'TN 01 AB 1234');
-  await p.locator('#invVehicle').blur();
-  await p.fill('#invDriver', 'Murugan');
-  await p.locator('#invDriver').blur();
+  /* typing into the sheet, and the sheet being what changes */
+  console.log('\ntyped straight onto the bill');
+  await p.fill('#invvehicle', 'TN 01 AB 1234');
+  await p.fill('#invdriver', 'Murugan');
   await p.waitForTimeout(400);
-  await p.evaluate(() => render());
-  await p.waitForTimeout(300);
+  check('kept without a redraw',
+    await p.evaluate(() => DB.invoices[DATE].KLP.vehicle), 'TN 01 AB 1234');
+  check('the driver too',
+    await p.evaluate(() => DB.invoices[DATE].KLP.driver), 'Murugan');
+  check('and it is on the sheet, not in a form beside it',
+    await p.locator('#inv #invvehicle').inputValue(), 'TN 01 AB 1234');
   const withVeh = await p.locator('#inv').textContent();
-  check('vehicle number on the bill', /TN 01 AB 1234/.test(withVeh), true);
-  check('driver on the bill', /Murugan/.test(withVeh), true);
-  check('neither is in the panel only',
-    /Vehicle Number/.test(withVeh) && /Driver Name/.test(withVeh), true);
-  check('and the day of supply is on it too', /Date of Supply/.test(withVeh), true);
   check('bank details for payment', /Bank Details/.test(withVeh), true);
   check('the amount in words is labelled',
     /Total Amount In Words/i.test(withVeh), true);
 
-  console.log('\nwhat was sent up with the bill');
+  /* searching by part of a name, the way it will actually be used */
+  console.log('\nsearching for a customer');
+  await p.evaluate(() => {
+    const id = 'dddddddd-0000-4000-a000-000000000001';
+    DB.contacts[id] = { id: id, active: true, shopId: '', company: 'Kalpa Stores',
+                        gstin: '33ZZZZZ0000Z1ZZ', addr1: 'No 9, Poonamallee High Road',
+                        state: 'Tamil Nadu', pincode: '600084', bank: {} };
+    save(); render();
+  });
+  await p.waitForTimeout(400);
+  const list = await p.locator('#invCustList').innerHTML();
+  check('both customers are offered', /SSR AGRPCOM/.test(list) && /Kalpa Stores/.test(list), true);
+
+  await p.fill('#invCust', 'Kalpa');
+  await p.locator('#invCust').dispatchEvent('change');
+  await p.waitForTimeout(600);
+  check('part of a name is enough',
+    await p.evaluate(() => (DB.invoices[DATE].KLP.billTo || {}).name), 'Kalpa Stores');
+  const swapped = await p.locator('#inv').textContent();
+  check('and the whole address swaps with it',
+    /Poonamallee High Road/.test(swapped), true);
+  check('the old one is gone', /Anna Salai/.test(swapped), false);
+
+  // back to the first, which is the one the rest of this suite is about
+  await p.fill('#invCust', 'SSR AGRPCOM');
+  await p.locator('#invCust').dispatchEvent('change');
+  await p.waitForTimeout(600);
+  check('and back again', /No 4, Anna Salai/.test(await p.locator('#inv').textContent()), true);
+
+  console.log('\nsaving it');
+  check('nothing to print until it is saved',
+    await p.locator('button:has-text("Print")').count(), 0);
   received.length = 0;
-  await p.evaluate(() => save());
+  await p.click('button:has-text("Save invoice")');
+  await p.waitForTimeout(800);
+  check('the number is issued on saving',
+    /^VF\/KLP\//.test(await p.evaluate(() => DB.invoices[DATE].KLP.no)), true);
+  check('the boxes become plain text', await p.locator('#inv #invCust').count(), 0);
+  check('and now it can be printed',
+    await p.locator('button:has-text("Print")').count(), 1);
+  check('it is in the saved list', await p.evaluate(() => savedInvoices().length) >= 1, true);
+
+  await p.evaluate(() => { INVSHOP = null; render(); });
+  await p.waitForTimeout(400);
+  const listPage = await p.locator('#main').textContent();
+  check('the screen has a saved invoices section', /Saved invoices/.test(listPage), true);
+  check('with the bill on it', /VF\/KLP\//.test(listPage), true);
+
+  console.log('\nwhat was sent up with the bill');
   await p.waitForTimeout(900);
   const inv = received.find(r => r.table === 'invoices');
   check('the invoice carries the contact', !!(inv && inv.rows[0].contact_id), true);
@@ -183,8 +239,13 @@ async function readyToBill(p) {
   await p.waitForTimeout(400);
   check('the bill is unchanged',
     /SSR AGRPCOM/.test(await p.locator('#inv').textContent()), true);
-  check('and it can still be picked up again',
-    /removed/.test(await p.locator('#invContact').innerHTML()), true);
+  // and re-opening it for changes keeps the name that was printed,
+  // even though the contact is no longer offered on the list
+  await p.evaluate(() => { DB.invoices[DATE].KLP.saved = false; save(); render(); });
+  await p.waitForTimeout(400);
+  check('and it survives being reopened',
+    await p.locator('#invCust').inputValue(), 'SSR AGRPCOM');
+  await p.evaluate(() => { DB.invoices[DATE].KLP.saved = true; save(); render(); });
   await p.evaluate(() => { const id = Object.keys(DB.contacts)[0];
                            DB.contacts[id].active = true; save(); });
   await p.waitForTimeout(1200);          // let the change reach the server
@@ -227,10 +288,12 @@ async function readyToBill(p) {
     save(); INVSHOP = null; go('inv');
   });
   await p.waitForTimeout(400);
-  await p.click('tr:has-text("Nungambakkam") button:has-text("Generate")');
+  await p.click('tr:has-text("Nungambakkam") button:has-text("Create invoice")');
   await p.waitForTimeout(800);
   const ngb = await p.locator('#inv').textContent();
-  check('the bill still names the customer', /Nungambakkam Stores/.test(ngb), true);
+  // a draft holds the name in a box, so it is read as a value not as text
+  check('the bill still names the customer',
+    await p.locator('#invCust').inputValue(), 'Nungambakkam Stores');
   check('and prints no empty GSTIN line', /GSTIN/.test(ngb), false);
   await ctx.close();
 
@@ -246,10 +309,11 @@ async function readyToBill(p) {
   await readyToBill(p);
   await p.evaluate(() => go('inv'));
   await p.waitForTimeout(400);
-  await p.click('button:has-text("Generate")');
+  await p.click('button:has-text("Create invoice")');
   await p.waitForTimeout(700);
-  check('an admin can still pick the customer', await p.locator('#invContact').count(), 1);
-  check('and the bill is made out', /SSR AGRPCOM/.test(await p.locator('#inv').textContent()), true);
+  check('an admin can still pick the customer', await p.locator('#inv #invCust').count(), 1);
+  check('and the bill is made out', await p.locator('#invCust').inputValue(), 'SSR AGRPCOM');
+  check('and can save it', await p.locator('button:has-text("Save invoice")').count(), 1);
   await ctx.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

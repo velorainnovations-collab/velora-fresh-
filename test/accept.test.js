@@ -63,7 +63,7 @@ async function device(b) {
      does not carry invoices between browsers, so it is set on each. */
   const bill = () => {
     const back = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-    DB.invoices[back] = { KLP: { no: 'W1', total: 0, roundOff: 0, lines: [
+    DB.invoices[back] = { KLP: { no: 'W1', saved: true, total: 0, roundOff: 0, lines: [
       { code: '1', name: 'Lemon', unit: 'kg', qty: 9, net: 9, rate: 100, amount: 900, sell: 130 },
     ] } };
     save(); render();

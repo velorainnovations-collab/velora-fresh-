@@ -63,10 +63,13 @@ const DB = {
   },
   invoices: {
     '2026-07-30': {
+      /* a draft has no number yet and must not be sent: bill_no is not
+         null in the schema, and a bill nobody has saved is not a bill */
+      NGB: { no: '', saved: false, total: 120, roundOff: 0, lines: [] },
       KLP: {
-        no: 'VF/KLP/072026/0001', total: 998.4, roundOff: 0.6,
+        no: 'VF/KLP/072026/0001', saved: true, total: 998.4, roundOff: 0.6,
         contactId: '33333333-0000-0000-0000-000000000001',
-        vehicle: 'TN 01 AB 1234', driver: 'Murugan',
+        vehicle: 'TN 01 AB 1234', driver: 'Murugan', place: 'Tamil Nadu',
         billTo: { name: 'SSR AGRPCOM', gstin: '33AABCU9603R1ZM',
                   address: 'No 4, Anna Salai\nChennai\nTamil Nadu - 600002' },
         lines: [{ code: '1', name: 'Lemon', unit: 'kg', qty: 12, net: 12,
@@ -112,6 +115,8 @@ check('shipment state',       F.shipments['2026-07-30|KLP'].state, 'received');
 check('order sent',           Object.keys(F.vendor_orders), ['2026-07-30|Nellai Traders']);
 
 check('invoice header',       F.invoices['2026-07-30|KLP'].bill_no, 'VF/KLP/072026/0001');
+check('a draft is held back',  F.invoices['2026-07-30|NGB'], undefined);
+check('place of supply sent',  F.invoices['2026-07-30|KLP'].place_of_supply, 'Tamil Nadu');
 check('invoice net amount',   F.invoices['2026-07-30|KLP'].net_amount, 999);
 check('invoice line frozen rate',   F.invoice_lines['2026-07-30|KLP|1'].rate, 83.2);
 check('invoice line frozen sell',   F.invoice_lines['2026-07-30|KLP|1'].sell, 129.792);

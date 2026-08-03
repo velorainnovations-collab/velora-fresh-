@@ -373,6 +373,16 @@ table.ibl tr:last-child td{border-bottom:none}
 /* the figure everybody looks for */
 table.ibl td.netlbl{font-weight:700}
 table.ibl td.netamt{font-weight:700;font-size:15px}
+/* Boxes typed straight onto the sheet. On screen they are faintly
+   marked so it is obvious they can be typed in; on paper the mark goes
+   and what is left is the line of text it always was. */
+.iedit{font:inherit;color:inherit;width:100%;box-sizing:border-box;
+  border:1px dashed #b9b3a8;background:#fffdf6;border-radius:3px;padding:1px 5px}
+.iedit::placeholder{color:#9a948a}
+.iedit.big{font-weight:700;font-size:13.5px;margin:1px 0 4px}
+.iedit.v{padding:0 4px}
+#inv.draft{outline:2px dashed var(--line);outline-offset:5px}
+.btaddr{margin-top:1px}
 .iwords{padding:7px 10px;font-size:12.5px}
 .ifoot{display:flex;align-items:stretch}
 .ifoot>div{flex:1 1 0;min-width:0;padding:9px 10px;font-size:12px;line-height:1.6}
@@ -515,6 +525,10 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   .iband>div,.ifoot>div{flex:1 1 0;width:auto}
   table.ibl{table-layout:fixed}
   #inv table td:first-child,#inv table th:first-child{position:static}
+  /* a box typed into prints as the words in it, not as a box */
+  .iedit{border:none;background:none;padding:0;-webkit-appearance:none;appearance:none}
+  .iedit::placeholder{color:transparent}
+  #inv.draft{outline:none}
   @page{size:A4;margin:12mm}
 }
 </style>
@@ -1189,6 +1203,10 @@ const VFSync = (function () {
       Object.keys(DB.invoices[date] || {}).forEach(shop => {
         const inv = DB.invoices[date][shop];
         if (!inv) return;
+        /* a draft is one desk's work in progress, not a bill. It has no
+           number yet, and bill_no is not null in the schema — so it
+           stays on the device that is writing it until it is saved. */
+        if (!inv.saved) return;
         const id = inv.id || uuidFor(date + '|' + shop);
         out.invoices[date + '|' + shop] = {
           id: id, bill_no: inv.no, trade_date: date, shop_id: shop,
@@ -1200,6 +1218,7 @@ const VFSync = (function () {
           contact_id: inv.contactId ? uuidFor(inv.contactId) : null,
           vehicle_no: inv.vehicle || '', driver_name: inv.driver || '',
           supply_date: inv.supplyDate || date,
+          place_of_supply: inv.place || '',
           bill_to_name: (inv.billTo || {}).name || '',
           bill_to_gstin: (inv.billTo || {}).gstin || '',
           bill_to_address: (inv.billTo || {}).address || '',
@@ -1975,6 +1994,7 @@ const VFSync = (function () {
                        contactId: v.contact_id || null,
                        vehicle: v.vehicle_no || '', driver: v.driver_name || '',
                        supplyDate: v.supply_date || v.trade_date,
+                       place: v.place_of_supply || '', saved: true,
                        billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
                                  address: v.bill_to_address || '' } };
     });
@@ -4665,7 +4685,8 @@ function myLastFor(shopId, code, beforeDate){
     const d = days[i];
 
     const inv = (DB.invoices[d] || {})[shopId];
-    const line = inv && (inv.lines || []).filter(l=>String(l.code) === String(code))[0];
+    const line = inv && inv.saved
+      && (inv.lines || []).filter(l=>String(l.code) === String(code))[0];
     if(line && Number(line.qty) > 0){
       return { date: d, qty: Number(line.qty), rate: Number(line.rate) || null, billed: true };
     }
@@ -5180,7 +5201,9 @@ function statusPill(s, late){
 }
 function shopStatus(shopId){
   const day = dayOf(DATE);
-  if(DB.invoices[DATE] && DB.invoices[DATE][shopId]) return 'billed';
+  /* a draft is not a bill: the day is not billed until it is saved */
+  const bill = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(bill && bill.saved) return 'billed';
   if(day.ship[shopId]==='received') return 'received';
   if(day.ship[shopId]==='out') return 'shipped';
   const ind = indentOf(DATE, shopId);
@@ -5631,22 +5654,78 @@ function reopenReceipt(shopId){ dayOf(DATE).ship[shopId] = 'out'; save(); render
    ADMIN — invoices
    ============================================================ */
 let INVSHOP = null;
+
+/* every bill that has been saved, newest first */
+function savedInvoices(){
+  const out = [];
+  Object.keys(DB.invoices || {}).forEach(d=>{
+    Object.keys(DB.invoices[d] || {}).forEach(sh=>{
+      const inv = DB.invoices[d][sh];
+      if(inv && inv.saved) out.push({date:d, shopId:sh, inv:inv});
+    });
+  });
+  out.sort((a,b)=> a.date === b.date ? a.shopId.localeCompare(b.shopId)
+                                     : (a.date < b.date ? 1 : -1));
+  return out;
+}
+
 function vInvoices(){
   if(INVSHOP) return vInvoiceOne(INVSHOP);
+  const canMake = (ROLE !== 'ho');
+
+  /* today's deliveries, and what has been billed against them */
   let rows='';
   SHOPS.forEach(s=>{
     const st = shopStatus(s.id);
     const inv = DB.invoices[DATE] && DB.invoices[DATE][s.id];
     let act='&mdash;';
-    if(inv) act = '<button class="btn sm" onclick="INVSHOP=\''+s.id+'\';render()">Open</button>';
-    else if(st==='received' && ROLE!=='ho') act = '<button class="btn sm pri" onclick="makeInvoice(\''+s.id+'\')">Generate</button>';
-    rows += '<tr><td>'+esc(s.name)+'</td><td class="mono">'+(inv?esc(inv.no):'&mdash;')+'</td>'
+    if(inv) act = '<button class="btn sm'+(inv.saved?'':' pri')+'" onclick="INVSHOP=\''+s.id+'\';render()">'
+                + (inv.saved ? 'Open' : 'Finish it') + '</button>';
+    else if(st==='received' && canMake)
+      act = '<button class="btn sm pri" onclick="makeInvoice(\''+s.id+'\')">Create invoice</button>';
+    rows += '<tr><td>'+esc(s.name)+'</td>'
+      + '<td class="mono">'+(inv && inv.no ? esc(inv.no)
+          : (inv ? '<span class="pill p-amber">Not saved</span>' : '&mdash;'))+'</td>'
       + '<td class="r mono">'+(inv?'&#8377;'+money(inv.total):'&mdash;')+'</td>'
       + '<td>'+statusPill(st)+'</td><td class="r">'+act+'</td></tr>';
   });
-  return '<h2>Invoices</h2><p class="sub">'+fmtDate(DATE)+'</p>'
-   + '<div class="card"><table><thead><tr><th>Shop</th><th>Bill no</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+
+  /* and the file of everything already raised */
+  const saved = savedInvoices();
+  let hist = '';
+  saved.slice(0, 60).forEach(b=>{
+    const sh = shopById(b.shopId);
+    hist += '<tr><td class="mono">'+esc(b.inv.no)+'</td>'
+      + '<td>'+fmtDate(b.date)+'</td>'
+      + '<td>'+esc(sh ? sh.name : b.shopId)
+        + (b.inv.billTo && b.inv.billTo.name
+            ? '<span class="tam">'+esc(b.inv.billTo.name)+'</span>' : '')+'</td>'
+      + '<td class="r mono">&#8377;'+money(Math.round(b.inv.total + (b.inv.roundOff||0)))+'</td>'
+      + '<td class="r"><button class="btn sm" onclick="openInvoice(\''+b.date+'\',\''+b.shopId+'\')">Open</button></td>'
+      + '</tr>';
+  });
+
+  return '<h2>Invoice</h2><p class="sub">'+fmtDate(DATE)+'</p>'
+   + '<div class="card"><h3>Create invoice</h3><div class="twrap"><table><thead><tr>'
+   + '<th>Shop</th><th>Bill no</th><th class="r">Amount</th><th>Status</th><th></th>'
+   + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+   + '<div class="card"><h3>Saved invoices</h3><div class="twrap"><table><thead><tr>'
+   + '<th>Bill no</th><th>Date</th><th>Shop</th><th class="r">Net amount</th><th></th>'
+   + '</tr></thead><tbody>'
+   + (hist || '<tr><td colspan="5"><div class="empty">Nothing saved yet. '
+       + 'A bill appears here once it has been saved.</div></td></tr>')
+   + '</tbody></table></div>'
+   + (saved.length > 60 ? '<p class="hintline" style="padding:10px 16px;margin:0;font-size:12.5px;'
+       + 'color:var(--ink-3)">Showing the 60 most recent of '+saved.length+'.</p>' : '')
+   + '</div>';
 }
+
+/* opening one from the file moves the whole app to its day, or the
+   screen would show a bill from July beside today's rates */
+function openInvoice(date, shopId){
+  DATE = date; INVSHOP = shopId; writeHash(); render();
+}
+
 function makeInvoice(shopId){
   const day = dayOf(DATE);
   const packed = day.packed[shopId] || {};
@@ -5671,50 +5750,123 @@ function makeInvoice(shopId){
     return;
   }
   const total = lines.reduce((s,l)=>s+l.amount,0);
-  const s = shopById(shopId);
-  const mk = DATE.slice(5,7)+DATE.slice(0,4);
-  const key = shopId+'-'+mk;
-  DB.serial[key] = (DB.serial[key]||0)+1;
-  const no = s.prefix+'/'+mk+'/'+String(DB.serial[key]).padStart(4,'0');
   DB.invoices[DATE] = DB.invoices[DATE] || {};
-  const inv = {no, date:DATE, shopId, lines, total, roundOff: Math.round(total)-total,
-               contactId:'', vehicle:'', driver:'', supplyDate:DATE,
+  /* A draft. It carries no bill number: the number is issued when the
+     bill is saved, so a draft that is thought better of and thrown away
+     does not leave a hole in the run of numbers. */
+  const inv = {no:'', saved:false, date:DATE, shopId, lines, total,
+               roundOff: Math.round(total)-total,
+               contactId:'', vehicle:'', driver:'', place:'', supplyDate:DATE,
                billTo:{name:'',gstin:'',address:''}};
   /* the contact this shop's bills are made out to, if there is one.
      Nothing is guessed: with two contacts and neither tied to the shop,
-     it is left empty and asked for on the invoice. */
+     it is left empty and asked for on the bill itself. */
   setInvoiceContact(inv, contactForShop(shopId));
   DB.invoices[DATE][shopId] = inv;
   save(); INVSHOP = shopId; render();
 }
 
-/* The invoice keeps its own copy of the three things it prints. A
-   contact that moves premises in October must not quietly reprint July's
-   bill with the new address, for the same reason a line keeps the rate
-   it was billed at. Re-picking the customer takes a fresh copy. */
+/* Saving is what issues the number, and the only thing that makes a
+   draft a bill. Everything downstream — the day board, the accounts,
+   what the shop sees — counts saved invoices and ignores drafts. */
+function saveInvoice(shopId){
+  if(ROLE === 'ho'){ alert('Head office reads bills; it does not raise them.'); return; }
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv || inv.saved) return;
+  /* A bill with nobody to bill is almost always a slip, but not always:
+     a shop that has no contact on the master yet still has to be
+     invoiced, and the sheet falls back to its own name. So it asks
+     rather than refuses. */
+  if(!(inv.billTo && inv.billTo.name)){
+    const sh = shopById(shopId);
+    if(!confirm('No customer chosen.\n\nThe bill will be made out to ' + CLIENT + ' — '
+        + (sh ? sh.name : shopId) + ' branch, with no GST number and no address.\n\n'
+        + 'To make it out properly, type a name into the Bill To box on the sheet and pick one '
+        + 'from the list.\n\nSave it as it is?')) return;
+  }
+  const s = shopById(shopId);
+  const mk = inv.date.slice(5,7)+inv.date.slice(0,4);
+  const key = shopId+'-'+mk;
+  DB.serial[key] = (DB.serial[key]||0)+1;
+  inv.no = s.prefix+'/'+mk+'/'+String(DB.serial[key]).padStart(4,'0');
+  inv.saved = true;
+  save(); render();
+}
+
+/* Back to a draft, keeping its number: the bill already went out under
+   it, and a second bill under the same number is worse than a corrected
+   one. */
+function editInvoice(shopId){
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv) return;
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may change a bill.'); return; }
+  if(!confirm('Open bill ' + inv.no + ' for changes?\n\nIt keeps its number. Until it is saved '
+      + 'again it does not count towards the accounts, and the shop does not see it.')) return;
+  inv.saved = false;
+  save(); render();
+}
+
+function deleteInvoice(shopId){
+  const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
+  if(!inv) return;
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may delete a bill.'); return; }
+  if(!confirm('Delete ' + (inv.no || 'this draft') + '?\n\n'
+      + (inv.no ? 'The number is not given out again — there will be a gap in the run, which is '
+                + 'what a cancelled bill looks like.\n\n' : '')
+      + 'The delivery it was raised from is untouched, so it can be raised again.')) return;
+  delete DB.invoices[DATE][shopId];
+  INVSHOP = null;
+  save(); render();
+}
+
+/* The invoice keeps its own copy of what it prints. A contact that
+   moves premises in October must not quietly reprint July's bill with
+   the new address, for the same reason a line keeps the rate it was
+   billed at. Re-picking the customer takes a fresh copy. */
 function setInvoiceContact(inv, id){
   const c = id ? DB.contacts[id] : null;
   inv.contactId = c ? id : '';
   inv.billTo = c
-    ? { name: c.company || '', gstin: c.gstin || '', address: contactAddress(c) }
-    : { name: '', gstin: '', address: '' };
+    ? { name: c.company || '', gstin: c.gstin || '', address: contactAddress(c),
+        state: c.state || '', pincode: c.pincode || '' }
+    : { name: '', gstin: '', address: '', state: '', pincode: '' };
+  /* the place of supply is the customer's state unless somebody has
+     already typed something else in */
+  if(c && !inv.place) inv.place = c.state || '';
   return inv;
 }
-function setInvContact(shopId, id){
+
+/* What the Bill To box does when it is left. An exact company name wins;
+   failing that, one contact whose name contains what was typed — so
+   "SSR" or "Kalpa" is enough. Anything else is kept as typed, because a
+   customer that is not on the master yet is still a customer. */
+function pickInvContact(shopId, text){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
-  if(!inv) return;
-  setInvoiceContact(inv, id);
-  save(); render();
+  if(!inv || inv.saved) return;
+  const q = String(text||'').trim();
+  const ids = contactList();
+  let hit = ids.filter(id => (DB.contacts[id].company||'').toLowerCase() === q.toLowerCase());
+  if(!hit.length && q){
+    hit = ids.filter(id => (DB.contacts[id].company||'').toLowerCase().indexOf(q.toLowerCase()) > -1);
+  }
+  if(hit.length === 1){ setInvoiceContact(inv, hit[0]); save(); render(); return; }
+  /* nothing matched, or too many did: keep the words, drop the link */
+  inv.contactId = '';
+  inv.billTo = Object.assign({}, inv.billTo || {}, {name: q});
+  save();
+  if(!q) render();
 }
+
 function setInvField(shopId, key, val, redraw){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
-  if(!inv) return;
+  if(!inv || inv.saved) return;
   inv[key] = val;
   save();
-  /* the vehicle and the driver are read straight off the box as it is
-     typed; a date is picked, and wants to be seen on the bill at once */
+  /* the boxes on the sheet show what they hold, so nothing has to be
+     redrawn for the change to be visible */
   if(redraw) render();
 }
+
 function vInvoiceOne(shopId){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
   if(!inv){ INVSHOP=null; return vInvoices(); }
@@ -5739,20 +5891,44 @@ function vInvoiceOne(shopId){
 
   /* Billing address, and only that. It is the delivery address too, so
      there is no shipped-to half to fill in and nothing to reconcile.
-     Falls back to the shop's own name until a contact is picked, so a
-     bill is never blank at the top. */
+     While the bill is a draft the name is a box you type into rather
+     than a line of text: the sheet itself is the form. */
   const bt = inv.billTo || {};
+  const live = !inv.saved && (ROLE === 'owner' || ROLE === 'admin');
+  const sj = shopId.replace(/'/g,"\\'");
+
+  let custList = '';
+  contactList().forEach(id=>{
+    custList += '<option value="'+esc(DB.contacts[id].company||'')+'"></option>';
+  });
+
   const billTo = '<div class="cap">Bill To</div>'
-    + '<strong>'+esc(bt.name || CLIENT)+'</strong>'
-    + (bt.address ? '<br>'+esc(bt.address).replace(/\n/g,'<br>')
-                  : '<br>'+esc(s.name)+' branch')
-    + (bt.gstin ? '<br>GSTIN : <span class="mono">'+esc(bt.gstin)+'</span>' : '');
+    + (live
+        ? '<input class="iedit big" id="invCust" list="invCustList" autocomplete="off" '
+          + 'placeholder="Search customer…" value="'+esc(bt.name||'')+'" '
+          + 'onchange="pickInvContact(\''+sj+'\',this.value)">'
+          + '<datalist id="invCustList">'+custList+'</datalist>'
+        : '<strong>'+esc(bt.name || CLIENT)+'</strong>')
+    + (bt.address ? '<div class="btaddr">'+esc(bt.address).replace(/\n/g,'<br>')+'</div>'
+                  : (live ? '' : '<div class="btaddr">'+esc(s.name)+' branch</div>'))
+    + (bt.gstin ? '<div>GSTIN : <span class="mono">'+esc(bt.gstin)+'</span></div>' : '');
 
   /* Every line is printed whether or not it has been filled in. A bill
      with no row for the vehicle is a different form from the one beside
      it in the file; a blank one is the same form, waiting. */
   const hd = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
     + '<span class="v mono">'+(val ? esc(val) : '&nbsp;')+'</span></div>';
+  /* the three the desk fills in, typed straight onto the sheet. oninput,
+     not onchange: what is typed is on the bill as it is typed, and there
+     is nothing to redraw because the box is what prints. */
+  const he = (lbl, key, val, ph) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + (live
+        ? '<input class="iedit v mono" id="inv'+key+'" autocomplete="off" '
+          + 'placeholder="'+esc(ph||'')+'" value="'+esc(val||'')+'" '
+          + 'oninput="setInvField(\''+sj+'\',\''+key+'\',this.value)">'
+        : '<span class="v mono">'+(val ? esc(val) : '&nbsp;')+'</span>')
+    + '</div>';
+
   /* the company's own bank, printed for payment. Blank until it is
      filled in under COMPANY, and marked as blank rather than left out —
      a missing line reads as an oversight, a placeholder reads as a to do */
@@ -5760,12 +5936,27 @@ function vInvoiceOne(shopId){
   const bk = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
     + '<span class="v'+(val?' mono':'')+'">'+(val ? esc(val) : 'Xxxx')+'</span></div>';
 
-  return '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
-   + '<span class="spacer"></span>'
-   + '<button class="btn sm" onclick="waInvoice(\''+shopId+'\')">Send on WhatsApp</button>'
-   + '<button class="btn sm pri" onclick="window.print()">Print</button></div>'
-   + invBillToPanel(shopId, inv)
-   + '<div id="inv">'
+  const canEdit = (ROLE === 'owner' || ROLE === 'admin');
+  let bar = '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
+   + '<span class="spacer"></span>';
+  if(inv.saved){
+    bar += '<button class="btn sm" onclick="waInvoice(\''+sj+'\')">Send on WhatsApp</button>'
+        + (canEdit ? '<button class="btn sm" onclick="editInvoice(\''+sj+'\')">Edit</button>'
+                   + '<button class="btn sm danger" onclick="deleteInvoice(\''+sj+'\')">Delete</button>' : '')
+        + '<button class="btn sm pri" onclick="window.print()">Print / PDF</button>';
+  }else{
+    bar += (canEdit ? '<button class="btn sm danger" onclick="deleteInvoice(\''+sj+'\')">Discard</button>' : '')
+        + '<button class="btn sm pri" onclick="saveInvoice(\''+sj+'\')">Save invoice</button>';
+  }
+  bar += '</div>';
+
+  const note = inv.saved ? ''
+    : '<div class="note noprint">Not saved yet. Fill in the boxes on the bill &mdash; the customer, '
+      + 'the vehicle, the driver and the place of supply &mdash; then press <strong>Save invoice</strong>. '
+      + 'The bill number is issued then, so a draft thrown away leaves no gap in the numbering.</div>';
+
+  return bar + note
+   + '<div id="inv"'+(inv.saved?'':' class="draft"')+'>'
 
    + '<div class="ihead"><div class="cn">'+esc(COMPANY.name)+'</div>'
    + '<div class="le">'+[COMPANY.city, COMPANY.phone && 'Mobile '+COMPANY.phone,
@@ -5774,15 +5965,17 @@ function vInvoiceOne(shopId){
 
    + '<div class="ititle">INVOICE</div>'
 
-   /* the two the desk never types: both are issued when the bill is made */
+   /* the two the desk never types: the number is issued on saving and
+      the date is the trading day the goods went out on */
    + '<div class="ibox imeta">'
-   + hd('Bill No.', inv.no) + hd('Date', fmtDate(inv.date))
+   + hd('Bill No.', inv.no || (live ? 'On saving' : '')) + hd('Date', fmtDate(inv.date))
    + '</div>'
 
    + '<div class="ibox iband"><div class="lft">'+billTo+'</div>'
    + '<div class="rgt">'
-   + hd('Vehicle Number', inv.vehicle) + hd('Driver Name', inv.driver)
-   + hd('Date of Supply', fmtDate(inv.supplyDate || inv.date))
+   + he('Vehicle Number', 'vehicle', inv.vehicle, 'TN 00 AA 0000')
+   + he('Driver Name', 'driver', inv.driver, '')
+   + he('Place of Supply', 'place', inv.place, '')
    + '</div></div>'
 
    + '<table class="ibl"><thead><tr><th class="c" style="width:48px">S.No.</th>'
@@ -5812,45 +6005,6 @@ function vInvoiceOne(shopId){
    + '</div>';
 }
 
-/* The part of the bill that is chosen rather than calculated: which
-   customer it is made out to, and what it went out on. Never printed —
-   what it sets appears on the invoice below it. */
-function invBillToPanel(shopId, inv){
-  if(ROLE !== 'owner' && ROLE !== 'admin') return '';
-  const ids = contactList();
-  let opts = '<option value="">— not chosen —</option>';
-  ids.forEach(id=> opts += '<option value="'+esc(id)+'"'
-    + (inv.contactId===id?' selected':'')+'>'+esc(DB.contacts[id].company||id)+'</option>');
-  /* a contact removed from the list but still named on this bill stays
-     on the dropdown, or picking it up again would be impossible */
-  if(inv.contactId && ids.indexOf(inv.contactId) < 0 && DB.contacts[inv.contactId]){
-    opts += '<option value="'+esc(inv.contactId)+'" selected>'
-          + esc(DB.contacts[inv.contactId].company||inv.contactId)+' (removed)</option>';
-  }
-  const sj = shopId.replace(/'/g,"\\'");
-  return '<div class="card noprint"><h3>Bill to</h3><div style="padding:15px 16px">'
-   + '<div class="addform">'
-   + '<div><label>Customer</label><select id="invContact" '
-   + 'onchange="setInvContact(\''+sj+'\',this.value)">'+opts+'</select></div>'
-   + '<div><label>Vehicle number</label><input type="text" id="invVehicle" '
-   + 'value="'+esc(inv.vehicle||'')+'" '
-   + 'onchange="setInvField(\''+sj+'\',\'vehicle\',this.value)"></div>'
-   + '<div><label>Driver name</label><input type="text" id="invDriver" '
-   + 'value="'+esc(inv.driver||'')+'" '
-   + 'onchange="setInvField(\''+sj+'\',\'driver\',this.value)"></div>'
-   /* the day the goods actually went, which is the invoice date until
-      somebody says otherwise */
-   + '<div><label>Date of supply</label><input type="date" id="invSupply" '
-   + 'value="'+esc(inv.supplyDate||inv.date)+'" '
-   + 'onchange="setInvField(\''+sj+'\',\'supplyDate\',this.value||\''+esc(inv.date)+'\',true)"></div>'
-   + '<p class="hintline" style="grid-column:1/-1;margin:0;font-size:12.5px;color:var(--ink-3)">'
-   + (ids.length
-       ? 'Picking a customer fills in the company name, GST number and billing address below. '
-         + 'The bill keeps its own copy of them, so changing the contact later never rewrites '
-         + 'a bill already raised.'
-       : 'No contacts on file yet. Add one under Master &rarr; Contact and it can be picked here.')
-   + '</p></div></div></div>';
-}
 function invoiceText(inv, shop){
   let t = 'Velora Fresh\n'
         + 'Invoice ' + inv.no + '\n'
@@ -6209,7 +6363,8 @@ function allBills(){
   Object.keys(DB.invoices).sort().forEach(d=>{
     SHOPS.forEach(s=>{
       const inv = DB.invoices[d][s.id];
-      if(inv) out.push({date:d, shopId:s.id, no:inv.no, amount:Math.round(inv.total), lines:inv.lines.length});
+      if(inv && inv.saved) out.push({date:d, shopId:s.id, no:inv.no,
+                                     amount:Math.round(inv.total), lines:inv.lines.length});
     });
   });
   return out;

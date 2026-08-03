@@ -127,6 +127,10 @@ const VFSync = (function () {
       Object.keys(DB.invoices[date] || {}).forEach(shop => {
         const inv = DB.invoices[date][shop];
         if (!inv) return;
+        /* a draft is one desk's work in progress, not a bill. It has no
+           number yet, and bill_no is not null in the schema — so it
+           stays on the device that is writing it until it is saved. */
+        if (!inv.saved) return;
         const id = inv.id || uuidFor(date + '|' + shop);
         out.invoices[date + '|' + shop] = {
           id: id, bill_no: inv.no, trade_date: date, shop_id: shop,
@@ -138,6 +142,7 @@ const VFSync = (function () {
           contact_id: inv.contactId ? uuidFor(inv.contactId) : null,
           vehicle_no: inv.vehicle || '', driver_name: inv.driver || '',
           supply_date: inv.supplyDate || date,
+          place_of_supply: inv.place || '',
           bill_to_name: (inv.billTo || {}).name || '',
           bill_to_gstin: (inv.billTo || {}).gstin || '',
           bill_to_address: (inv.billTo || {}).address || '',
@@ -913,6 +918,7 @@ const VFSync = (function () {
                        contactId: v.contact_id || null,
                        vehicle: v.vehicle_no || '', driver: v.driver_name || '',
                        supplyDate: v.supply_date || v.trade_date,
+                       place: v.place_of_supply || '', saved: true,
                        billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
                                  address: v.bill_to_address || '' } };
     });

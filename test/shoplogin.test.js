@@ -152,7 +152,7 @@ async function tryShop(p, name, phone, pw) {
   await p.evaluate(() => {
     const back = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     /* billed yesterday: the bill knows both the quantity and the rate */
-    DB.invoices[back(1)] = { KLP: { no: 'X1', total: 0, roundOff: 0, lines: [
+    DB.invoices[back(1)] = { KLP: { no: 'X1', saved: true, total: 0, roundOff: 0, lines: [
       { code: '1', name: 'Lemon', unit: 'kg', qty: 25, net: 25, rate: 100, amount: 2500, sell: 130 },
       { code: '11', name: 'Cauliflower', unit: 'piece', qty: 10, net: 10, rate: 18, amount: 180, sell: 24 },
     ] } };

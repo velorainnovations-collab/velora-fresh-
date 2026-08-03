@@ -193,6 +193,8 @@ function problemsIn(r) {
             DB.days[DATE].ship.KLP = 'received';
             go('inv'); makeInvoice('KLP');
           });
+          await state('inv / the bill saved', () => { saveInvoice('KLP'); });
+          await state('inv / the saved list', () => { INVSHOP = null; render(); });
           await state('products / new group panel',
                       () => { PRODOPEN = null; INVSHOP = null; go('products'); gPanel('new'); });
           await state('products / rename group panel', () => gPanel('rename'));

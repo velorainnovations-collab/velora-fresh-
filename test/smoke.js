@@ -78,6 +78,12 @@ console.log('\ninvoice');
 w.go('inv'); w.makeInvoice('KLP');
 const inv = w.VF.DB.invoices[w.VF.DATE]['KLP'];
 check('lines on the bill', inv.lines.length, 3);
+// a draft until it is saved: no number, and nothing downstream counts it
+check('a draft has no bill number', inv.no, '');
+check('and the day is not billed yet', w.shopStatus('KLP'), 'received');
+w.saveInvoice('KLP');
+check('saving issues the number', /^VF\/KLP\//.test(inv.no), true);
+check('and the day is billed', w.shopStatus('KLP'), 'billed');
 check('vendor-skipped line excluded', inv.lines.filter(l => l.code === '280').length, 0);
 check('lemon amount', inv.lines[0].amount.toFixed(2), '998.40');
 check('lemon selling price', inv.lines[0].sell.toFixed(2), '129.79');
@@ -106,7 +112,7 @@ console.log('\npermissions');
 w.setRole('ho'); w.go('acct');
 check('head office cannot record payments', /Record a payment/.test(d.getElementById('main').innerHTML), 'false');
 w.go('inv');
-check('head office cannot generate bills', /Generate/.test(d.getElementById('main').innerHTML), 'false');
+check('head office cannot generate bills', /Create invoice/.test(d.getElementById('main').innerHTML), 'false');
 w.setRole('KLP'); w.go('mybills');
 check('shop sees its outstanding', /Outstanding/.test(d.getElementById('main').innerHTML), 'true');
 

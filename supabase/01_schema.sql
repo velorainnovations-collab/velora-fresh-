@@ -326,3 +326,4 @@ alter table invoices add column if not exists bill_to_address text not null defa
 -- the day the goods went, which is the invoice date unless the desk says
 -- otherwise. Nullable rather than defaulted: null means nobody has said.
 alter table invoices add column if not exists supply_date     date;
+alter table invoices add column if not exists place_of_supply text not null default '';
