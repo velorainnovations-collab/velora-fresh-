@@ -5733,7 +5733,7 @@ function invBillToPanel(shopId, inv){
    + '<div><label>Customer</label><select id="invContact" '
    + 'onchange="setInvContact(\''+sj+'\',this.value)">'+opts+'</select></div>'
    + '<div><label>Vehicle number</label><input type="text" id="invVehicle" '
-   + 'value="'+esc(inv.vehicle||'')+'" placeholder="TN 01 AB 1234" '
+   + 'value="'+esc(inv.vehicle||'')+'" '
    + 'onchange="setInvField(\''+sj+'\',\'vehicle\',this.value)"></div>'
    + '<div><label>Driver name</label><input type="text" id="invDriver" '
    + 'value="'+esc(inv.driver||'')+'" '
@@ -6339,10 +6339,10 @@ function vContactOne(id){
    + 'should print.</p>'
 
    + '<div class="card"><h3>Basic details</h3><div style="padding:15px 16px"><div class="addform">'
-   + f('Company name','company',c.company,'SSR AGRPCOM')
+   + f('Company name','company',c.company)
    + f('Contact person','person',c.person,'','opt')
-   + f('GST number','gstin',c.gstin,'33AABCU9603R1ZM')
-   + f('Mobile number','mobile',c.mobile,'9342011780')
+   + f('GST number','gstin',c.gstin)
+   + f('Mobile number','mobile',c.mobile)
    + f('Email','email',c.email,'','opt')
    + '<div><label>Bills for <span class="hint">optional</span></label>'
    + '<select id="ct_shopId">'+sopts+'</select></div>'
@@ -6352,8 +6352,8 @@ function vContactOne(id){
    + f('Address line 1','addr1',c.addr1)
    + f('Address line 2','addr2',c.addr2)
    + f('Address line 3','addr3',c.addr3)
-   + f('State','state',c.state,'Tamil Nadu')
-   + f('Pincode','pincode',c.pincode,'600010')
+   + f('State','state',c.state)
+   + f('Pincode','pincode',c.pincode)
    + '<p class="hintline" style="grid-column:1/-1;margin:0;font-size:12.5px;color:var(--ink-3)">'
    + 'This is the delivery address too. There is no separate shipping address &mdash; the goods '
    + 'go where the bill goes.</p>'
