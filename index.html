@@ -366,6 +366,10 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
 .iband>div{flex:1 1 0;min-width:0;padding:7px 10px;font-size:12.5px;line-height:1.55}
 .iband .lft{border-right:1px solid #1a1a1a;word-break:break-word}
 .iband .k{width:104px}
+/* Vehicle, driver and place were stacked one straight under the next
+   with nothing between them, and three underlined boxes that close
+   together read as one block rather than three lines. */
+.iband .ipair + .ipair{margin-top:7px}
 .cap{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#444;
   font-weight:700;margin-bottom:4px}
 /* fixed layout, or a long product name drags the money columns out of
@@ -389,7 +393,7 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
    line of text it always was. */
 .iedit{font:inherit;color:inherit;width:100%;box-sizing:border-box;
   border:none;border-bottom:1px dashed #b9b3a8;border-radius:0;
-  background:#fffdf6;padding:1px 0}
+  background:#fffdf6;padding:2px 0}
 .iedit:focus{outline:none;border-bottom-color:var(--brand);background:#fff}
 .iedit::placeholder{color:#a8a299}
 .iedit.big{font-weight:700;font-size:13.5px;margin:0 0 3px}
@@ -567,7 +571,7 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   <!-- which build is on the screen. Changes whenever the app does, so
        "did the change reach me?" is answered by looking rather than by
        guessing at a cache. -->
-  <span id="buildId" class="mono" title="Build">fee59cd</span>
+  <span id="buildId" class="mono" title="Build">ebeb2de</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
