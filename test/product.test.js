@@ -10,7 +10,7 @@
  * silently vanish.
  */
 const { chromium } = require('playwright');
-const { received } = require('./mock-supabase.js');
+const { received, opts } = require('./mock-supabase.js');
 
 let pass = 0, fail = 0;
 function check(label, got, want) {
@@ -108,6 +108,123 @@ async function signIn(b, email) {
   check('kept its vendor group', await p.evaluate(() => CODE2GROUP['900']), 'Ooty');
   check('listed on the screen',
     /Cauliflower/.test(await p.locator('#main').textContent()), true);
+  await ctx.close();
+
+  /* The whole point of the panel: a vendor group can be made and
+     renamed without leaving the product half typed above it. */
+  console.log('\na vendor group, made from the product screen');
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  let said = '';
+  p.on('dialog', async d => { said = d.message(); await d.accept(); });
+  await p.evaluate(() => go('products'));
+  await p.waitForTimeout(500);
+  check('both buttons are there', await p.locator('.gtools button').count(), 2);
+  check('panel starts closed', await p.locator('#gNew').isVisible(), false);
+
+  // half a product typed, then the detour
+  await p.fill('#npCode', '901');
+  await p.fill('#npPName', 'Carrot Ooty');
+  await p.fill('#npTamil', 'கேரட்');
+  await p.click('.gtools button:has-text("+ New group")');
+  await p.waitForTimeout(200);
+  check('panel opens', await p.locator('#gNew').isVisible(), true);
+  check('the product is still typed in', await p.locator('#npCode').inputValue(), '901');
+
+  received.length = 0;
+  await p.fill('#gnName', 'Nilgiris');
+  await p.fill('#gnVendor', 'Nilgiris Farms');
+  await p.fill('#gnPhone', '919000099999');
+  await p.click('#gNew button:has-text("Create group")');
+  await p.waitForTimeout(900);
+  const madeG = received.find(r => r.table.startsWith('vendor_groups'));
+  const madeV = received.find(r => r.table.startsWith('vendors'));
+  check('group written', madeG && madeG.rows[0].name, 'Nilgiris');
+  check('vendor written', madeV && madeV.rows[0].name, 'Nilgiris Farms');
+  check('offered in the dropdown',
+    await p.evaluate(() => GROUPNAMES.indexOf('Nilgiris') > -1), true);
+  check('and already chosen', await p.locator('#npGroup').inputValue(), 'Nilgiris');
+  check('the half typed product came back', await p.locator('#npPName').inputValue(), 'Carrot Ooty');
+  check('Tamil name too', await p.locator('#npTamil').inputValue(), 'கேரட்');
+  check('panel closed again', await p.locator('#gNew').isVisible(), false);
+
+  // and the product it was made for files under it
+  await p.click('button:has-text("Add product")');
+  await p.waitForTimeout(800);
+  check('product filed under the new group',
+    await p.evaluate(() => CODE2GROUP['901']), 'Nilgiris');
+
+  console.log('\nrenaming one from the same screen');
+  await p.selectOption('#npGroup', 'Nilgiris');
+  await p.click('.gtools button:has-text("Rename")');
+  await p.waitForTimeout(200);
+  check('rename panel opens', await p.locator('#gRen').isVisible(), true);
+  check('shows which group', await p.locator('#gRenOld').textContent(), 'Nilgiris');
+  check('starts from the old name', await p.locator('#grName').inputValue(), 'Nilgiris');
+
+  // a name already in use is refused, and nothing moves
+  said = '';
+  await p.fill('#grName', 'Ooty');
+  await p.click('#gRen button:has-text("Rename group")');
+  await p.waitForTimeout(500);
+  check('duplicate name refused', /already a vendor group/.test(said), true);
+  check('nothing moved', await p.evaluate(() => CODE2GROUP['901']), 'Nilgiris');
+
+  received.length = 0;
+  await p.click('.gtools button:has-text("Rename")');
+  await p.waitForTimeout(200);
+  await p.fill('#grName', 'Nilgiri Hills');
+  await p.click('#gRen button:has-text("Rename group")');
+  await p.waitForTimeout(900);
+  check('old name gone', await p.evaluate(() => GROUPNAMES.indexOf('Nilgiris')), -1);
+  check('new name there', await p.evaluate(() => GROUPNAMES.indexOf('Nilgiri Hills') > -1), true);
+  check('the products came with it', await p.evaluate(() => CODE2GROUP['901']), 'Nilgiri Hills');
+  check('the vendor came with it',
+    await p.evaluate(() => !!DB.vendors['Nilgiri Hills'] && !DB.vendors['Nilgiris']), true);
+  check('renamed group is the one selected', await p.locator('#npGroup').inputValue(), 'Nilgiri Hills');
+
+  // Manual order is where a product waits for a vendor, not a vendor
+  said = '';
+  await p.selectOption('#npGroup', 'Manual order');
+  await p.click('.gtools button:has-text("Rename")');
+  await p.waitForTimeout(200);
+  await p.fill('#grName', 'Odds and ends');
+  await p.click('#gRen button:has-text("Rename group")');
+  await p.waitForTimeout(500);
+  check('Manual order keeps its name', /is not a vendor/.test(said), true);
+  check('still called Manual order',
+    await p.evaluate(() => GROUPNAMES.indexOf('Manual order') > -1), true);
+  await ctx.close();
+
+  console.log('\nafter a reload, the old name is not still hanging about');
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  await p.evaluate(() => go('products'));
+  await p.waitForTimeout(800);
+  check('renamed group survived', await p.evaluate(() => GROUPNAMES.indexOf('Nilgiri Hills') > -1), true);
+  check('old name did not come back', await p.evaluate(() => GROUPNAMES.indexOf('Nilgiris')), -1);
+  check('product still under it', await p.evaluate(() => CODE2GROUP['901']), 'Nilgiri Hills');
+  check('not offered in the dropdown either',
+    /Nilgiris</.test(await p.locator('#npGroup').innerHTML()), false);
+  await ctx.close();
+
+  /* A project that has not been given rename_group yet must say so
+     rather than renaming here and disagreeing with the server. */
+  console.log('\na database without the function says what to run');
+  opts.noRenameFn = true;
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  said = '';
+  p.on('dialog', async d => { said = d.message(); await d.accept(); });
+  await p.evaluate(() => go('products'));
+  await p.waitForTimeout(600);
+  await p.selectOption('#npGroup', 'Nilgiri Hills');
+  await p.click('.gtools button:has-text("Rename")');
+  await p.waitForTimeout(200);
+  await p.fill('#grName', 'Blue Mountain');
+  await p.click('#gRen button:has-text("Rename group")');
+  await p.waitForTimeout(700);
+  check('names the file to run', /02_security\.sql/.test(said), true);
+  check('nothing renamed here either',
+    await p.evaluate(() => GROUPNAMES.indexOf('Nilgiri Hills') > -1), true);
+  opts.noRenameFn = false;
   await ctx.close();
 
   console.log('\nthe client side cannot add products');

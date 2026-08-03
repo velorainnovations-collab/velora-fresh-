@@ -296,6 +296,16 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
 .addform .chk{display:flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;white-space:nowrap}
 .addform .chk input{width:auto}
 .addform .pair{display:flex;gap:6px}
+/* making or renaming a vendor group without leaving the product being
+   added: the panel opens in place, under the box it belongs to */
+.gtools{display:flex;gap:8px;margin-top:7px}
+.gpanel{grid-column:1/-1;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface-2);padding:12px 13px}
+.gpanel h4{margin:0 0 10px;font-size:12.5px;font-weight:650;color:var(--ink-2)}
+.gpanel .row{display:grid;gap:11px 12px;align-items:end;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.gpanel .go{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.gpanel .hintline{font-size:12.5px;color:var(--ink-3);margin:0;flex:1 1 220px}
 
 /* the day's likely cost, read before pressing send */
 .estbar{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px;
@@ -428,6 +438,10 @@ table.ibl tbody tr:hover td{background:none}
   .addform .act{flex-direction:column;align-items:stretch;gap:10px}
   .addform .act .btn{width:100%}
   .addform .act .hintline{flex:1 1 auto}
+  /* same on the group panel, and its two small buttons share a line */
+  .gpanel .go{flex-direction:column;align-items:stretch}
+  .gpanel .go .btn{width:100%}
+  .gtools .btn{flex:1 1 0}
 
   #inv{padding:16px 14px}
   .iband{flex-direction:column}
@@ -2246,6 +2260,68 @@ const VFSync = (function () {
     return true;
   }
 
+  /* Renaming a group. One call: the database moves the products, the
+     vendor, the bank details and every order ever placed on that name
+     in a single transaction — see rename_group in 02_security.sql for
+     why it cannot be a plain PATCH.
+
+     A project that has not been given the function yet is told plainly
+     rather than renamed here and left disagreeing with the server. */
+  async function renameGroup(oldName, newName) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/rpc/rename_group', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ p_old: oldName, p_new: newName }),
+    });
+    if (r.status === 401 && await refresh()) return renameGroup(oldName, newName);
+    if (!r.ok) {
+      const e = await httpError(r, 'rename_group');
+      if (isMissingFunction(e)) {
+        const m = new Error('This database has not been given rename_group yet. '
+          + 'Open Supabase → SQL editor and run supabase/02_security.sql, then try again.');
+        m.needsSql = true;
+        throw m;
+      }
+      throw e;
+    }
+    /* Carry the baseline over to the new name. Without this the next
+       push reads the old name as work that has been deleted and the new
+       name as work that is new, and sends both for nothing. */
+    if (synced) {
+      const moveKey = (tbl, from, to) => {
+        const t = synced[tbl]; if (!t || !(from in t)) return;
+        t[to] = t[from]; delete t[from];
+      };
+      moveKey('vendors', oldName, newName);
+      if (synced.vendors && synced.vendors[newName]) synced.vendors[newName].group_name = newName;
+      moveKey('vendor_bank', oldName, newName);
+      if (synced.vendor_bank && synced.vendor_bank[newName]) synced.vendor_bank[newName].group_name = newName;
+      Object.keys(synced.vendor_orders || {}).forEach(k => {
+        if (synced.vendor_orders[k].group_name !== oldName) return;
+        const nk = k.slice(0, k.indexOf('|') + 1) + newName;
+        synced.vendor_orders[nk] = synced.vendor_orders[k];
+        synced.vendor_orders[nk].group_name = newName;
+        if (nk !== k) delete synced.vendor_orders[k];
+      });
+      /* keyed by date and product, so only the name inside the row moves */
+      Object.keys(synced.vendor_order_lines || {}).forEach(k => {
+        if (synced.vendor_order_lines[k].group_name === oldName)
+          synced.vendor_order_lines[k].group_name = newName;
+      });
+      writeJSON(SKEY, synced);
+    }
+    /* anything still waiting to be sent goes under the new name too */
+    let touched = false;
+    queue.forEach(o => {
+      if (o.row && o.row.group_name === oldName) { o.row.group_name = newName; touched = true; }
+      if ((o.table === 'vendors' || o.table === 'vendor_bank') && o.key === oldName) {
+        o.key = newName; touched = true;
+      }
+    });
+    if (touched) writeJSON(QKEY, queue);
+    return true;
+  }
+
   /* Everything the catalogue is made of, for merging over the build. */
   async function fetchCatalogue() {
     if (!enabled() || !signedIn()) return null;
@@ -2284,7 +2360,7 @@ const VFSync = (function () {
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
-    addShop, addProduct, addVendorGroup, fetchCatalogue,
+    addShop, addProduct, addVendorGroup, renameGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _mayWrite: mayWrite,
@@ -2994,6 +3070,23 @@ function mergeCatalogue(cat){
     CODE2GROUP[m.product_code] = m.group_name;
     (GROUPS[m.group_name] = GROUPS[m.group_name] || []).push(m.product_code);
   });
+  /* A group renamed on another device — or on this one, before this
+     reload — is gone from the server list. The build still remembers it,
+     so without this it would sit in the dropdown for ever under its old
+     name, empty, beside the new one.
+
+     Only when the server actually answered, and only for a group with
+     nothing left in it: an empty answer means the read failed, and a
+     group still holding products is not a leftover. */
+  if((cat.groups || []).length){
+    const live = {};
+    cat.groups.forEach(g=>{ live[g.name] = 1; });
+    Object.keys(GROUPS).forEach(g=>{
+      if(g === UNGROUPED || live[g] || (GROUPS[g] || []).length) return;
+      delete GROUPS[g];
+      delete DB.vendors[g];
+    });
+  }
   /* keep the menu order stable and put anything unmapped in Manual order */
   GROUPNAMES.length = 0;
   Object.keys(GROUPS).forEach(g=> GROUPNAMES.push(g));
@@ -3072,12 +3165,183 @@ function addProductForm(){
    + '<div><label>Unit</label><select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select></div>'
    + '<div id="npWtWrap" class="hidden"><label>Weight per box (kg)</label>'
    + '<input type="number" id="npWt" step="any" min="0" placeholder="20"></div>'
-   + '<div><label>Vendor group</label><select id="npGroup">'+gopts+'</select></div>'
+   + '<div><label>Vendor group</label><select id="npGroup">'+gopts+'</select>'
+   + '<div class="gtools">'
+   + '<button type="button" class="btn sm" onclick="gPanel(\'new\')">+ New group</button>'
+   + '<button type="button" class="btn sm" onclick="gPanel(\'rename\')">Rename</button>'
+   + '</div></div>'
+   + gNewPanel() + gRenamePanel()
    + '<div class="act">'
    + '<button class="btn pri" onclick="addProduct()">Add product</button>'
    + '<p class="hintline">A box or tray needs its weight in kg, or the invoice cannot price it. '
    + 'kg, piece and bunch are billed as one unit each.</p>'
    + '</div></div></div></div>';
+}
+
+/* A vendor group is made and renamed here, beside the box that uses it,
+   because that is when it is wanted — halfway through adding a product
+   that belongs to a vendor not on the list yet. Both panels open and
+   close without redrawing the screen, so nothing already typed above
+   them is lost. */
+function gNewPanel(){
+  return '<div id="gNew" class="gpanel hidden">'
+   + '<h4>New vendor group</h4>'
+   + '<div class="row">'
+   + '<div><label>Group name</label><input type="text" id="gnName" placeholder="Ooty"></div>'
+   + '<div><label>Vendor name</label><input type="text" id="gnVendor" placeholder="Ooty Vegetables"></div>'
+   + '<div><label>WhatsApp number</label><input type="text" id="gnPhone" placeholder="919342011780"></div>'
+   + '</div>'
+   + '<div class="go">'
+   + '<label class="chk"><input type="checkbox" id="gnManual"> Order by hand</label>'
+   + '<button class="btn pri sm" onclick="gSaveNew()">Create group</button>'
+   + '<button class="btn sm" onclick="gPanel(null)">Cancel</button>'
+   + '<p class="hintline">The group name is what the rate and order screens show, so keep it short. '
+   + 'Address and bank details go in Vendors.</p>'
+   + '</div></div>';
+}
+function gRenamePanel(){
+  return '<div id="gRen" class="gpanel hidden">'
+   + '<h4>Rename <span id="gRenOld" class="mono"></span></h4>'
+   + '<div class="row"><div><label>New name</label><input type="text" id="grName"></div>'
+   + '<div></div><div></div></div>'
+   + '<div class="go">'
+   + '<button class="btn pri sm" onclick="gSaveRename()">Rename group</button>'
+   + '<button class="btn sm" onclick="gPanel(null)">Cancel</button>'
+   + '<p class="hintline">The products in it, the vendor and every order already placed under the old '
+   + 'name move across. Every screen reads the new name from then on.</p>'
+   + '</div></div>';
+}
+
+function gPanel(which){
+  const n = document.getElementById('gNew'), r = document.getElementById('gRen');
+  if(!n || !r) return;
+  n.className = 'gpanel' + (which==='new'    ? '' : ' hidden');
+  r.className = 'gpanel' + (which==='rename' ? '' : ' hidden');
+  if(which==='new'){
+    ['gnName','gnVendor','gnPhone'].forEach(i=>{ const e=document.getElementById(i); if(e) e.value=''; });
+    const m = document.getElementById('gnManual'); if(m) m.checked = false;
+    const f = document.getElementById('gnName'); if(f) f.focus();
+  }
+  if(which==='rename'){
+    const g = document.getElementById('npGroup').value;
+    document.getElementById('gRenOld').textContent = g;
+    const i = document.getElementById('grName');
+    if(i){ i.value = g; i.focus(); i.select(); }
+  }
+}
+
+function gSaveNew(){
+  const g     = document.getElementById('gnName').value.trim();
+  const name  = document.getElementById('gnVendor').value.trim();
+  const phone = document.getElementById('gnPhone').value.replace(/\s+/g,'');
+  const manual= document.getElementById('gnManual').checked;
+  /* the product being typed above comes back, with the new group chosen */
+  const back = ok => { npKeep(); if(ok) NPDRAFT.group = g; afterRender = npRestore; render(); };
+  addGroup(g, name, phone, manual, back);
+}
+function gSaveRename(){
+  const was = document.getElementById('gRenOld').textContent;
+  const now = document.getElementById('grName').value.trim();
+  const back = ok => { npKeep(); if(ok) NPDRAFT.group = now; afterRender = npRestore; render(); };
+  renameGroupTo(was, now, back);
+}
+
+/* What is half typed into Add a product survives a redraw. Making a
+   vendor group is a detour, not a reason to type the product again. */
+let NPDRAFT = null;
+function npKeep(){
+  const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  NPDRAFT = { code:v('npCode'), name:v('npPName'), tamil:v('npTamil'),
+              unit:v('npUnit') || 'kg', wt:v('npWt'), group:v('npGroup') };
+}
+function npRestore(){
+  const d = NPDRAFT; NPDRAFT = null;
+  if(!d) return;
+  const s = (id,val)=>{ const e = document.getElementById(id); if(e) e.value = val; };
+  s('npCode', d.code); s('npPName', d.name); s('npTamil', d.tamil);
+  const u = document.getElementById('npUnit'); if(u) u.value = d.unit;
+  npUnitChanged();
+  s('npWt', d.wt);
+  const g = document.getElementById('npGroup');
+  if(g && d.group){
+    for(let i=0;i<g.options.length;i++){
+      if(g.options[i].value === d.group){ g.selectedIndex = i; break; }
+    }
+  }
+}
+
+/* ---------- vendor groups: made and renamed from anywhere ----------
+   Both of these are called from the product screen and from the vendor
+   screen, so neither knows what to redraw afterwards. `done(ok)` is
+   whatever the caller wants done once the answer is known — including
+   when the answer is no, so a screen that was showing the old name is
+   put back the way it was. */
+
+function addGroup(g, vendorName, phone, manual, done){
+  const back = ok => { if(done) done(ok); else render(); };
+  const no   = m  => { alert(m); back(false); };
+  if(ROLE !== 'owner' && ROLE !== 'admin') return no('Only Velora may add a vendor group.');
+  if(!g) return no('Enter a group name.');
+  if(GROUPS[g]) return no('There is already a vendor group called ' + g + '.');
+
+  const apply = ()=>{
+    GROUPS[g] = [];
+    GROUPNAMES.push(g);
+    DB.vendors[g] = {name:vendorName||g, phone:phone||'', contact:'', address:'', notes:'',
+                     manual:!!manual, bank:{acName:'',acNo:'',ifsc:'',upi:''}};
+    save();
+    back(true);
+  };
+
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.addVendorGroup({name:g, vendorName:vendorName, phone:phone, manual:!!manual,
+                           sort:GROUPNAMES.length + 1})
+      .then(()=>{ apply(); })
+      .catch(e=> no('Could not add the group: ' + (e.message || e)));
+  }else{
+    apply();
+  }
+}
+
+function renameGroupTo(was, now, done){
+  const back = ok => { if(done) done(ok); else render(); };
+  const no   = m  => { alert(m); back(false); };
+  if(ROLE !== 'owner' && ROLE !== 'admin') return no('Only Velora may rename a vendor group.');
+  if(!now) return no('Enter the new name.');
+  if(now === was) return back(false);
+  /* Manual order is not a vendor. It is where a product waits until it
+     is given one, and both the app and the database go looking for it
+     by that name, so it keeps it. */
+  if(was === UNGROUPED)
+    return no(UNGROUPED + ' is not a vendor — it is where a product sits until it is given one, '
+      + 'so it keeps its name. Make a group and move the products into it instead.');
+  if(!GROUPS[was]) return no('There is no vendor group called ' + was + '.');
+  if(GROUPS[now]) return no('There is already a vendor group called ' + now + '.');
+
+  const apply = ()=>{
+    GROUPS[now] = GROUPS[was] || [];
+    delete GROUPS[was];
+    GROUPS[now].forEach(c=>{ CODE2GROUP[c] = now; });
+    const i = GROUPNAMES.indexOf(was);
+    if(i > -1) GROUPNAMES[i] = now; else GROUPNAMES.push(now);
+    if(DB.vendors[was]){ DB.vendors[now] = DB.vendors[was]; delete DB.vendors[was]; }
+    /* an order already marked as sent went to this vendor, whatever the
+       group is called now */
+    Object.keys(DB.days || {}).forEach(d=>{
+      const s = (DB.days[d] || {}).sent;
+      if(s && s[was] !== undefined){ s[now] = s[was]; delete s[was]; }
+    });
+    if(VENDOROPEN === was) VENDOROPEN = now;
+    save();
+    back(true);
+  };
+
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.renameGroup(was, now).then(()=>{ apply(); })
+      .catch(e=> no('Could not rename the group: ' + (e.message || e)));
+  }else{
+    apply();
+  }
 }
 
 function npUnitChanged(){
@@ -5361,48 +5625,39 @@ function addVendorForm(){
    + '</div></div></div></div>';
 }
 
+/* The same addGroup() the product screen calls. A vendor and the group
+   it orders for are made in one go either way, so there is one path
+   through it and one set of words when something is wrong. */
 function addVendor(){
-  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may add a vendor.'); return; }
-  const g     = document.getElementById('nvGroup').value.trim();
-  const name  = document.getElementById('nvName').value.trim();
-  const phone = document.getElementById('nvPhone').value.replace(/\s+/g,'');
-  const manual= document.getElementById('nvManual').checked;
-
-  if(!g){ alert('Enter a group name.'); return; }
-  if(GROUPS[g]){ alert('There is already a vendor group called '+g+'.'); return; }
-
-  const apply = ()=>{
-    GROUPS[g] = [];
-    GROUPNAMES.push(g);
-    DB.vendors[g] = {name:name||g, phone:phone, contact:'', address:'', notes:'',
-                     manual:manual, bank:{acName:'',acNo:'',ifsc:'',upi:''}};
-    save();
-    render();
-  };
-
-  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
-    VFSync.addVendorGroup({name:g, vendorName:name, phone:phone, manual:manual,
-                           sort:GROUPNAMES.length + 1})
-      .then(()=>{ apply(); })
-      .catch(e=> alert('Could not add the vendor: ' + (e.message || e)));
-  }else{
-    apply();
-  }
+  addGroup(document.getElementById('nvGroup').value.trim(),
+           document.getElementById('nvName').value.trim(),
+           document.getElementById('nvPhone').value.replace(/\s+/g,''),
+           document.getElementById('nvManual').checked);
 }
 function vVendorOne(g){
   const v = DB.vendors[g];
   const owner = (ROLE==='owner');
   const f = (lbl,key,val,ph)=> '<div><div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">'+lbl+'</div>'
     + '<input type="text" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" onchange="setVendor(\''+g.replace(/'/g,"\\'")+'\',\''+key+'\',this.value)"></div>';
+  /* Manual order is not a vendor and has no name of its own to change */
+  const gbox = (g === UNGROUPED) ? ''
+    : '<div><div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">Group name</div>'
+      + '<input type="text" id="vgName" value="'+esc(g)+'" '
+      + 'onchange="renameGroupTo(\''+g.replace(/'/g,"\\'")+'\', this.value.trim())"></div>';
   let list='';
   (GROUPS[g]||[]).forEach(c=>{ const e=CAT[c]; if(e) list += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td></tr>'; });
   return '<div class="bar"><button class="btn sm" onclick="VENDOROPEN=null;render()">&larr; Vendors</button></div>'
    + '<h2>'+esc(v.name||g)+'</h2><p class="sub">Group '+esc(g)+' &middot; '+(GROUPS[g]||[]).length+' products</p>'
    + '<div class="card"><h3>Details</h3><div style="padding:12px 14px">'
    + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">'
+   + gbox
    + f('Vendor name','name',v.name) + f('WhatsApp number','phone',v.phone,'919342011780')
    + f('Contact person','contact',v.contact) + f('Address','address',v.address) + f('Notes','notes',v.notes)
-   + '</div><div style="margin-top:11px"><label style="font-size:13.5px;display:flex;align-items:center;gap:7px;cursor:pointer">'
+   + '</div>'
+   + (gbox ? '<p class="hintline" style="font-size:12.5px;color:var(--ink-3);margin:9px 0 0">'
+       + 'Changing the group name moves its products, this vendor and every order already placed '
+       + 'under the old name across to the new one.</p>' : '')
+   + '<div style="margin-top:11px"><label style="font-size:13.5px;display:flex;align-items:center;gap:7px;cursor:pointer">'
    + '<input type="checkbox" style="width:auto"'+(v.manual?' checked':'')+' onchange="setVendor(\''+g.replace(/'/g,"\\'")+'\',\'manual\',this.checked)"> Order placed manually, not over WhatsApp</label></div></div></div>'
    + (owner ? '<div class="card"><h3>Bank details &mdash; owner only</h3><div style="padding:12px 14px">'
        + '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">'

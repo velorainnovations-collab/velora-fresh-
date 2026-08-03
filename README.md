@@ -102,6 +102,11 @@ afterwards never re-prices a bill that has already been raised.
 * 7 box/tray products have no unit weight on file (86, 396, 280, 293, 60, 330, 329).
   Invoice generation is deliberately blocked rather than billing them at zero.
 * 109 products are in no vendor group and fall into **Manual order**. Mostly fruit —
-  add the fruit tabs to `Vendor_Group.xlsx` and re-import.
+  add the fruit tabs to `Vendor_Group.xlsx` and re-import, or make the groups from
+  **Product → Product list**, beside the Vendor group box on the add form: **+ New
+  group** makes one without leaving the product being typed, **Rename** changes an
+  existing one. A rename moves the products, the vendor, its bank details and every
+  order already placed under the old name, in one transaction (`rename_group` in
+  `supabase/02_security.sql`). `Manual order` is not a vendor and keeps its name.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

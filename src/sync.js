@@ -1270,6 +1270,68 @@ const VFSync = (function () {
     return true;
   }
 
+  /* Renaming a group. One call: the database moves the products, the
+     vendor, the bank details and every order ever placed on that name
+     in a single transaction — see rename_group in 02_security.sql for
+     why it cannot be a plain PATCH.
+
+     A project that has not been given the function yet is told plainly
+     rather than renamed here and left disagreeing with the server. */
+  async function renameGroup(oldName, newName) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/rpc/rename_group', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ p_old: oldName, p_new: newName }),
+    });
+    if (r.status === 401 && await refresh()) return renameGroup(oldName, newName);
+    if (!r.ok) {
+      const e = await httpError(r, 'rename_group');
+      if (isMissingFunction(e)) {
+        const m = new Error('This database has not been given rename_group yet. '
+          + 'Open Supabase → SQL editor and run supabase/02_security.sql, then try again.');
+        m.needsSql = true;
+        throw m;
+      }
+      throw e;
+    }
+    /* Carry the baseline over to the new name. Without this the next
+       push reads the old name as work that has been deleted and the new
+       name as work that is new, and sends both for nothing. */
+    if (synced) {
+      const moveKey = (tbl, from, to) => {
+        const t = synced[tbl]; if (!t || !(from in t)) return;
+        t[to] = t[from]; delete t[from];
+      };
+      moveKey('vendors', oldName, newName);
+      if (synced.vendors && synced.vendors[newName]) synced.vendors[newName].group_name = newName;
+      moveKey('vendor_bank', oldName, newName);
+      if (synced.vendor_bank && synced.vendor_bank[newName]) synced.vendor_bank[newName].group_name = newName;
+      Object.keys(synced.vendor_orders || {}).forEach(k => {
+        if (synced.vendor_orders[k].group_name !== oldName) return;
+        const nk = k.slice(0, k.indexOf('|') + 1) + newName;
+        synced.vendor_orders[nk] = synced.vendor_orders[k];
+        synced.vendor_orders[nk].group_name = newName;
+        if (nk !== k) delete synced.vendor_orders[k];
+      });
+      /* keyed by date and product, so only the name inside the row moves */
+      Object.keys(synced.vendor_order_lines || {}).forEach(k => {
+        if (synced.vendor_order_lines[k].group_name === oldName)
+          synced.vendor_order_lines[k].group_name = newName;
+      });
+      writeJSON(SKEY, synced);
+    }
+    /* anything still waiting to be sent goes under the new name too */
+    let touched = false;
+    queue.forEach(o => {
+      if (o.row && o.row.group_name === oldName) { o.row.group_name = newName; touched = true; }
+      if ((o.table === 'vendors' || o.table === 'vendor_bank') && o.key === oldName) {
+        o.key = newName; touched = true;
+      }
+    });
+    if (touched) writeJSON(QKEY, queue);
+    return true;
+  }
+
   /* Everything the catalogue is made of, for merging over the build. */
   async function fetchCatalogue() {
     if (!enabled() || !signedIn()) return null;
@@ -1308,7 +1370,7 @@ const VFSync = (function () {
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
-    addShop, addProduct, addVendorGroup, fetchCatalogue,
+    addShop, addProduct, addVendorGroup, renameGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _mayWrite: mayWrite,

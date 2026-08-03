@@ -24,10 +24,10 @@ const USERS = {
   'stranger@velora.example':{ pw: 'right', uid: 'ffff0000-0000-0000-0000-00000000000f', row: null },
 };
 
-const received = [];
+const received = [];         // every write the app sent
 /* what the deployed project can do, so the tests can pretend it is
    older than the code in this repository */
-const opts = { oldCreateUser: false, noWipeFn: false };   // every write the app sent
+const opts = { oldCreateUser: false, noWipeFn: false, noRenameFn: false };
 
 /* Tokens are shaped like a real JWT — header.claims.signature — because
    the app reads its own user id out of the claims rather than asking. */
@@ -40,6 +40,8 @@ const uidOf = req =>
 const EXTRA_PRODUCTS = [];
 const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
+const RENAMED        = [];   // names rename_group has moved off, so the
+                             // catalogue read stops offering them
 const INDENTS        = [];   // indent headers, so their ids can be looked up
 const ILINES         = [];   // and their lines, so a second device can read them
 const PACKED         = [];   // what was packed, so the other device sees it
@@ -200,6 +202,25 @@ const srv = http.createServer((req, res) => {
           if (gone.indexOf(ILINES[i].indent_id) > -1) ILINES.splice(i, 1);
         drop(INDENTS); drop(PACKED); drop(SHIPS);
         Object.keys(RATES).forEach(k => { if (k.indexOf(d + '|') === 0) delete RATES[k]; });
+        return send(200, null);
+      }
+      /* renaming a vendor group, the one call that moves everything —
+         rename_group in 02_security.sql. A project without it answers
+         the way PostgREST does for a function it cannot find. */
+      if (fn === 'rename_group') {
+        if (opts.noRenameFn) return send(404, { code: 'PGRST202',
+          message: "Could not find the function public.rename_group(p_new, p_old) in the schema cache" });
+        const was = args.p_old, now = String(args.p_new || '').trim();
+        const known = [{ name: 'Ooty' }, { name: 'Manual order' }].concat(EXTRA_GROUPS);
+        if (!now) return send(400, { code: 'P0001', message: 'a vendor group needs a name' });
+        if (!known.some(x => x.name === was))
+          return send(400, { code: 'P0001', message: 'there is no vendor group called ' + was });
+        if (known.some(x => x.name === now))
+          return send(400, { code: 'P0001', message: 'there is already a vendor group called ' + now });
+        EXTRA_GROUPS.forEach(x => { if (x.name === was) x.name = now; });
+        if (!EXTRA_GROUPS.some(x => x.name === now)) EXTRA_GROUPS.push({ name: now, manual: false, sort_ord: 1 });
+        RENAMED.push(was);      // and the old name stops being served
+        EXTRA_MAPPING.forEach(m => { if (m.group_name === was) m.group_name = now; });
         return send(200, null);
       }
       if (fn === 'list_people') return send(200, PEOPLE);
@@ -380,7 +401,8 @@ const srv = http.createServer((req, res) => {
       if (req.method === 'GET' && table.startsWith('vendor_groups'))
         return send(200, [{ name: 'Ooty', manual: false, sort_ord: 1 },
                           { name: 'Manual order', manual: true, sort_ord: 9 }]
-                         .concat(EXTRA_GROUPS));
+                         .concat(EXTRA_GROUPS)
+                         .filter(g => RENAMED.indexOf(g.name) < 0));
       if (req.method === 'POST' || req.method === 'DELETE') {
         if (table.startsWith('products')) {
           (body ? JSON.parse(body) : []).forEach(r => EXTRA_PRODUCTS.push(r));

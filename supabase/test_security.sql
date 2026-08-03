@@ -46,6 +46,18 @@ exception when insufficient_privilege then
   return -1;
 end $$;
 
+-- run something for its effect. 'refused' is the policy or the guard
+-- saying no, which is a pass in some tests; 'error' is anything else,
+-- reported rather than allowed to stop the run.
+create or replace function try(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'ok';
+exception
+  when insufficient_privilege then return 'refused';
+  when others then return 'error';
+end $$;
+
 \set OWNER '''00000000-0000-0000-0000-00000000000a'''
 \set ADMIN '''00000000-0000-0000-0000-00000000000b'''
 \set HO    '''00000000-0000-0000-0000-00000000000c'''
@@ -323,6 +335,71 @@ select t('and the packing too',
 select t('while the day beside it is untouched',
   (select case when cnt($$select count(*) from indents where trade_date = '2026-09-09'$$) = 1
           then 'ok' else 'TOUCHED' end), 'ok');
+
+-- ============================================================
+-- 12. renaming a vendor group
+--
+-- The name is the key and five tables point at it, so the rename is
+-- only ever right if everything moves together. What is checked here is
+-- that it does: the products, the vendor, the bank details a role that
+-- called it cannot even see, and orders already placed. And that a shop
+-- cannot do it at all.
+-- ============================================================
+set role authenticated;
+select login(:OWNER);
+
+select t('a group to rename',
+  try($$insert into vendor_groups (name, manual, sort_ord) values ('Hosur', false, 7)$$), 'ok');
+select t('with a vendor on it',
+  try($$insert into vendors (group_name, name, phone)
+        values ('Hosur','Hosur Traders','919000000001')$$), 'ok');
+select t('bank details only the owner can see',
+  try($$insert into vendor_bank (group_name, ac_name, ac_no)
+        values ('Hosur','Hosur Traders','1234567890')$$), 'ok');
+select t('a product filed under it',
+  try($$insert into product_groups (product_code, group_name) values ('1','Hosur')
+        on conflict (product_code) do update set group_name = 'Hosur'$$), 'ok');
+select t('and an order already placed',
+  try($$insert into vendor_orders (trade_date, group_name) values ('2026-09-11','Hosur')$$), 'ok');
+
+select login(:KLP);
+select t('a shop may not rename a group',
+  try($$select rename_group('Hosur','Shop Renamed')$$), 'refused');
+
+-- an admin cannot see vendor_bank, which is exactly why the function is
+-- SECURITY DEFINER: the details must travel even when the caller is
+-- blind to them
+select login(:ADMIN);
+select t('an admin may rename one',
+  try($$select rename_group('Hosur','Krishnagiri')$$), 'ok');
+
+select t('the old name is gone',
+  (select case when cnt($$select count(*) from vendor_groups where name = 'Hosur'$$) = 0
+          then 'ok' else 'LEFT' end), 'ok');
+select t('the product moved across',
+  (select case when cnt($$select count(*) from product_groups
+        where product_code = '1' and group_name = 'Krishnagiri'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+select t('the vendor moved across',
+  (select case when cnt($$select count(*) from vendors where group_name = 'Krishnagiri'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+select t('the order moved across',
+  (select case when cnt($$select count(*) from vendor_orders
+        where trade_date = '2026-09-11' and group_name = 'Krishnagiri'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+
+select login(:OWNER);
+select t('and the bank details went with it, unseen by the admin',
+  (select case when cnt($$select count(*) from vendor_bank
+        where group_name = 'Krishnagiri' and ac_no = '1234567890'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+select t('a name already in use is refused',
+  try($$select rename_group('Krishnagiri','Nellai Traders')$$), 'error');
+select t('and the group is still called what it was',
+  (select case when cnt($$select count(*) from vendor_groups where name = 'Krishnagiri'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+select t('an empty name is refused too',
+  try($$select rename_group('Krishnagiri','   ')$$), 'error');
 
 -- ============================================================
 reset role;

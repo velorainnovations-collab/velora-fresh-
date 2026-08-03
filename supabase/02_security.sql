@@ -43,11 +43,19 @@ end $$;
 -- who is asking
 -- ------------------------------------------------------------
 
-create type app_role as enum ('owner','admin','ho','shop');
+-- This file is meant to be run again whenever it changes — a new
+-- function, a tightened policy — on a project that already has data.
+-- So everything in it either replaces what is there or steps over it.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'app_role') then
+    create type app_role as enum ('owner','admin','ho','shop');
+  end if;
+end $$;
 
 -- One row per login. Deactivate, never delete: past indents must stay
 -- attached to whoever entered them (docs/ROADMAP.md, "Real logins").
-create table app_users (
+create table if not exists app_users (
   id         uuid primary key,                       -- auth.users.id on Supabase
   -- Nullable: shop staff sign in by phone, but owner and admin sign in
   -- with email and password, so a phone would be noise on those rows.
@@ -71,7 +79,7 @@ create table app_users (
   -- shop staff sign in by phone, so that row must carry one
   constraint shop_role_has_phone check (role <> 'shop' or phone is not null)
 );
-create index on app_users (client_id);
+create index if not exists app_users_client_id_idx on app_users (client_id);
 
 -- Helpers. STABLE so the planner caches them per statement; each reads
 -- only the caller's own row, so they are safe as SECURITY DEFINER.
@@ -207,6 +215,58 @@ end;
 $$;
 
 -- ------------------------------------------------------------
+-- renaming a vendor group
+--
+-- The group name is its own key, and five tables point at it. Postgres
+-- will not let it be edited in place — the foreign keys are declared
+-- without `on update cascade`, deliberately, so that a stray update
+-- cannot orphan a year of orders. So the rename is done the long way:
+-- the new name is added, everything is moved onto it, the old name is
+-- dropped. All in one transaction, so it either all happens or none of
+-- it does.
+--
+-- SECURITY DEFINER because of vendor_bank. Row level security hides
+-- those rows from an admin, and a row you cannot see is a row you
+-- cannot move; the delete at the end would then take the vendor's bank
+-- details with it. Running as the owner of the function keeps them.
+-- is_velora() below is the real guard.
+-- ------------------------------------------------------------
+create or replace function rename_group(p_old text, p_new text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not is_velora() then
+    raise exception 'only Velora may rename a vendor group'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  p_new := btrim(coalesce(p_new, ''));
+  if p_new = '' then
+    raise exception 'a vendor group needs a name';
+  end if;
+  if p_old = p_new then
+    return;                                   -- nothing asked for
+  end if;
+  if not exists (select 1 from vendor_groups where name = p_old) then
+    raise exception 'there is no vendor group called %', p_old;
+  end if;
+  if exists (select 1 from vendor_groups where name = p_new) then
+    raise exception 'there is already a vendor group called %', p_new;
+  end if;
+
+  insert into vendor_groups (name, manual, sort_ord)
+       select p_new, manual, sort_ord from vendor_groups where name = p_old;
+
+  update vendors            set group_name = p_new where group_name = p_old;
+  update vendor_bank        set group_name = p_new where group_name = p_old;
+  update product_groups     set group_name = p_new where group_name = p_old;
+  update vendor_orders      set group_name = p_new where group_name = p_old;
+  update vendor_order_lines set group_name = p_new where group_name = p_old;
+
+  -- nothing references the old name now, so this takes the row alone
+  delete from vendor_groups where name = p_old;
+end $$;
+
+-- ------------------------------------------------------------
 -- bill numbers, issued inside a transaction
 --
 -- docs/DATA_MODEL.md: "On a server this must be issued inside a
@@ -259,6 +319,35 @@ begin
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('alter table public.%I force row level security', t);
+  end loop;
+end $$;
+
+-- ------------------------------------------------------------
+-- clear the old policies before writing them again
+--
+-- `create policy` has no `or replace`, so without this the second run
+-- of this file stops on the first line below and nothing in it — not a
+-- new function, not a corrected policy — ever reaches the database.
+--
+-- Dropping them all is safe because this file is the whole of the
+-- rule book: every table gets its policies back a few lines down, and
+-- the check at the end of the file refuses to finish if one does not.
+-- The SQL editor runs the file in a single transaction, so a failure
+-- part way through leaves the old rules exactly as they were.
+-- ------------------------------------------------------------
+
+do $$
+declare r record;
+begin
+  for r in select tablename, policyname from pg_policies
+            where schemaname = 'public'
+              -- 06_users.sql makes this table and its policy, and runs
+              -- after this file. Dropping its rules here would leave it
+              -- unprotected, and the check at the end of this file
+              -- would rightly refuse to finish.
+              and tablename <> 'user_invites'
+  loop
+    execute format('drop policy %I on public.%I', r.policyname, r.tablename);
   end loop;
 end $$;
 

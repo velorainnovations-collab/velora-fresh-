@@ -110,6 +110,33 @@ async function signIn(b, email) {
         await p.evaluate(() => CODE2GROUP['901']), 'Coimbatore');
   await ctx.close();
 
+  /* The same rename, asked for from the other end: the vendor's own
+     page, where the group name is a box like any other. */
+  console.log('\nrenaming the group from the vendor page');
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  await p.evaluate(() => { VENDOROPEN = 'Coimbatore'; go('vendors'); });
+  await p.waitForTimeout(700);
+  check('group name is editable there', await p.locator('#vgName').inputValue(), 'Coimbatore');
+
+  // something on the record, to see whether it travels with the name
+  await p.evaluate(() => { setVendor('Coimbatore', 'contact', 'Selvam'); });
+  await p.fill('#vgName', 'Kovai');
+  await p.locator('#vgName').blur();
+  await p.waitForTimeout(900);
+  check('renamed', await p.evaluate(() => !!GROUPS['Kovai'] && !GROUPS['Coimbatore']), true);
+  check('the product came with it', await p.evaluate(() => CODE2GROUP['901']), 'Kovai');
+  check('still on the same vendor', await p.evaluate(() => VENDOROPEN), 'Kovai');
+  check('the vendor kept its details',
+        await p.evaluate(() => (DB.vendors['Kovai'] || {}).contact), 'Selvam');
+  check('the page now reads the new name',
+        /Kovai/.test(await p.locator('#main').textContent()), true);
+
+  // Manual order has no name of its own to change
+  await p.evaluate(() => { VENDOROPEN = 'Manual order'; render(); });
+  await p.waitForTimeout(400);
+  check('no name box on Manual order', await p.locator('#vgName').count(), 0);
+  await ctx.close();
+
   console.log('\nthe client side cannot add vendors');
   ({ ctx, p } = await signIn(b, 'shop@velora.example'));
   const tabs = await p.locator('#side button').allTextContents();
