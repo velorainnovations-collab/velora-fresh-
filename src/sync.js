@@ -137,6 +137,7 @@ const VFSync = (function () {
              see the invoices block in 01_schema.sql. */
           contact_id: inv.contactId ? uuidFor(inv.contactId) : null,
           vehicle_no: inv.vehicle || '', driver_name: inv.driver || '',
+          supply_date: inv.supplyDate || date,
           bill_to_name: (inv.billTo || {}).name || '',
           bill_to_gstin: (inv.billTo || {}).gstin || '',
           bill_to_address: (inv.billTo || {}).address || '',
@@ -911,6 +912,7 @@ const VFSync = (function () {
                        total: Number(v.total), roundOff: Number(v.round_off), lines: [],
                        contactId: v.contact_id || null,
                        vehicle: v.vehicle_no || '', driver: v.driver_name || '',
+                       supplyDate: v.supply_date || v.trade_date,
                        billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
                                  address: v.bill_to_address || '' } };
     });

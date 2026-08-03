@@ -120,7 +120,7 @@ async function readyToBill(p) {
   check('state and pincode together', /Tamil Nadu - 600002/.test(printed), true);
   check('GST number on the bill', /33AABCU9603R1ZM/.test(printed), true);
   check('our own name at the top',
-    /Vellore Freshworks Private Limited/.test(printed), true);
+    /Velora Innovations Pvt Ltd/.test(printed), true);
   check('and the city under it', /Chennai/.test(printed), true);
 
   console.log('\nwhat the sample asked to be left off');
@@ -143,7 +143,11 @@ async function readyToBill(p) {
   check('vehicle number on the bill', /TN 01 AB 1234/.test(withVeh), true);
   check('driver on the bill', /Murugan/.test(withVeh), true);
   check('neither is in the panel only',
-    /Vehicle No/.test(withVeh) && /Driver/.test(withVeh), true);
+    /Vehicle Number/.test(withVeh) && /Driver Name/.test(withVeh), true);
+  check('and the day of supply is on it too', /Date of Supply/.test(withVeh), true);
+  check('bank details for payment', /Bank Details/.test(withVeh), true);
+  check('the amount in words is labelled',
+    /Total Amount In Words/i.test(withVeh), true);
 
   console.log('\nwhat was sent up with the bill');
   received.length = 0;

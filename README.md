@@ -124,7 +124,14 @@ afterwards never re-prices a bill that has already been raised.
   The bill keeps its own copy of what it printed, so a contact that moves premises
   never rewrites a bill already raised.
 * The invoice letterhead is `COMPANY` in `src/template.html` — name, city, phone,
-  GSTIN. The phone and GSTIN are blank for now and are left out rather than
-  printed empty.
+  GSTIN, and the bank details printed for payment. The phone and GSTIN are blank
+  for now and are left out rather than printed empty; the bank lines print as
+  `Xxxx` until they are filled in, because a missing line reads as an oversight
+  and a placeholder reads as a job to do.
+* The bill is A4 portrait and is held to 186mm on screen — the width of the paper
+  less its margins — so the preview is the print. `npm run test:print` switches
+  the browser to print media, measures the sheet against that width, and fails if
+  anything runs past the edge, if a column heading no longer fits, if the totals
+  stop lining up under Amount, or if it spills onto a second page.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

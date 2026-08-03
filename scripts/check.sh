@@ -182,7 +182,7 @@ if node -e "require('playwright')" 2>/dev/null; then
   SERVE_PID=$!
   trap 'kill $SERVE_PID 2>/dev/null' EXIT
   sleep 2
-  for suite in login route theme product vendor contact people signup whatsapp emailauth shoplogin phone accept rates layout; do
+  for suite in login route theme product vendor contact print people signup whatsapp emailauth shoplogin phone accept rates layout; do
     if node "test/$suite.test.js" >"/tmp/vf-$suite.log" 2>&1 &&
        ! grep -q FAIL "/tmp/vf-$suite.log"; then
       ok "$suite — $(grep -E 'passed,' "/tmp/vf-$suite.log" | tail -1)"

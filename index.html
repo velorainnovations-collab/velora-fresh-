@@ -331,24 +331,57 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
 .rm:hover{background:var(--red-soft)}
 .hidden{display:none!important}
 
-/* ---------- invoice (print-faithful, do not restyle) ---------- */
-#inv{background:#fff;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
-.ihead{display:flex;align-items:flex-start;gap:14px;border-bottom:2px solid #1a1a1a;padding-bottom:10px}
-.ihead .mid{flex:1;text-align:center}
-.ihead .cn{font-size:22px;font-weight:700;letter-spacing:.5px}
-.ihead .le{font-size:11px;color:#555;margin-top:2px}
-.ititle{text-align:center;font-size:14px;letter-spacing:.28em;margin:12px 0;font-weight:600}
-.iband{display:flex;border:1px solid #1a1a1a}
-.iband>div{padding:7px 10px;font-size:13px}
-.iband .lft{flex:1;border-right:1px solid #1a1a1a}
-.iband .rgt{width:225px}
-table.ibl{border:1px solid #1a1a1a;border-top:none;font-size:13px}
-table.ibl th,table.ibl td{border-right:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;padding:5px 7px;
-  background:none;color:#1a1a1a;text-transform:none;letter-spacing:0;font-size:12.5px;white-space:normal}
-table.ibl th{font-weight:600;background:#f4f4f2}
+/* ---------- invoice (print-faithful, do not restyle) ----------
+   A4 is 210mm wide and the page margin is 12mm a side, so 186mm is the
+   whole of the paper. Holding the sheet to that on screen means what is
+   on the screen is what comes out of the printer, at the width it will
+   come out at — no surprise on the first print run. */
+#inv{background:#fff;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--sh);max-width:186mm;box-sizing:border-box}
+/* The sheet is one stack of boxes, each 1px black, each dropping the
+   border it shares with the box above it. Nothing doubles up, nothing is
+   left open, and the left and right edges of every box land on the same
+   two lines the whole way down. */
+.ihead{text-align:center;padding:0 0 11px}
+.ihead .cn{font-size:20px;font-weight:700;letter-spacing:.4px;line-height:1.25}
+.ihead .le{font-size:11.5px;color:#333;margin-top:3px}
+.ititle{border:1px solid #1a1a1a;text-align:center;font-size:13.5px;letter-spacing:.3em;
+  font-weight:700;padding:6px 0}
+.ibox{border:1px solid #1a1a1a;border-top:none}
+.ipair{display:flex;gap:6px}
+.ipair>.k{flex:none;white-space:nowrap}
+.ipair>.v{flex:1 1 auto;min-width:0;word-break:break-word}
+.imeta{padding:7px 10px;font-size:12.5px;line-height:1.55}
+.imeta .k{width:62px}
+/* two equal columns, whatever is in them */
+.iband{display:flex;align-items:stretch}
+.iband>div{flex:1 1 0;min-width:0;padding:7px 10px;font-size:12.5px;line-height:1.55}
+.iband .lft{border-right:1px solid #1a1a1a;word-break:break-word}
+.iband .k{width:104px}
+.cap{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#444;
+  font-weight:700;margin-bottom:4px}
+/* fixed layout, or a long product name drags the money columns out of
+   the widths their headings were sized for */
+table.ibl{border:1px solid #1a1a1a;border-top:none;font-size:13px;table-layout:fixed}
+table.ibl th,table.ibl td{border-right:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;padding:6px 7px;
+  background:none;color:#1a1a1a;text-transform:none;letter-spacing:0;font-size:12.5px;
+  white-space:normal;vertical-align:middle}
+table.ibl th{font-weight:700;background:#f4f4f2}
 table.ibl th:last-child,table.ibl td:last-child{border-right:none}
 table.ibl tbody tr:hover td{background:none}
-.isign{display:flex;justify-content:space-between;margin-top:44px;font-size:12.5px}
+table.ibl tr:last-child td{border-bottom:none}
+/* the figure everybody looks for */
+table.ibl td.netlbl{font-weight:700}
+table.ibl td.netamt{font-weight:700;font-size:15px}
+.iwords{padding:7px 10px;font-size:12.5px}
+.ifoot{display:flex;align-items:stretch}
+.ifoot>div{flex:1 1 0;min-width:0;padding:9px 10px;font-size:12px;line-height:1.6}
+.ifoot .lft{border-right:1px solid #1a1a1a}
+.ifoot .lft .k{width:112px}
+/* the name at the top, the space to sign in the middle, the words at the
+   foot: a signature block is the shape of the gap it leaves */
+.ifoot .rgt{display:flex;flex-direction:column;justify-content:space-between;
+  text-align:right;min-height:92px}
 
 /* ---------- sign in ---------- */
 #gate{position:fixed;inset:0;z-index:200;background:linear-gradient(155deg,#12100e,#1c3b2a 60%,#1c6b45);
@@ -434,6 +467,13 @@ table.ibl tbody tr:hover td{background:none}
      app's surface — dark ink on a dark column, on a phone at night. */
   #inv table td:first-child{background:#fff}
   #inv table th:first-child{background:#f4f4f2}
+  /* On paper the column widths are the point; on a phone there is not
+     enough paper to honour them, so the text wraps instead. */
+  table.ibl{table-layout:auto}
+  .iband,.ifoot{display:block}
+  .iband .lft,.ifoot .lft{border-right:none;border-bottom:1px solid #1a1a1a}
+  .ifoot .rgt{min-height:0;text-align:left}
+  .ifoot .rgt div:last-child{margin-top:34px;text-align:right}
 
   /* the search box and whatever sits beside it get a line each */
   .srch{max-width:none;width:100%;flex:1 1 100%}
@@ -449,9 +489,6 @@ table.ibl tbody tr:hover td{background:none}
   .gtools .btn{flex:1 1 0}
 
   #inv{padding:16px 14px}
-  .iband{flex-direction:column}
-  .iband .lft{border-right:none;border-bottom:1px solid #1a1a1a}
-  .iband .rgt{width:auto}
 }
 
 /* ---------- print ---------- */
@@ -459,9 +496,25 @@ table.ibl tbody tr:hover td{background:none}
   body{background:#fff}
   /* nothing scrolls on paper: a wrapper must not clip a wide table */
   .twrap{overflow:visible}
-  header,nav,.noprint{display:none!important}
-  main{padding:0;max-width:none}
-  #inv{border:none;border-radius:0;padding:0;box-shadow:none}
+  /* The sidebar is an <aside>, not a <nav>, so it was printing — and
+     main still carried the 236px margin that makes room for it. The
+     invoice started a sidebar's width in from the left and ran off the
+     right edge of the sheet. */
+  header,nav,aside,#side,.noprint{display:none!important}
+  main{padding:0;margin:0;max-width:none;width:auto}
+  #inv{border:none;border-radius:0;padding:0;box-shadow:none;max-width:none;width:auto}
+  /* the selling price is Velora's own working, not the customer's
+     business, and it is not one of the columns a bill is meant to have */
+  table.ibl th.sell,table.ibl td.sell{display:none}
+  /* A4 less its margins is 186mm, which the browser counts as 703px —
+     under the 720px the phone rules watch for, so printing was getting
+     the phone's invoice: the header band stacked into two full width
+     rows instead of sitting side by side. Paper is not a phone. */
+  .iband,.ifoot{display:flex;flex-direction:row}
+  .iband .lft,.ifoot .lft{border-right:1px solid #1a1a1a;border-bottom:none}
+  .iband>div,.ifoot>div{flex:1 1 0;width:auto}
+  table.ibl{table-layout:fixed}
+  #inv table td:first-child,#inv table th:first-child{position:static}
   @page{size:A4;margin:12mm}
 }
 </style>
@@ -824,10 +877,14 @@ const VELORA = 'Velora Fresh';
    in one place when the printed name, the city or the phone number
    does. An empty line is left out rather than printed blank. */
 const COMPANY = {
-  name: 'Vellore Freshworks Private Limited',
+  name: 'Velora Innovations Pvt Ltd',
   city: 'Chennai',
   phone: '',                       /* added later */
   gstin: '',                       /* added later */
+  /* our own bank, printed on the bill so it can be paid. Filled in here
+     until there is a company settings screen to hold it; every empty one
+     prints as Xxxx rather than being left off. */
+  bank: { name:'', acName:'', acNo:'', ifsc:'', branch:'' },
 };
 /* The indent window: shops were meant to send between 6 and 9 pm, with
    anything up to 11:30 recorded as late.
@@ -1142,6 +1199,7 @@ const VFSync = (function () {
              see the invoices block in 01_schema.sql. */
           contact_id: inv.contactId ? uuidFor(inv.contactId) : null,
           vehicle_no: inv.vehicle || '', driver_name: inv.driver || '',
+          supply_date: inv.supplyDate || date,
           bill_to_name: (inv.billTo || {}).name || '',
           bill_to_gstin: (inv.billTo || {}).gstin || '',
           bill_to_address: (inv.billTo || {}).address || '',
@@ -1916,6 +1974,7 @@ const VFSync = (function () {
                        total: Number(v.total), roundOff: Number(v.round_off), lines: [],
                        contactId: v.contact_id || null,
                        vehicle: v.vehicle_no || '', driver: v.driver_name || '',
+                       supplyDate: v.supply_date || v.trade_date,
                        billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
                                  address: v.bill_to_address || '' } };
     });
@@ -5619,7 +5678,8 @@ function makeInvoice(shopId){
   const no = s.prefix+'/'+mk+'/'+String(DB.serial[key]).padStart(4,'0');
   DB.invoices[DATE] = DB.invoices[DATE] || {};
   const inv = {no, date:DATE, shopId, lines, total, roundOff: Math.round(total)-total,
-               contactId:'', vehicle:'', driver:'', billTo:{name:'',gstin:'',address:''}};
+               contactId:'', vehicle:'', driver:'', supplyDate:DATE,
+               billTo:{name:'',gstin:'',address:''}};
   /* the contact this shop's bills are made out to, if there is one.
      Nothing is guessed: with two contacts and neither tied to the shop,
      it is left empty and asked for on the invoice. */
@@ -5646,11 +5706,14 @@ function setInvContact(shopId, id){
   setInvoiceContact(inv, id);
   save(); render();
 }
-function setInvField(shopId, key, val){
+function setInvField(shopId, key, val, redraw){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
   if(!inv) return;
   inv[key] = val;
   save();
+  /* the vehicle and the driver are read straight off the box as it is
+     typed; a date is picked, and wants to be seen on the bill at once */
+  if(redraw) render();
 }
 function vInvoiceOne(shopId){
   const inv = DB.invoices[DATE] && DB.invoices[DATE][shopId];
@@ -5664,9 +5727,14 @@ function vInvoiceOne(shopId){
       + '<td class="r mono">'+num(l.net,3)+'</td>'
       + '<td class="r mono">'+money(l.rate)+'</td>'
       + '<td class="r mono">'+money(l.amount)+'</td>'
-      + (showSell?'<td class="r mono">'+(l.sell===null?'':money(l.sell))+'</td>':'') + '</tr>';
+      + (showSell?'<td class="r mono sell">'+(l.sell===null?'':money(l.sell))+'</td>':'') + '</tr>';
   });
-  const cols = showSell?8:7;
+  /* Six columns of description, then Amount. The totals line up under
+     Amount and the selling column, which is Velora's own working and is
+     never printed, gets an empty cell of its own — before this the
+     figures sat one column right, under the Selling heading. */
+  const span = 6;
+  const sellCell = showSell ? '<td class="sell"></td>' : '';
   const net = Math.round(inv.total);
 
   /* Billing address, and only that. It is the delivery address too, so
@@ -5674,13 +5742,23 @@ function vInvoiceOne(shopId){
      Falls back to the shop's own name until a contact is picked, so a
      bill is never blank at the top. */
   const bt = inv.billTo || {};
-  const billTo = '<strong>'+esc(bt.name || CLIENT)+'</strong>'
+  const billTo = '<div class="cap">Bill To</div>'
+    + '<strong>'+esc(bt.name || CLIENT)+'</strong>'
     + (bt.address ? '<br>'+esc(bt.address).replace(/\n/g,'<br>')
                   : '<br>'+esc(s.name)+' branch')
     + (bt.gstin ? '<br>GSTIN : <span class="mono">'+esc(bt.gstin)+'</span>' : '');
 
-  const hd = (lbl, val) => val
-    ? '<div>'+lbl+' : <span class="mono">'+esc(val)+'</span></div>' : '';
+  /* Every line is printed whether or not it has been filled in. A bill
+     with no row for the vehicle is a different form from the one beside
+     it in the file; a blank one is the same form, waiting. */
+  const hd = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + '<span class="v mono">'+(val ? esc(val) : '&nbsp;')+'</span></div>';
+  /* the company's own bank, printed for payment. Blank until it is
+     filled in under COMPANY, and marked as blank rather than left out —
+     a missing line reads as an oversight, a placeholder reads as a to do */
+  const bank = COMPANY.bank || {};
+  const bk = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + '<span class="v'+(val?' mono':'')+'">'+(val ? esc(val) : 'Xxxx')+'</span></div>';
 
   return '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
    + '<span class="spacer"></span>'
@@ -5688,27 +5766,49 @@ function vInvoiceOne(shopId){
    + '<button class="btn sm pri" onclick="window.print()">Print</button></div>'
    + invBillToPanel(shopId, inv)
    + '<div id="inv">'
-   + '<div class="ihead"><div class="mid"><div class="cn">'+esc(COMPANY.name)+'</div>'
+
+   + '<div class="ihead"><div class="cn">'+esc(COMPANY.name)+'</div>'
    + '<div class="le">'+[COMPANY.city, COMPANY.phone && 'Mobile '+COMPANY.phone,
                          COMPANY.gstin && 'GSTIN '+COMPANY.gstin]
-       .filter(Boolean).map(esc).join(' &middot; ')+'</div></div></div>'
+       .filter(Boolean).map(esc).join(' &middot; ')+'</div></div>'
+
    + '<div class="ititle">INVOICE</div>'
-   + '<div class="iband"><div class="lft">'+billTo+'</div>'
+
+   /* the two the desk never types: both are issued when the bill is made */
+   + '<div class="ibox imeta">'
+   + hd('Bill No.', inv.no) + hd('Date', fmtDate(inv.date))
+   + '</div>'
+
+   + '<div class="ibox iband"><div class="lft">'+billTo+'</div>'
    + '<div class="rgt">'
-   + hd('Bill No', inv.no) + hd('Date', fmtDate(inv.date))
-   + hd('Vehicle No', inv.vehicle) + hd('Driver', inv.driver)
+   + hd('Vehicle Number', inv.vehicle) + hd('Driver Name', inv.driver)
+   + hd('Date of Supply', fmtDate(inv.supplyDate || inv.date))
    + '</div></div>'
-   + '<table class="ibl"><thead><tr><th class="c" style="width:34px">S.No</th><th class="c" style="width:50px">Code</th><th>Product</th>'
+
+   + '<table class="ibl"><thead><tr><th class="c" style="width:48px">S.No.</th>'
+   + '<th class="c" style="width:52px">Code</th><th>Product</th>'
    + '<th class="c" style="width:82px">Quantity</th><th class="r" style="width:70px">Net Kg</th>'
-   + '<th class="r" style="width:76px">Rate/Kg</th><th class="r" style="width:92px">Amount</th>'
-   + (showSell?'<th class="r" style="width:82px">Selling</th>':'')+'</tr></thead><tbody>'+rows
-   + '<tr><td colspan="'+(cols-1)+'" class="r"><strong>Total</strong></td><td class="r mono"><strong>'+money(inv.total)+'</strong></td></tr>'
-   + (Math.abs(inv.roundOff)>=0.005?'<tr><td colspan="'+(cols-1)+'" class="r">Round Off</td><td class="r mono">'+money(inv.roundOff)+'</td></tr>':'')
-   + '<tr><td colspan="'+(cols-1)+'" class="r"><strong>Net Amount</strong></td><td class="r mono"><strong>'+money(net)+'</strong></td></tr>'
+   + '<th class="r" style="width:76px">Rate / Kg</th><th class="r" style="width:94px">Amount</th>'
+   + (showSell?'<th class="r sell" style="width:82px">Selling</th>':'')+'</tr></thead><tbody>'+rows
+   + '<tr><td colspan="'+span+'" class="r">Total</td>'
+     + '<td class="r mono">'+money(inv.total)+'</td>'+sellCell+'</tr>'
+   + (Math.abs(inv.roundOff)>=0.005
+       ? '<tr><td colspan="'+span+'" class="r">Round Off</td>'
+         + '<td class="r mono">'+money(inv.roundOff)+'</td>'+sellCell+'</tr>' : '')
+   + '<tr><td colspan="'+span+'" class="r netlbl">Net Amount</td>'
+     + '<td class="r mono netamt">'+money(net)+'</td>'+sellCell+'</tr>'
    + '</tbody></table>'
-   + '<div style="font-size:12px;margin-top:7px"><em>Rupees '+esc(words(net))+' only</em></div>'
-   + '<div class="isign"><div>Party\'s Signature</div><div style="text-align:right">For '
-   + esc(COMPANY.name)+'<br><br><br>Authorised Signatory</div></div>'
+
+   + '<div class="ibox iwords"><span class="cap" style="display:inline;margin:0">'
+   + 'Total Amount In Words :</span> Rupees '+esc(words(net))+' Only</div>'
+
+   + '<div class="ibox ifoot"><div class="lft"><div class="cap">Bank Details</div>'
+   + bk('Bank Name', bank.name) + bk('Account Name', bank.acName)
+   + bk('Account Number', bank.acNo) + bk('IFSC Code', bank.ifsc)
+   + bk('Branch', bank.branch)
+   + '</div><div class="rgt"><div>For '+esc(COMPANY.name)+'</div>'
+   + '<div>Authorised Signatory</div></div></div>'
+
    + '</div>';
 }
 
@@ -5738,6 +5838,11 @@ function invBillToPanel(shopId, inv){
    + '<div><label>Driver name</label><input type="text" id="invDriver" '
    + 'value="'+esc(inv.driver||'')+'" '
    + 'onchange="setInvField(\''+sj+'\',\'driver\',this.value)"></div>'
+   /* the day the goods actually went, which is the invoice date until
+      somebody says otherwise */
+   + '<div><label>Date of supply</label><input type="date" id="invSupply" '
+   + 'value="'+esc(inv.supplyDate||inv.date)+'" '
+   + 'onchange="setInvField(\''+sj+'\',\'supplyDate\',this.value||\''+esc(inv.date)+'\',true)"></div>'
    + '<p class="hintline" style="grid-column:1/-1;margin:0;font-size:12.5px;color:var(--ink-3)">'
    + (ids.length
        ? 'Picking a customer fills in the company name, GST number and billing address below. '
