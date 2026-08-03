@@ -42,6 +42,9 @@ const EXTRA_MAPPING  = [];
 const EXTRA_GROUPS   = [];   // vendor groups added at runtime
 const RENAMED        = [];   // names rename_group has moved off, so the
                              // catalogue read stops offering them
+const LOCKED         = ['1'];// products a trading day elsewhere still
+                             // points at, so the database refuses to
+                             // delete them
 const INDENTS        = [];   // indent headers, so their ids can be looked up
 const ILINES         = [];   // and their lines, so a second device can read them
 const PACKED         = [];   // what was packed, so the other device sees it
@@ -398,17 +401,53 @@ const srv = http.createServer((req, res) => {
 
       if (req.method === 'GET' && table.startsWith('products')) return send(200, EXTRA_PRODUCTS);
       if (req.method === 'GET' && table.startsWith('product_groups')) return send(200, EXTRA_MAPPING);
+
+      /* editing one that is already there, and taking one off the list.
+         Both are filtered by code the way PostgREST is, so the mock has
+         to read the filter rather than the body. */
+      const codeFilter = () => (url.searchParams.get('code') || '').replace(/^eq\./, '');
+      if (req.method === 'PATCH' && name === 'products') {
+        const code = codeFilter(), patch = body ? JSON.parse(body) : {};
+        const row = EXTRA_PRODUCTS.find(x => x.code === code);
+        if (row) Object.assign(row, patch);
+        received.push({ table: name, method: 'PATCH', code: code, rows: patch });
+        return send(200, {});
+      }
+      if (req.method === 'DELETE' && name === 'products') {
+        const code = codeFilter();
+        /* a product another device has already traded: the real database
+           refuses on the foreign key, and the app has to turn that into
+           a sentence rather than a constraint name */
+        if (LOCKED.indexOf(code) > -1) return send(409, { code: '23503',
+          message: 'update or delete on table "products" violates foreign key constraint '
+                 + '"day_rates_product_code_fkey" on table "day_rates"' });
+        for (let i = EXTRA_PRODUCTS.length - 1; i >= 0; i--)
+          if (EXTRA_PRODUCTS[i].code === code) EXTRA_PRODUCTS.splice(i, 1);
+        // product_groups goes with it, on delete cascade
+        for (let i = EXTRA_MAPPING.length - 1; i >= 0; i--)
+          if (EXTRA_MAPPING[i].product_code === code) EXTRA_MAPPING.splice(i, 1);
+        received.push({ table: name, method: 'DELETE', code: code, rows: null });
+        return send(204, null);
+      }
       if (req.method === 'GET' && table.startsWith('vendor_groups'))
         return send(200, [{ name: 'Ooty', manual: false, sort_ord: 1 },
                           { name: 'Manual order', manual: true, sort_ord: 9 }]
                          .concat(EXTRA_GROUPS)
                          .filter(g => RENAMED.indexOf(g.name) < 0));
       if (req.method === 'POST' || req.method === 'DELETE') {
+        /* both of these are upserts on a key, so a second write to the
+           same product replaces rather than piles up */
         if (table.startsWith('products')) {
-          (body ? JSON.parse(body) : []).forEach(r => EXTRA_PRODUCTS.push(r));
+          (body ? JSON.parse(body) : []).forEach(r => {
+            const ex = EXTRA_PRODUCTS.find(x => x.code === r.code);
+            if (ex) Object.assign(ex, r); else EXTRA_PRODUCTS.push(r);
+          });
         }
         if (table.startsWith('product_groups')) {
-          (body ? JSON.parse(body) : []).forEach(r => EXTRA_MAPPING.push(r));
+          (body ? JSON.parse(body) : []).forEach(r => {
+            const ex = EXTRA_MAPPING.find(m => m.product_code === r.product_code);
+            if (ex) ex.group_name = r.group_name; else EXTRA_MAPPING.push(r);
+          });
         }
         if (table.startsWith('vendor_groups')) {
           (body ? JSON.parse(body) : []).forEach(r => EXTRA_GROUPS.push(r));

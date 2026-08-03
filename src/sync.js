@@ -1270,6 +1270,77 @@ const VFSync = (function () {
     return true;
   }
 
+  /* Editing one that is already there. The code is the key and never
+     changes; everything else about a product can. The group mapping is
+     a row of its own, so it is written whether or not it moved — an
+     upsert on the same value costs nothing. */
+  async function updateProduct(p) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/products?code=eq.' + encodeURIComponent(p.code), {
+      method: 'PATCH',
+      headers: headers({ 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ name: p.name, tamil: p.tamil || '', unit: p.unit,
+                             unit_weight_kg: p.wt || null, alias: p.alias || '' }),
+    });
+    if (r.status === 401 && await refresh()) return updateProduct(p);
+    if (!r.ok) throw await httpError(r, 'products');
+
+    const g = await fetch(CFG.url + '/rest/v1/product_groups?on_conflict=product_code', {
+      method: 'POST',
+      headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ product_code: p.code, group_name: p.group }]),
+    });
+    if (!g.ok) throw await httpError(g, 'product_groups');
+    return true;
+  }
+
+  /* Removing one for good. The database refuses if the product has been
+     indented, priced, packed or ordered — those rows reference it, and
+     a trading day that points at a product which no longer exists is
+     worse than a catalogue with one line too many in it. Its group
+     mapping and any selling percentage go with it, on delete cascade.
+
+     Past bills are untouched either way: invoice_lines keeps its own
+     copy of the name, unit and rate and has no foreign key back here. */
+  function isInUse(e) {
+    const b = e && e.body;
+    if (b && b.code === '23503') return true;                  // foreign key violation
+    return !!(e && e.status === 409);
+  }
+
+  async function deleteProduct(code) {
+    if (!enabled() || !signedIn()) throw new Error('Not signed in');
+    const r = await fetch(CFG.url + '/rest/v1/products?code=eq.' + encodeURIComponent(code), {
+      method: 'DELETE', headers: headers({ 'Prefer': 'return=minimal' }),
+    });
+    if (r.status === 401 && await refresh()) return deleteProduct(code);
+    if (!r.ok) {
+      const e = await httpError(r, 'products');
+      if (isInUse(e)) {
+        const m = new Error('This product is on a trading day already — an indent, a market '
+          + 'rate, a packing line or a vendor order still points at it. Clear those days '
+          + 'first, or leave the product where it is.');
+        m.inUse = true;
+        throw m;
+      }
+      throw e;
+    }
+    /* it is gone: forget every trace of it, or the next push sends the
+       rows straight back and the delete undoes itself */
+    ['products', 'product_groups', 'margin_selling'].forEach(t => {
+      if (!synced || !synced[t]) return;
+      Object.keys(synced[t]).forEach(k => {
+        const row = synced[t][k];
+        if (row && (row.code === code || row.product_code === code)) delete synced[t][k];
+      });
+    });
+    if (synced) writeJSON(SKEY, synced);
+    const before = queue.length;
+    queue = queue.filter(o => !(o.row && o.row.product_code === code));
+    if (queue.length !== before) writeJSON(QKEY, queue);
+    return true;
+  }
+
   /* Renaming a group. One call: the database moves the products, the
      vendor, the bank details and every order ever placed on that name
      in a single transaction — see rename_group in 02_security.sql for
@@ -1370,7 +1441,8 @@ const VFSync = (function () {
     whoami, nextBillNo, on, queueLength: () => queue.length,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
-    addShop, addProduct, addVendorGroup, renameGroup, fetchCatalogue,
+    addShop, addProduct, updateProduct, deleteProduct,
+    addVendorGroup, renameGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
     _uuidFor: uuidFor, _mayWrite: mayWrite,

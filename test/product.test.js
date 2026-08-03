@@ -227,6 +227,92 @@ async function signIn(b, email) {
   opts.noRenameFn = false;
   await ctx.close();
 
+  /* Editing one already on the list, and taking one off it. */
+  console.log('\nediting a product already on the list');
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  said = '';
+  p.on('dialog', async d => { said = d.message(); await d.accept(); });
+  await p.evaluate(() => go('products'));
+  await p.waitForTimeout(600);
+  check('every row has an Edit button',
+    await p.locator('table tbody tr td:last-child button:has-text("Edit")').count() > 0, true);
+
+  await p.evaluate(() => editProduct('900'));
+  await p.waitForTimeout(400);
+  check('the edit form opens', await p.locator('#epPName').count(), 1);
+  check('filled in with what is on file', await p.locator('#epPName').inputValue(), 'Cauliflower');
+  check('the code is shown but not editable', await p.locator('#epCode').isDisabled(), true);
+  check('its group is the one selected', await p.locator('#epGroup').inputValue(), 'Ooty');
+  check('the add form is out of the way', await p.locator('#npCode').count(), 0);
+
+  // the group of a product already entered — the thing that was asked for
+  received.length = 0;
+  await p.fill('#epPName', 'Cauliflower Ooty');
+  await p.selectOption('#epGroup', 'Nilgiri Hills');
+  await p.click('button:has-text("Save changes")');
+  await p.waitForTimeout(900);
+  const patched = received.find(r => r.table.startsWith('products') && r.method === 'PATCH');
+  const remap = received.find(r => r.table.startsWith('product_groups'));
+  check('the change was written', patched && patched.rows.name, 'Cauliflower Ooty');
+  check('and the new group with it', remap && remap.rows[0].group_name, 'Nilgiri Hills');
+  check('moved on this device too', await p.evaluate(() => CODE2GROUP['900']), 'Nilgiri Hills');
+  check('out of the group it was in',
+    await p.evaluate(() => (GROUPS['Ooty'] || []).indexOf('900')), -1);
+  check('form closed again', await p.locator('#epPName').count(), 0);
+  check('the list shows the new name',
+    /Cauliflower Ooty/.test(await p.locator('#main').textContent()), true);
+
+  console.log('\na product that is on a trading day cannot be removed');
+  await p.evaluate(() => {
+    /* the same shape the day board writes: an indent line against it */
+    DB.indents['2026-08-01'] = { KLP: { status: 'submitted', lines: { '900': 5 } } };
+    editProduct('900');
+  });
+  await p.waitForTimeout(400);
+  said = '';
+  await p.click('button:has-text("Delete product")');
+  await p.waitForTimeout(500);
+  check('refused', /cannot be removed/.test(said), true);
+  check('and it says where it is in use', /an indent on 2026-08-01/.test(said), true);
+  check('still in the catalogue', await p.evaluate(() => !!CAT['900']), true);
+
+  console.log('\nand one that is not, is');
+  await p.evaluate(() => { DB.indents['2026-08-01'] = {}; save(); });
+  received.length = 0;
+  await p.click('button:has-text("Delete product")');
+  await p.waitForTimeout(900);
+  check('asked before doing it', /Remove/.test(said), true);
+  const killed = received.find(r => r.method === 'DELETE' && r.table === 'products');
+  check('the delete was sent', killed && killed.code, '900');
+  check('gone from the catalogue', await p.evaluate(() => !!CAT['900']), false);
+  check('and off the code list', await p.evaluate(() => CODES.indexOf('900')), -1);
+  check('out of its vendor group',
+    await p.evaluate(() => (GROUPS['Nilgiri Hills'] || []).indexOf('900')), -1);
+  check('no longer on the screen',
+    /Cauliflower Ooty/.test(await p.locator('#main').textContent()), false);
+  await ctx.close();
+
+  console.log('\nand it stays gone after a reload');
+  ({ ctx, p } = await signIn(b, 'owner@velora.example'));
+  said = '';
+  p.on('dialog', async d => { said = d.message(); await d.accept(); });
+  await p.evaluate(() => go('products'));
+  await p.waitForTimeout(800);
+  check('not read back from the catalogue', await p.evaluate(() => !!CAT['900']), false);
+
+  /* Nothing on this device knows about it, so only the database can
+     refuse — and what it says is a constraint name, not an answer. */
+  console.log('\na day on another device refuses it, in words');
+  await p.evaluate(() => editProduct('1'));
+  await p.waitForTimeout(400);
+  said = '';
+  await p.click('button:has-text("Delete product")');
+  await p.waitForTimeout(1000);
+  check('says it is on a trading day', /on a trading day already/.test(said), true);
+  check('not the constraint name', /fkey/.test(said), false);
+  check('still in the catalogue here', await p.evaluate(() => !!CAT['1']), true);
+  await ctx.close();
+
   console.log('\nthe client side cannot add products');
   ({ ctx, p } = await signIn(b, 'shop@velora.example'));
   await p.evaluate(() => go('products'));

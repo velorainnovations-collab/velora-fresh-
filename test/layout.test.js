@@ -146,6 +146,17 @@ function check(label, problems) {
   problems.forEach(x => console.log('         ' + x));
 }
 
+function problemsIn(r) {
+  const problems = [];
+  if (r.over > 1) problems.push('page scrolls sideways by ' + r.over + 'px');
+  if (r.cells.length) problems.push('cell count: ' + r.cells.join('; '));
+  if (r.faint.length) problems.push('faint: ' + r.faint.join('; '));
+  if (r.offscreen.length) problems.push('past the edge: ' + r.offscreen.join('; '));
+  if (r.plural.length) problems.push('plural: "' + r.plural.join('", "') + '"');
+  if (r.narrow.length) problems.push('table squeezed: ' + r.narrow.join('; '));
+  return problems;
+}
+
 (async () => {
   const b = await chromium.launch();
   for (const [who, tabs] of [['owner', OFFICE], ['shop', SHOP]]) {
@@ -156,15 +167,27 @@ function check(label, problems) {
         for (const t of tabs) {
           await p.evaluate(x => go(x), t);
           await p.waitForTimeout(320);
-          const r = await p.evaluate(audit, t);
-          const problems = [];
-          if (r.over > 1) problems.push('page scrolls sideways by ' + r.over + 'px');
-          if (r.cells.length) problems.push('cell count: ' + r.cells.join('; '));
-          if (r.faint.length) problems.push('faint: ' + r.faint.join('; '));
-          if (r.offscreen.length) problems.push('past the edge: ' + r.offscreen.join('; '));
-          if (r.plural.length) problems.push('plural: "' + r.plural.join('", "') + '"');
-          if (r.narrow.length) problems.push('table squeezed: ' + r.narrow.join('; '));
-          check([who, width + 'px', scheme, t].join(' / '), problems);
+          check([who, width + 'px', scheme, t].join(' / '), problemsIn(await p.evaluate(audit, t)));
+        }
+
+        /* Three states inside the product screen that the tab list
+           cannot reach on its own: the panel that makes a vendor group,
+           the one that renames it, and the form that edits a product.
+           All three open under a form that is already several boxes
+           wide, which is exactly where a phone runs out of room. */
+        if (who === 'owner') {
+          const state = async (label, fn) => {
+            await p.evaluate(fn);
+            await p.waitForTimeout(320);
+            check([who, width + 'px', scheme, label].join(' / '),
+                  problemsIn(await p.evaluate(audit, label)));
+          };
+          await state('products / new group panel',
+                      () => { PRODOPEN = null; go('products'); gPanel('new'); });
+          await state('products / rename group panel', () => gPanel('rename'));
+          await state('products / editing a product', () => editProduct('1'));
+          await state('products / editing, new group open', () => gPanel('new'));
+          await p.evaluate(() => { PRODOPEN = null; render(); });
         }
         await ctx.close();
       }

@@ -402,6 +402,44 @@ select t('an empty name is refused too',
   try($$select rename_group('Krishnagiri','   ')$$), 'error');
 
 -- ============================================================
+-- 13. removing a product
+--
+-- The catalogue is Velora's, so the client side cannot touch it. And a
+-- product that a trading day still points at cannot be removed at all:
+-- an indent, a rate, a packing line or a vendor order referencing a
+-- product that is no longer there could not be priced or billed.
+--
+-- A bill already raised is the exception that proves it. invoice_lines
+-- keeps its own copy of the name, unit and rate and has no foreign key
+-- back to products, precisely so that a catalogue tidied up in October
+-- cannot change what a customer was charged in July.
+-- ============================================================
+set role authenticated;
+
+select login(:KLP);
+select t('a shop may not remove a product',
+  (select case when cnt($$with x as (delete from products where code = '303' returning 1)
+        select count(*) from x$$) = 0 then 'ok' else 'DELETED' end), 'ok');
+
+select login(:ADMIN);
+select t('nor may Velora, while a day still points at it',
+  try($$delete from products where code = '1'$$), 'error');
+select t('and the day is still intact',
+  (select case when cnt($$select count(*) from day_rates where product_code = '1'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+
+select t('one no day points at goes',
+  try($$delete from products where code = '303'$$), 'ok');
+select t('its group mapping went with it',
+  (select case when cnt($$select count(*) from product_groups where product_code = '303'$$) = 0
+          then 'ok' else 'LEFT' end), 'ok');
+
+select login(:KLP);
+select t('and a bill already raised still reads the same',
+  (select case when cnt($$select count(*) from invoice_lines where product_code = '1'$$) = 1
+          then 'ok' else 'LOST' end), 'ok');
+
+-- ============================================================
 reset role;
 
 select n, label,

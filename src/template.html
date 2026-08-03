@@ -1458,7 +1458,9 @@ function vProducts(){
         + ((e.unit==='box'||e.unit==='tray') ? (e.wt ? num(e.wt,2)+' kg'
              : '<span class="pill p-red">no weight</span>') : '&mdash;') + '</td>'
       + (cost ? '<td style="width:190px"><span class="pill '
-           + (g===UNGROUPED?'p-amber':'p-grey')+'">'+esc(g)+'</span></td>' : '')
+           + (g===UNGROUPED?'p-amber':'p-grey')+'">'+esc(g)+'</span></td>'
+           + '<td class="r" style="width:70px"><button class="btn sm" '
+           + 'onclick="editProduct(\''+c.replace(/'/g,"\\'")+'\')">Edit</button></td>' : '')
       + '</tr>';
   });
   const missing = CODES.filter(c=>{
@@ -1477,16 +1479,16 @@ function vProducts(){
    + '</div>'
    + (missing ? '<div class="note">'+missing+' box or tray product(s) have no unit weight on file. '
        + 'Invoices containing them are blocked rather than billed at zero.</div>' : '')
-   + (cost ? addProductForm() : '')
+   + (cost ? (PRODOPEN && CAT[PRODOPEN] ? editProductForm(PRODOPEN) : addProductForm()) : '')
    + '<div class="bar"><div class="srch">'
    + '<input type="text" id="prodQ" placeholder="Search product, Tamil name or code" value="'+esc(PRODQ)+'" '
    + 'oninput="PRODQ=this.value;afterRender=focusProdQ;render()"></div>'
    + '<span class="muted" style="font-size:13px;color:var(--ink-3)">'+codes.length+' shown</span></div>'
    + '<div class="card"><div class="twrap"><table><thead><tr><th>Code</th><th>Product</th>'
    + '<th class="c">Unit</th><th class="c">Unit weight</th>'
-   + (cost ? '<th>Vendor group</th>' : '')
+   + (cost ? '<th>Vendor group</th><th></th>' : '')
    + '</tr></thead><tbody>'
-   + (rows || '<tr><td colspan="5"><div class="empty">Nothing matched that search.</div></td></tr>')
+   + (rows || '<tr><td colspan="'+(cost?6:4)+'"><div class="empty">Nothing matched that search.</div></td></tr>')
    + '</tbody></table></div></div>';
 }
 function addProductForm(){
@@ -1551,11 +1553,15 @@ function gRenamePanel(){
    + '</div></div>';
 }
 
+/* The edit form offers only the first of the two panels — a product
+   being edited is already in a group, and that group is renamed from
+   the add form or from Vendors. */
 function gPanel(which){
   const n = document.getElementById('gNew'), r = document.getElementById('gRen');
-  if(!n || !r) return;
+  if(!n) return;
   n.className = 'gpanel' + (which==='new'    ? '' : ' hidden');
-  r.className = 'gpanel' + (which==='rename' ? '' : ' hidden');
+  if(r) r.className = 'gpanel' + (which==='rename' ? '' : ' hidden');
+  if(which==='rename' && !r) return;
   if(which==='new'){
     ['gnName','gnVendor','gnPhone'].forEach(i=>{ const e=document.getElementById(i); if(e) e.value=''; });
     const m = document.getElementById('gnManual'); if(m) m.checked = false;
@@ -1585,23 +1591,31 @@ function gSaveRename(){
   renameGroupTo(was, now, back);
 }
 
-/* What is half typed into Add a product survives a redraw. Making a
-   vendor group is a detour, not a reason to type the product again. */
+/* What is half typed into a product form survives a redraw. Making a
+   vendor group is a detour, not a reason to type the product again.
+   Both forms are the same six boxes under two prefixes — np for the one
+   that adds, ep for the one that edits — so one pair of functions does
+   for either, whichever is on screen. */
 let NPDRAFT = null;
+function npForm(){ return document.getElementById('epPName') ? 'ep' : 'np'; }
 function npKeep(){
-  const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
-  NPDRAFT = { code:v('npCode'), name:v('npPName'), tamil:v('npTamil'),
-              unit:v('npUnit') || 'kg', wt:v('npWt'), group:v('npGroup') };
+  const f = npForm();
+  const v = id => { const e = document.getElementById(f+id); return e ? e.value : ''; };
+  NPDRAFT = { form:f, code:v('Code'), name:v('PName'), tamil:v('Tamil'),
+              unit:v('Unit') || 'kg', wt:v('Wt'), group:v('Group') };
 }
 function npRestore(){
   const d = NPDRAFT; NPDRAFT = null;
   if(!d) return;
-  const s = (id,val)=>{ const e = document.getElementById(id); if(e) e.value = val; };
-  s('npCode', d.code); s('npPName', d.name); s('npTamil', d.tamil);
-  const u = document.getElementById('npUnit'); if(u) u.value = d.unit;
-  npUnitChanged();
-  s('npWt', d.wt);
-  const g = document.getElementById('npGroup');
+  const f = d.form;
+  const s = (id,val)=>{ const e = document.getElementById(f+id); if(e) e.value = val; };
+  /* the code on the edit form is the key and is not editable */
+  if(f === 'np') s('Code', d.code);
+  s('PName', d.name); s('Tamil', d.tamil);
+  const u = document.getElementById(f+'Unit'); if(u) u.value = d.unit;
+  if(f === 'ep') epUnitChanged(); else npUnitChanged();
+  s('Wt', d.wt);
+  const g = document.getElementById(f+'Group');
   if(g && d.group){
     for(let i=0;i<g.options.length;i++){
       if(g.options[i].value === d.group){ g.selectedIndex = i; break; }
@@ -1684,8 +1698,171 @@ function renameGroupTo(was, now, done){
 }
 
 function npUnitChanged(){
-  const u = document.getElementById('npUnit').value;
-  document.getElementById('npWtWrap').className = (u==='box'||u==='tray') ? '' : 'hidden';
+  const u = document.getElementById('npUnit');
+  const w = document.getElementById('npWtWrap');
+  if(!u || !w) return;
+  w.className = (u.value==='box'||u.value==='tray') ? '' : 'hidden';
+}
+
+/* ---------- editing one that is already on the list ----------
+   The same boxes as Add a product, filled in, plus the one thing the
+   add form cannot offer: taking the product off the list. The code is
+   the key every indent, rate and packing line is written against, so it
+   is shown and not edited — a product with the wrong code is a new
+   product, added and the old one removed. */
+let PRODOPEN = null;
+function editProduct(code){ PRODOPEN = code; render(); }
+
+function editProductForm(code){
+  const e = CAT[code] || {};
+  const g = groupOf(code);
+  let gopts = '';
+  GROUPNAMES.forEach(n=> gopts += '<option value="'+esc(n)+'"'
+    + (n===g?' selected':'')+'>'+esc(n)+'</option>');
+  let uopts = '';
+  ['kg','g','piece','bunch','box','tray'].forEach(u=> uopts += '<option value="'+u+'"'
+    + (u===e.unit?' selected':'')+'>'+u+'</option>');
+  const box = (e.unit==='box'||e.unit==='tray');
+  const cj = code.replace(/'/g,"\\'");
+
+  return '<div class="card"><h3>Edit '+esc(e.name)+'</h3><div style="padding:15px 16px">'
+   + '<div class="addform">'
+   + '<div><label>Code</label><input type="text" id="epCode" value="'+esc(code)+'" disabled></div>'
+   + '<div><label>Name (English)</label><input type="text" id="epPName" value="'+esc(e.name)+'"></div>'
+   + '<div><label>Tamil</label><input type="text" id="epTamil" value="'+esc(e.tamil||'')+'"></div>'
+   + '<div><label>Unit</label><select id="epUnit" onchange="epUnitChanged()">'+uopts+'</select></div>'
+   + '<div id="epWtWrap"'+(box?'':' class="hidden"')+'><label>Weight per box (kg)</label>'
+   + '<input type="number" id="epWt" step="any" min="0" value="'+(e.wt||'')+'"></div>'
+   + '<div><label>Vendor group</label><select id="epGroup">'+gopts+'</select>'
+   + '<div class="gtools">'
+   + '<button type="button" class="btn sm" onclick="gPanel(\'new\')">+ New group</button>'
+   + '</div></div>'
+   + gNewPanel()
+   + '<div class="act">'
+   + '<button class="btn pri" onclick="saveProduct(\''+cj+'\')">Save changes</button>'
+   + '<button class="btn" onclick="PRODOPEN=null;render()">Cancel</button>'
+   + '<button class="btn danger" onclick="removeProduct(\''+cj+'\')">Delete product</button>'
+   + '<p class="hintline">Changing the vendor group moves this product to that vendor’s bill '
+   + 'from the next order on. Bills already raised are not touched.</p>'
+   + '</div></div></div></div>';
+}
+
+function epUnitChanged(){
+  const u = document.getElementById('epUnit');
+  const w = document.getElementById('epWtWrap');
+  if(!u || !w) return;
+  w.className = (u.value==='box'||u.value==='tray') ? '' : 'hidden';
+}
+
+function saveProduct(code){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may edit a product.'); return; }
+  const e = CAT[code]; if(!e){ PRODOPEN = null; render(); return; }
+  const name  = document.getElementById('epPName').value.trim();
+  const tamil = document.getElementById('epTamil').value.trim();
+  const unit  = document.getElementById('epUnit').value;
+  const group = document.getElementById('epGroup').value;
+  const wt    = parseFloat(document.getElementById('epWt').value) || 0;
+
+  if(!name){ alert('A product needs an English name.'); return; }
+  if((unit==='box'||unit==='tray') && !wt){
+    alert('A '+unit+' needs its weight in kg, otherwise the invoice cannot price it.'); return;
+  }
+
+  const apply = ()=>{
+    e.name = name; e.tamil = tamil; e.unit = unit; e.wt = wt;
+    e.full = name + (tamil ? ' / ' + tamil : '');
+    const was = groupOf(code);
+    if(was !== group){
+      if(GROUPS[was]){
+        const i = GROUPS[was].indexOf(code);
+        if(i > -1) GROUPS[was].splice(i, 1);
+      }
+      CODE2GROUP[code] = group;
+      (GROUPS[group] = GROUPS[group] || []).push(code);
+    }
+    PRODOPEN = null;
+    save();
+    render();
+  };
+
+  const prod = {code:code, name:name, tamil:tamil, unit:unit, wt:wt,
+                alias:e.alias||'', group:group};
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.updateProduct(prod).then(()=>{ apply(); })
+      .catch(err=> alert('Could not save the change: ' + (err.message || err)));
+  }else{
+    apply();
+  }
+}
+
+/* Where a product is still spoken for on this device. The database
+   refuses the delete for the same reasons — an indent line, a market
+   rate, a packing line or a vendor order all point at the code — but
+   asking here first means the answer names the day rather than quoting
+   a constraint, and it is the only answer available with no server. */
+function productInUse(code){
+  const where = [];
+  Object.keys(DB.indents || {}).forEach(d=>{
+    Object.keys(DB.indents[d] || {}).forEach(s=>{
+      const l = (DB.indents[d][s] || {}).lines || {};
+      if(l[code] !== undefined && where.indexOf('an indent on ' + d) < 0) where.push('an indent on ' + d);
+    });
+  });
+  Object.keys(DB.days || {}).forEach(d=>{
+    const day = DB.days[d] || {};
+    if((day.rates || {})[code] !== undefined) where.push('the market rate on ' + d);
+    if((day.order || {})[code] !== undefined) where.push('the vendor order on ' + d);
+    Object.keys(day.packed || {}).forEach(s=>{
+      if((day.packed[s] || {})[code] !== undefined && where.indexOf('the packing on ' + d) < 0)
+        where.push('the packing on ' + d);
+    });
+  });
+  return where;
+}
+
+function removeProduct(code){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may remove a product.'); return; }
+  const e = CAT[code]; if(!e) return;
+
+  const used = productInUse(code);
+  if(used.length){
+    alert('“' + e.name + '” cannot be removed.\n\nIt is on ' + used.slice(0,3).join(', ')
+      + (used.length > 3 ? ' and ' + (used.length - 3) + ' more' : '') + '.\n\n'
+      + 'A trading day that points at a product which is no longer in the catalogue cannot be '
+      + 'priced or billed. Clear those days first, or leave the product where it is — it '
+      + 'costs nothing to have one line too many on the list.');
+    return;
+  }
+
+  if(!confirm('Remove “' + e.name + '” from the catalogue?\n\n'
+      + 'It disappears from the indent, rate, order and packing screens for everybody. '
+      + 'Bills already raised keep their own copy of the name and rate and are not touched.\n\n'
+      + 'This cannot be undone from here — the product would have to be added again.')) return;
+
+  const apply = ()=>{
+    const g = groupOf(code);
+    if(GROUPS[g]){
+      const i = GROUPS[g].indexOf(code);
+      if(i > -1) GROUPS[g].splice(i, 1);
+    }
+    delete CODE2GROUP[code];
+    delete CAT[code];
+    const i = CODES.indexOf(code);
+    if(i > -1) CODES.splice(i, 1);
+    Object.keys(ALIAS).forEach(a=>{ if(ALIAS[a] === code) delete ALIAS[a]; });
+    /* the shelf margin was about this product and nothing else */
+    Object.keys((DB.master || {}).selling || {}).forEach(s=>{ delete DB.master.selling[s][code]; });
+    PRODOPEN = null;
+    save();
+    render();
+  };
+
+  if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+    VFSync.deleteProduct(code).then(()=>{ apply(); })
+      .catch(err=> alert('Could not remove the product: ' + (err.message || err)));
+  }else{
+    apply();
+  }
 }
 
 function addProduct(){

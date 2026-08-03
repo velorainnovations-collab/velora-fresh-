@@ -108,5 +108,13 @@ afterwards never re-prices a bill that has already been raised.
   existing one. A rename moves the products, the vendor, its bank details and every
   order already placed under the old name, in one transaction (`rename_group` in
   `supabase/02_security.sql`). `Manual order` is not a vendor and keeps its name.
+* Every row of the product list has an **Edit** button (Velora only). It changes the
+  name, the Tamil name, the unit, the box weight and the vendor group of a product
+  already on the list, and it is where a product is removed from the catalogue.
+  A product a trading day still points at cannot be removed — an indent, a market
+  rate, a packing line or a vendor order referencing a product that is no longer
+  there could not be priced or billed, so the app names the day and refuses. Bills
+  already raised are never affected: an invoice line keeps its own copy of the name,
+  unit and rate.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.
