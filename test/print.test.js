@@ -118,6 +118,20 @@ const measure = () => {
         Math.abs(d[0].getBoundingClientRect().width - d[1].getBoundingClientRect().width) <= 1;
     })(),
     hasBank: /Bank Details/i.test((document.querySelector('.ifoot .lft') || {}).textContent || ''),
+    /* every label on the sheet is followed by a colon, and they all land
+       on the same vertical line inside their own block */
+    noColon: Array.from(document.querySelectorAll('.ipair'))
+      .filter(r => !r.querySelector('.cln'))
+      .map(r => r.textContent.trim().slice(0, 20)),
+    colonsAligned: (() => {
+      const bad = [];
+      ['.imeta', '.iband .rgt', '.ifoot .lft'].forEach(sel => {
+        const c = Array.from(document.querySelectorAll(sel + ' .ipair .cln'))
+          .map(x => Math.round(x.getBoundingClientRect().left));
+        if (c.length > 1 && Math.max.apply(null, c) - Math.min.apply(null, c) > 1) bad.push(sel);
+      });
+      return bad;
+    })(),
     signRight: (() => {
       const f = document.querySelector('.ifoot .rgt'), b = document.querySelector('.ifoot .lft');
       if (!f || !b) return false;
@@ -152,6 +166,8 @@ const measure = () => {
     check('the two halves of the customer band are equal', m.bandEven, true);
     check('and the two halves of the footer', m.footEven, true);
     check('the bank block is on the bill', m.hasBank, true);
+    check('every label has its colon', m.noColon.join(', '), '');
+    check('and they line up in a column', m.colonsAligned.join(', '), '');
     check('with the signature beside it, not under it', m.signRight, true);
     check('the net amount reads right', /^[\d,]+\.\d\d$/.test(m.netFigure), true);
     check('and lines up under Amount', Math.abs(m.amountRight - m.netFigureRight) <= 1, true);

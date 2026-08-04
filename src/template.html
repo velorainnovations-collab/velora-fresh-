@@ -356,8 +356,12 @@ tbody tr.skipped:hover td{background:var(--red-soft)}
 .ititle{border:1px solid #1a1a1a;text-align:center;font-size:13.5px;letter-spacing:.3em;
   font-weight:700;padding:6px 0}
 .ibox{border:1px solid #1a1a1a;border-top:none}
+/* label, colon, value. The colon is its own column so every one of
+   them lands on the same vertical line, whatever length the label
+   before it happens to be. */
 .ipair{display:flex;gap:6px}
 .ipair>.k{flex:none;white-space:nowrap}
+.ipair>.cln{flex:none}
 .ipair>.v{flex:1 1 auto;min-width:0;word-break:break-word}
 .imeta{padding:7px 10px;font-size:12.5px;line-height:1.55}
 .imeta .k{width:62px}
@@ -4140,11 +4144,13 @@ function vInvoiceOne(shopId){
      with no row for the vehicle is a different form from the one beside
      it in the file; a blank one is the same form, waiting. */
   const hd = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + '<span class="cln">:</span>'
     + '<span class="v mono">'+(val ? esc(val) : '&nbsp;')+'</span></div>';
   /* the three the desk fills in, typed straight onto the sheet. oninput,
      not onchange: what is typed is on the bill as it is typed, and there
      is nothing to redraw because the box is what prints. */
   const he = (lbl, key, val, ph) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + '<span class="cln">:</span>'
     + (live
         ? '<input class="iedit v mono" id="inv'+key+'" autocomplete="off" '
           + 'placeholder="'+esc(ph||'')+'" value="'+esc(val||'')+'" '
@@ -4157,6 +4163,7 @@ function vInvoiceOne(shopId){
      a missing line reads as an oversight, a placeholder reads as a to do */
   const bank = COMPANY.bank || {};
   const bk = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
+    + '<span class="cln">:</span>'
     + '<span class="v'+(val?' mono':'')+'">'+(val ? esc(val) : 'Xxxx')+'</span></div>';
 
   const canEdit = (ROLE === 'owner' || ROLE === 'admin');
