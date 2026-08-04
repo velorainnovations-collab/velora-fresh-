@@ -48,7 +48,10 @@ console.log('\nflatten');
 const DB = {
   indents: {
     '2026-07-30': {
-      KLP: { status: 'accepted', lines: { '1': 12, '2': 50 }, submittedAt: null, late: true },
+      /* '2' was put on the indent after '1', so it is the newer line and
+         the screens read it first */
+      KLP: { status: 'accepted', lines: { '1': 12, '2': 50 }, seq: { '1': 1, '2': 2 },
+             submittedAt: null, late: true },
       NGB: { status: 'draft', lines: {} },                       // untouched
     },
   },
@@ -102,6 +105,11 @@ check('empty draft skipped',  F.indents['2026-07-30|NGB'], undefined);
 check('indent late flag',     F.indents['2026-07-30|KLP'].late, true);
 check('indent lines',         Object.keys(F.indent_lines).length, 2);
 check('indent line qty',      F.indent_lines['2026-07-30|KLP|2'].qty, 50);
+check('and the order it was written in',
+      F.indent_lines['2026-07-30|KLP|2'].seq, 2);
+check('a line with no order recorded sends a zero',
+      S._flatten({ indents: { '2026-07-30': { KLP: { status: 'draft', lines: { '9': 1 } } } } })
+        .indent_lines['2026-07-30|KLP|9'].seq, 0);
 
 check('rate entered',         F.day_rates['2026-07-30|1'].rate, 80);
 check('blank rate skipped',   F.day_rates['2026-07-30|2'], undefined);
@@ -312,7 +320,7 @@ check('the schema was read', Object.keys(schema).length > 10, true);
 
 /* indent_lines is rewritten on the way out, so it is checked against
    what send() actually posts rather than what flatten() holds */
-const SENT_AS = { indent_lines: ['indent_id', 'product_code', 'qty'] };
+const SENT_AS = { indent_lines: ['indent_id', 'product_code', 'qty', 'seq'] };
 Object.keys(F).forEach(t => {
   const keys = Object.keys(F[t]);
   if (!keys.length) return;

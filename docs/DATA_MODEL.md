@@ -7,7 +7,9 @@ what the backend should mirror.
 DB = {
   indents: {
     "2026-07-30": {
-      "KLP": { status, lines: { "<code>": qty }, submittedAt, late }
+      "KLP": { status, lines: { "<code>": qty },
+               seq: { "<code>": 3 },        // the order it was written in
+               submittedAt, late }
     }
   },
 
@@ -57,6 +59,31 @@ DB = {
   settings: { anytime: false }                    // ignore the indent window
 }
 ```
+
+## Nothing is listed alphabetically
+
+An indent is not a catalogue. It is the list somebody built, and the thing they
+just put on it is the thing they are still thinking about — so every screen reads
+newest first. Not by name, and not by product code, which is what a plain object
+hands back for free because a key that looks like a number sorts like one.
+
+`indents[date][shop].seq` carries the position each line was written at; bigger is
+newer. Changing a quantity does not renumber, so everything below a new line keeps
+the order it had.
+
+The day's screens — market rates, the vendor order, packing, the delivery note and
+the bill — read from the same rule. A day is written by several shops at once on
+separate phones, so there is no one counter to lean on; what there is, is how far
+down its own list each shop wrote the product, and a thing written late by anybody
+is a thing added late. Anything first seen at packing was put on the day after
+every indent had closed, so it ranks above all of them.
+
+The catalogue follows it too: `products.added_ord`, newest first. The 241 that came
+with the build have no such moment on record, so they keep the order the catalogue
+file was written in, underneath everything added since.
+
+Code only ever breaks a tie, so that two things added at the same moment come out
+in the same order every time.
 
 ## Invoice lines are frozen
 

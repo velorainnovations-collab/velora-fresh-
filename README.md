@@ -152,5 +152,9 @@ afterwards never re-prices a bill that has already been raised.
   the paper's width, and fails if anything runs past the edge, if a column heading
   no longer fits, if the totals stop lining up under Amount, or if it spills onto a
   second page.
+* Products are listed newest first, everywhere — the indent, the market rates, the
+  vendor order, packing, the delivery note, the bill, the product list and the
+  margin master. Never alphabetically and never by product code; code only breaks
+  a tie. See docs/DATA_MODEL.md, "Nothing is listed alphabetically".
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

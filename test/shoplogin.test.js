@@ -123,13 +123,35 @@ async function tryShop(p, name, phone, pw) {
         (await p.locator('#mylist tr.vgrp').allTextContents()).length, 1);
   check('and it says so',
         /All products/.test(await p.locator('#mylist tr.vgrp').first().textContent()), true);
-  check('sorted by name, so a name can be found',
+  /* Not alphabetical, and not by code. The catalogue is read newest
+     first: what was added last is what somebody is looking for. */
+  check('not sorted by name',
         await p.evaluate(() => {
           const names = Array.prototype.slice.call(
             document.querySelectorAll('#mylist tbody tr[data-k] td:nth-child(2)'))
             .map(td => td.childNodes[0].textContent.trim());
           return names.every((n, i) => i === 0 || names[i-1].localeCompare(n) <= 0);
-        }), true);
+        }), false);
+  check('a product added since the build is at the top',
+        await p.evaluate(() => {
+          const c = '905';
+          CAT[c] = { code: c, name: 'Zucchini', tamil: '', full: 'Zucchini',
+                     unit: 'kg', wt: 0, margin: null, alias: '', added: nextAddedOrd() };
+          CODES.push(c);
+          CODE2GROUP[c] = UNGROUPED;
+          (GROUPS[UNGROUPED] = GROUPS[UNGROUPED] || []).push(c);
+          render();
+          const first = document.querySelector('#mylist tbody tr[data-k] td:first-child');
+          return first ? first.textContent.trim() : '';
+        }), '905');
+  // put the catalogue back, the checks below count it
+  await p.evaluate(() => {
+    delete CAT['905']; delete CODE2GROUP['905'];
+    CODES.splice(CODES.indexOf('905'), 1);
+    const g = GROUPS[UNGROUPED] || [];
+    if(g.indexOf('905') > -1) g.splice(g.indexOf('905'), 1);
+    render();
+  });
 
   console.log('\nand what they order most sits at the top');
   await p.evaluate(() => {
@@ -306,7 +328,7 @@ async function tryShop(p, name, phone, pw) {
         lines.filter(r => r.refused).length, 0);
   check('keyed by its indent, as the table is',
         lines.length ? Object.keys(lines[lines.length - 1].rows[0]).sort().join(',') : '',
-        'indent_id,product_code,qty');
+        'indent_id,product_code,qty,seq');
   check('the header went first', received.some(r => r.table === 'indents'), true);
   check('nothing is left waiting', await p.evaluate(() => VFSync.queueLength()), 0);
   check('and the badge says it is saved',

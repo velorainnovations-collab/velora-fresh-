@@ -29,6 +29,28 @@ const USERS = {
   'stranger@velora.example':{ pw: 'right', uid: 'ffff0000-0000-0000-0000-00000000000f', row: null },
 };
 
+/* one read of the schema, cached: create table plus the columns added
+   to it later by name at the foot of the file */
+let SCHEMA = null;
+function schemaColumns() {
+  if (SCHEMA) return SCHEMA;
+  const sql = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'supabase', '01_schema.sql'), 'utf8');
+  const out = {};
+  const tbl = /create table (?:if not exists )?(\w+) \(([\s\S]*?)\n\);/g;
+  let m;
+  while ((m = tbl.exec(sql))) {
+    out[m[1]] = m[2].split('\n').map(l => l.trim())
+      .filter(l => l && !l.startsWith('--'))
+      .map(l => l.split(/\s+/)[0].replace(/,$/, ''))
+      .filter(c => ['primary', 'unique', 'constraint', 'check', 'foreign'].indexOf(c.toLowerCase()) < 0);
+  }
+  const alt = /alter table (\w+)\s+add column if not exists (\w+)/g;
+  while ((m = alt.exec(sql))) (out[m[1]] = out[m[1]] || []).push(m[2]);
+  SCHEMA = out;
+  return out;
+}
+
 const received = [];         // every write the app sent
 /* what the deployed project can do, so the tests can pretend it is
    older than the code in this repository */
@@ -366,31 +388,14 @@ const srv = http.createServer((req, res) => {
         }
       }
 
-      /* The columns each table actually has, copied from
-         supabase/01_schema.sql. A mock that accepts anything is worse
-         than no mock: indent_lines was sent trade_date and shop_id for
-         months, PostgREST refused every push that carried a line, and
-         nothing here noticed. */
-      const COLUMNS = {
-        indents:        ['id', 'trade_date', 'shop_id', 'status', 'submitted_at',
-                         'accepted_at', 'accepted_by_name', 'late'],
-        indent_lines:   ['indent_id', 'product_code', 'qty'],
-        day_rates:      ['trade_date', 'product_code', 'rate'],
-        packed:         ['trade_date', 'shop_id', 'product_code', 'qty'],
-        shipments:      ['trade_date', 'shop_id', 'state', 'out_at', 'received_at'],
-        vendor_orders:  ['trade_date', 'group_name', 'sent_at'],
-        vendor_order_lines: ['trade_date', 'group_name', 'product_code', 'qty'],
-        invoices:       ['id', 'bill_no', 'trade_date', 'shop_id', 'total', 'round_off',
-                         'net_amount', 'created_at'],
-        invoice_lines:  ['invoice_id', 'line_no', 'product_code', 'name', 'tamil', 'unit',
-                         'qty', 'net_kg', 'rate', 'amount', 'sell'],
-        payments:       ['id', 'client_id', 'paid_on', 'amount', 'mode', 'ref', 'created_at'],
-        vendors:        ['group_name', 'name', 'phone', 'contact', 'address', 'notes'],
-        vendor_bank:    ['group_name', 'ac_name', 'ac_no', 'ifsc', 'upi'],
-        margin_comm:    ['shop_id', 'pct'],
-        margin_selling: ['shop_id', 'product_code', 'pct'],
-        settings:       ['client_id', 'anytime'],
-      };
+      /* The columns each table actually has — read out of
+         supabase/01_schema.sql rather than kept by hand here, because a
+         hand-kept copy goes stale and then the mock waves through a
+         write the real database would refuse. That is not theoretical:
+         indent_lines was sent trade_date and shop_id for months and
+         PostgREST rejected every push carrying a line, and later the
+         invoice grew six columns this list did not have. */
+      const COLUMNS = schemaColumns();
       if (req.method === 'POST' && COLUMNS[name] && body) {
         const rows = JSON.parse(body);
         for (const row of (Array.isArray(rows) ? rows : [rows])) {

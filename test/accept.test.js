@@ -84,10 +84,43 @@ async function device(b) {
   check('no Open button anywhere',
         /Open/.test(await office.p.locator('#main').textContent()), false);
 
+  /* An indent is the list somebody built, so it reads newest first —
+     not alphabetically, and not by product code, which is what a plain
+     object gives for free because a numeric key sorts like a number. */
+  console.log('\nthe order an indent is written in');
+  await shop.p.evaluate(() => { go('myindent'); });
+  await shop.p.waitForTimeout(400);
+  await shop.p.evaluate(() => { myQty('3', 4); });     // Cabbage first
+  await shop.p.waitForTimeout(200);
+  await shop.p.evaluate(() => { myQty('23', 6); });    // then Country Tomato
+  await shop.p.waitForTimeout(200);
+  await shop.p.evaluate(() => { myQty('1', 5); });     // then Lemon, newest
+  await shop.p.waitForTimeout(400);
+  check('the last one added is at the top',
+        await shop.p.evaluate(() => indentCodes(indentOf(DATE, ROLE)).join(',')), '1,23,3');
+  check('and that is the order on the screen', await shop.p.evaluate(() =>
+    Array.prototype.slice.call(document.querySelectorAll('#mylist tr[data-grp="chosen"]'))
+      .filter(tr => !tr.classList.contains('vgrp'))
+      .map(tr => tr.querySelector('td').textContent.trim()).join(',')), '1,23,3');
+
+  // changing a quantity is not adding: nothing moves
+  await shop.p.evaluate(() => { myQty('3', 9); });
+  await shop.p.waitForTimeout(300);
+  check('changing a quantity leaves it where it was',
+        await shop.p.evaluate(() => indentCodes(indentOf(DATE, ROLE)).join(',')), '1,23,3');
+
+  // and one more added later goes above all of them
+  await shop.p.evaluate(() => { myQty('2', 12); });
+  await shop.p.waitForTimeout(300);
+  check('a new one goes to the top, the rest keep their order',
+        await shop.p.evaluate(() => indentCodes(indentOf(DATE, ROLE)).join(',')), '2,1,23,3');
+
   console.log('\nthe shop fills it in and presses the button');
   await shop.p.evaluate(() => {
     const ind = indentOf(DATE, ROLE);
-    ind.lines = { '1': 5, '2': 12 };
+    ind.lines = {}; ind.seq = {};
+    indentAdd(ind, '1', 5);
+    indentAdd(ind, '2', 12);
     save(); render();
   });
   await shop.p.waitForTimeout(400);
@@ -125,15 +158,16 @@ async function device(b) {
         /₹500\.00/.test(await office.p.locator('.estbar').textContent()), true);
   check('with the uncounted line named',
         /1 product not counted/.test(await office.p.locator('.estbar').textContent()), true);
-  const first = office.p.locator('#main tbody tr').first();
-  await first.locator('input').fill('3');
-  await first.locator('input').blur();
+  const lemon = office.p.locator('#main tbody tr').filter({ hasText: 'Lemon' });
+  await lemon.locator('input').fill('3');
+  await lemon.locator('input').blur();
   await office.p.waitForTimeout(600);
   check('a quantity can be cut before accepting',
         await office.p.evaluate(d => indentOf(d, 'KLP').lines['1'], today), 3);
   check('and the estimate follows the cut',
         /₹300\.00/.test(await office.p.locator('.estbar').textContent()), true);
-  await office.p.locator('#main tbody tr').nth(1).locator('button.rm').click();
+  await office.p.locator('#main tbody tr').filter({ hasText: 'Potato' })
+    .locator('button.rm').click();
   await office.p.waitForTimeout(600);
   check('and a line removed',
         await office.p.evaluate(d => Object.keys(indentOf(d, 'KLP').lines).length, today), 1);

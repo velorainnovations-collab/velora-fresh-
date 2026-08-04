@@ -575,7 +575,7 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   <!-- which build is on the screen. Changes whenever the app does, so
        "did the change reach me?" is answered by looking rather than by
        guessing at a cache. -->
-  <span id="buildId" class="mono" title="Build">ce686fb</span>
+  <span id="buildId" class="mono" title="Build">a8290db</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
@@ -1159,10 +1159,13 @@ const VFSync = (function () {
           accepted_by_name: ind.acceptedBy || null,
           late: !!ind.late,
         };
+        const seq = ind.seq || {};
         Object.keys(lines).forEach(code => {
           out.indent_lines[date + '|' + shop + '|' + code] = {
             trade_date: date, shop_id: shop,
             product_code: code, qty: Number(lines[code]) || 0,
+            // the order it was written onto the indent; see 01_schema.sql
+            seq: Number(seq[code]) || 0,
           };
         });
       });
@@ -1724,7 +1727,8 @@ const VFSync = (function () {
         if (isDelete) continue;
         throw e;
       }
-      out.push({ indent_id: id, product_code: row.product_code, qty: row.qty });
+      out.push({ indent_id: id, product_code: row.product_code, qty: row.qty,
+                 seq: row.seq || 0 });
     }
     return out;
   }
@@ -1906,7 +1910,7 @@ const VFSync = (function () {
     inds.forEach(i => {
       byId[i.id] = i.shop_id;
       day[i.shop_id] = {
-        status: i.status, lines: {},
+        status: i.status, lines: {}, seq: {},
         submittedAt: i.submitted_at || null,
         acceptedAt: i.accepted_at || null,
         acceptedBy: i.accepted_by_name || null,
@@ -1915,7 +1919,9 @@ const VFSync = (function () {
     });
     lines.forEach(l => {
       const shop = byId[l.indent_id];
-      if (shop && day[shop]) day[shop].lines[l.product_code] = Number(l.qty);
+      if (!shop || !day[shop]) return;
+      day[shop].lines[l.product_code] = Number(l.qty);
+      (day[shop].seq = day[shop].seq || {})[l.product_code] = Number(l.seq) || 0;
     });
     /* packing and the lorry, so a shop sees "out for delivery" the
        moment the office marks it, and the packing screen picks up a
@@ -1982,7 +1988,7 @@ const VFSync = (function () {
     inds.forEach(i => {
       indById[i.id] = i;
       const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
-      d[i.shop_id] = { status: i.status, lines: {},
+      d[i.shop_id] = { status: i.status, lines: {}, seq: {},
                        submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
                        acceptedBy: i.accepted_by_name || null, late: !!i.late };
     });
@@ -1990,7 +1996,9 @@ const VFSync = (function () {
       const hdr = indById[l.indent_id];
       if (!hdr) return;
       const rec = (DB.indents[hdr.trade_date] || {})[hdr.shop_id];
-      if (rec) rec.lines[l.product_code] = Number(l.qty);
+      if (!rec) return;
+      rec.lines[l.product_code] = Number(l.qty);
+      (rec.seq = rec.seq || {})[l.product_code] = Number(l.seq) || 0;
     });
 
     const day = d => (DB.days[d] = DB.days[d] ||
@@ -2394,7 +2402,7 @@ const VFSync = (function () {
       headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify([{ code: p.code, name: p.name, tamil: p.tamil || '',
                               unit: p.unit, unit_weight_kg: p.wt || null,
-                              alias: p.alias || '' }]),
+                              alias: p.alias || '', added_ord: p.added || 0 }]),
     });
     if (r.status === 401 && await refresh()) return addProduct(p);
     if (!r.ok) throw await httpError(r, 'products');
@@ -2443,7 +2451,8 @@ const VFSync = (function () {
       method: 'PATCH',
       headers: headers({ 'Prefer': 'return=minimal' }),
       body: JSON.stringify({ name: p.name, tamil: p.tamil || '', unit: p.unit,
-                             unit_weight_kg: p.wt || null, alias: p.alias || '' }),
+                             unit_weight_kg: p.wt || null, alias: p.alias || '',
+                             added_ord: p.added || 0 }),
     });
     if (r.status === 401 && await refresh()) return updateProduct(p);
     if (!r.ok) throw await httpError(r, 'products');
@@ -2570,7 +2579,7 @@ const VFSync = (function () {
   async function fetchCatalogue() {
     if (!enabled() || !signedIn()) return null;
     const [products, groups, mapping] = await Promise.all([
-      get('products', 'code,name,tamil,unit,unit_weight_kg,alias').catch(() => []),
+      get('products', 'code,name,tamil,unit,unit_weight_kg,alias,added_ord').catch(() => []),
       get('vendor_groups', 'name,manual,sort_ord').catch(() => []),
       get('product_groups', 'product_code,group_name').catch(() => []),
     ]);
@@ -3102,8 +3111,49 @@ function sellingPrice(shopId, code){
 /* ---------- indent state helpers ---------- */
 function indentOf(date, shopId){
   DB.indents[date] = DB.indents[date] || {};
-  if(!DB.indents[date][shopId]) DB.indents[date][shopId] = {status:'draft', lines:{}, submittedAt:null, late:false};
-  return DB.indents[date][shopId];
+  if(!DB.indents[date][shopId]) DB.indents[date][shopId] = {status:'draft', lines:{}, seq:{}, submittedAt:null, late:false};
+  const ind = DB.indents[date][shopId];
+  ind.lines = ind.lines || {};
+  ind.seq   = ind.seq   || {};
+  return ind;
+}
+
+/* ---------- the order an indent is written in ----------
+   An indent is not a catalogue. It is the list somebody built, and the
+   thing they just put on it is the thing they are still thinking about,
+   so it belongs at the top. Alphabetical order is the wrong answer, and
+   so is product code — which is what a plain object gives you for free,
+   because a key that looks like a number sorts like one.
+
+   So each line carries the number it was added under. Bigger is newer;
+   nothing renumbers when a quantity changes, so everything below the
+   new line keeps the order it had. */
+function indentAdd(ind, code, qty){
+  const q = Number(qty) || 0;
+  ind.lines = ind.lines || {};
+  ind.seq   = ind.seq   || {};
+  if(q <= 0){ delete ind.lines[code]; delete ind.seq[code]; return; }
+  /* only a line that is genuinely new gets a number; changing a
+     quantity leaves it where it is */
+  if(ind.seq[code] === undefined){
+    let top = 0;
+    Object.keys(ind.seq).forEach(k=>{ if(ind.seq[k] > top) top = ind.seq[k]; });
+    ind.seq[code] = top + 1;
+  }
+  ind.lines[code] = q;
+}
+
+/* Newest first. A line with no number of its own — an indent written
+   before this was recorded, or one read back from a database that has
+   not been given the column yet — keeps to the bottom, in code order, so
+   an old indent reads the way it always did rather than shuffling. */
+function indentCodes(ind){
+  const seq = (ind && ind.seq) || {};
+  return Object.keys((ind && ind.lines) || {}).sort((a,b)=>{
+    const sa = seq[a] || 0, sb = seq[b] || 0;
+    if(sa !== sb) return sb - sa;
+    return (parseInt(a,10)||0) - (parseInt(b,10)||0);
+  });
 }
 function dayOf(date){
   DB.days[date] = DB.days[date] || {rates:{}, packed:{}, ship:{}, extra:{}};
@@ -3123,7 +3173,67 @@ function uniqueCodes(date){
   Object.keys(day.packed).forEach(sid=>{
     Object.keys(day.packed[sid]||{}).forEach(c=>{ set[c]=1; });
   });
-  return Object.keys(set).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
+  return Object.keys(set).sort(byDay(date));
+}
+
+/* ---------- the order a day is read in ----------
+   The thing put on the day last is the thing still being thought about,
+   so it is the thing at the top — the same rule the indents follow,
+   carried through the market rates, the vendor order, the packing, the
+   delivery note and the bill.
+
+   A day is written by several shops at once on separate phones, so there
+   is no one counter to lean on. What there is, is how far down its own
+   list each shop wrote the product: something written late by anybody is
+   something added late. And anything first seen at packing was put on
+   the day after every indent had closed, so it ranks above all of them.
+
+   Nothing is ever ordered alphabetically or by product code. Code only
+   breaks a tie, so that two products added at the same moment come out
+   in the same order every time rather than in whatever order the browser
+   happened to hand back. */
+const PACKED_RANK = 1000000;
+function dayOrder(date){
+  const rank = {};
+  Object.keys(DB.indents[date] || {}).forEach(sid=>{
+    const ind = DB.indents[date][sid] || {};
+    const seq = ind.seq || {};
+    Object.keys(ind.lines || {}).forEach(c=>{
+      const s = seq[c] || 0;
+      if(rank[c] === undefined || s > rank[c]) rank[c] = s;
+    });
+  });
+  const day = DB.days[date] || {};
+  Object.keys(day.packed || {}).forEach(sid=>{
+    Object.keys(day.packed[sid] || {}).forEach(c=>{
+      if(!rank[c]) rank[c] = PACKED_RANK;
+    });
+  });
+  return rank;
+}
+function byDay(date){
+  const rank = dayOrder(date);
+  return (a,b)=>{
+    const ra = rank[a] || 0, rb = rank[b] || 0;
+    if(ra !== rb) return rb - ra;
+    return (parseInt(a,10)||0) - (parseInt(b,10)||0);
+  };
+}
+
+/* ---------- the order the catalogue is read in ----------
+   The product added last is the one at the top, everywhere a product is
+   listed. The 241 that came with the build have no such moment on
+   record — there is nothing to sort them by that would not be invented —
+   so they keep the order the catalogue was written in, underneath
+   everything added since. */
+function nextAddedOrd(){
+  let top = 0;
+  CODES.forEach(c=>{ const n = (CAT[c] || {}).added || 0; if(n > top) top = n; });
+  return top + 1;
+}
+function catalogueCodes(){
+  /* sort is stable, so the ones with nothing on record keep their order */
+  return CODES.slice().sort((a,b)=> ((CAT[b]||{}).added || 0) - ((CAT[a]||{}).added || 0));
 }
 /* Accepted is final. The day's order has gone to the vendors on the
    strength of it, the shop has been told what it is getting, and a
@@ -3293,6 +3403,9 @@ function mergeCatalogue(cat){
       wt: parseFloat(r.unit_weight_kg) || 0,
       margin: known ? CAT[r.code].margin : null,
       alias: r.alias || '',
+      /* when it was added, so a product added on another device turns up
+         at the top of the list here too */
+      added: Number(r.added_ord) || 0,
     };
     if(r.alias) ALIAS[String(r.alias).toUpperCase()] = r.code;
     if(!known){ CODES.push(r.code); added++; }
@@ -3348,7 +3461,7 @@ function mergeCatalogue(cat){
 let PRODQ = '';
 function vProducts(){
   const q = PRODQ.trim().toLowerCase();
-  const codes = CODES.filter(c=>{
+  const codes = catalogueCodes().filter(c=>{
     if(!q) return true;
     const e = CAT[c];
     return (e.name+' '+e.tamil+' '+c+' '+(e.alias||'')).toLowerCase().indexOf(q) > -1;
@@ -3693,7 +3806,7 @@ function saveProduct(code){
   };
 
   const prod = {code:code, name:name, tamil:tamil, unit:unit, wt:wt,
-                alias:e.alias||'', group:group};
+                alias:e.alias||'', group:group, added:e.added||0};
   if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
     VFSync.updateProduct(prod).then(()=>{ apply(); })
       .catch(err=> alert('Could not save the change: ' + (err.message || err)));
@@ -3788,11 +3901,14 @@ function addProduct(){
     alert('A '+unit+' needs its weight in kg, otherwise the invoice cannot price it.'); return;
   }
 
-  const prod = {code:code, name:name, tamil:tamil, unit:unit, wt:wt, alias:'', group:group};
+  const added = nextAddedOrd();
+  const prod = {code:code, name:name, tamil:tamil, unit:unit, wt:wt, alias:'',
+                group:group, added:added};
 
   const apply = ()=>{
     CAT[code] = {code:code, name:name, tamil:tamil,
-                 full:name+(tamil?' / '+tamil:''), unit:unit, wt:wt, margin:null, alias:''};
+                 full:name+(tamil?' / '+tamil:''), unit:unit, wt:wt, margin:null,
+                 alias:'', added:added};
     CODES.push(code);
     CODE2GROUP[code] = group;
     (GROUPS[group] = GROUPS[group] || []).push(code);
@@ -4548,7 +4664,8 @@ function vMyIndent(){
   const ind = indentOf(DATE, ROLE);
   const w = windowState();
   const locked = indentLocked(DATE, ROLE);
-  const codes = Object.keys(ind.lines);
+  /* newest first, whether it is being written or has been accepted */
+  const codes = indentCodes(ind);
 
   let note = '';
   if(w==='open')   note = WINDOW_ON
@@ -4594,10 +4711,14 @@ function vMyIndent(){
     /* the prices these lines will want: the ones already chosen, and the
        ones they usually order. Not the whole catalogue. */
     askLastPrices(ROLE, DATE, codes.concat(usual.filter(c=>codes.indexOf(c) < 0)).slice(0, 60));
+    /* What has been chosen is lifted out of the catalogue and put at the
+       top, newest first. It appears once, not twice: a product with a
+       quantity against it is no longer something to go looking for. */
+    const chosen = {};
+    codes.forEach(c=>{ chosen[c] = 1; });
     const seen = {};
     usual.forEach(c=>{ seen[c] = 1; });
-    const rest = CODES.filter(c=>CAT[c] && !seen[c])
-      .sort((a,b)=> CAT[a].name.localeCompare(CAT[b].name));
+    const rest = catalogueCodes().filter(c=>CAT[c] && !seen[c] && !chosen[c]);
 
     const line = (c, grp)=>{
       const e = CAT[c];
@@ -4621,14 +4742,21 @@ function vMyIndent(){
         + '</td></tr>';
     };
 
-    if(usual.length){
+    if(codes.length){
+      rows += '<tr class="vgrp" data-grp="chosen"><td colspan="6">On your indent '
+            + '<span style="font-weight:400;color:var(--ink-3)">&middot; '+codes.length
+            + ' product'+(codes.length===1?'':'s')+', the one you added last at the top</span></td></tr>';
+      codes.forEach(c=>{ rows += line(c, 'chosen'); });
+    }
+    const usualLeft = usual.filter(c=>!chosen[c]);
+    if(usualLeft.length){
       rows += '<tr class="vgrp" data-grp="usual"><td colspan="6">What you usually order '
-            + '<span style="font-weight:400;color:var(--ink-3)">&middot; '+usual.length
-            + ' product'+(usual.length===1?'':'s')+', the ones you ask for most first</span></td></tr>';
-      usual.forEach(c=>{ rows += line(c, 'usual'); });
+            + '<span style="font-weight:400;color:var(--ink-3)">&middot; '+usualLeft.length
+            + ' product'+(usualLeft.length===1?'':'s')+', the ones you ask for most first</span></td></tr>';
+      usualLeft.forEach(c=>{ rows += line(c, 'usual'); });
     }
     rows += '<tr class="vgrp" data-grp="rest"><td colspan="6">'
-          + (usual.length ? 'Everything else' : 'All products')
+          + (usualLeft.length || codes.length ? 'Everything else' : 'All products')
           + ' <span style="font-weight:400;color:var(--ink-3)">&middot; '+rest.length+'</span></td></tr>';
     rest.forEach(c=>{ rows += line(c, 'rest'); });
   }
@@ -4814,9 +4942,14 @@ function myRepeatLast(){
   const had = Object.keys(ind.lines).length;
   if(had && !confirm('Replace what you have entered today with your indent from '
                      + fmtDate(from) + '?')) return;
-  const src = DB.indents[from][ROLE].lines;
-  ind.lines = {};
-  Object.keys(src).forEach(c=>{ if(CAT[c] && Number(src[c]) > 0) ind.lines[c] = Number(src[c]); });
+  const prev = DB.indents[from][ROLE];
+  const src = prev.lines;
+  ind.lines = {}; ind.seq = {};
+  /* copied oldest first, so the day being repeated comes back reading
+     exactly as it read then rather than upside down */
+  indentCodes(prev).slice().reverse().forEach(c=>{
+    if(CAT[c] && Number(src[c]) > 0) indentAdd(ind, c, Number(src[c]));
+  });
   MYONLY = true;                 /* so they can see what they just got */
   save(); render();
 }
@@ -4941,9 +5074,12 @@ function myImportApply(){
   if(indentLocked(DATE, ROLE)){ IMPORT = null; return lockedNote(); }
   const ind = indentOf(DATE, ROLE);
   let n = 0;
-  IMPORT.lines.forEach(l=>{
+  /* Added bottom up, so the finished indent reads in the order of the
+     sheet that was pasted in. Adding them the way round they are written
+     would stand the shop's own list on its head. */
+  IMPORT.lines.slice().reverse().forEach(l=>{
     if(!l.use || !l.code || !(l.qty > 0)) return;
-    ind.lines[l.code] = Number(l.qty);
+    indentAdd(ind, l.code, Number(l.qty));
     n++;
   });
   IMPORT = null;
@@ -5039,14 +5175,13 @@ function myApplyFilter(){
 }
 function myQty(code, v){
   if(indentLocked(DATE, ROLE)) return lockedNote();
-  const ind = indentOf(DATE, ROLE);
-  const q = parseFloat(v)||0;
-  if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
+  indentAdd(indentOf(DATE, ROLE), code, parseFloat(v)||0);
   save(); render();
 }
 function myDel(code){
   if(indentLocked(DATE, ROLE)) return lockedNote();
-  const ind = indentOf(DATE, ROLE); delete ind.lines[code]; save(); render();
+  indentAdd(indentOf(DATE, ROLE), code, 0);
+  save(); render();
 }
 
 /* Said once, the same way, wherever something is refused because the
@@ -5111,7 +5246,7 @@ function wireSearch(onPick){
 function vMyDeliveries(){
   const day = dayOf(DATE); const st = day.ship[ROLE] || '';
   const packed = day.packed[ROLE] || {};
-  const codes = Object.keys(packed).filter(c=>packed[c]>0);
+  const codes = Object.keys(packed).filter(c=>packed[c]>0).sort(byDay(DATE));
   if(st!=='out' && st!=='received')
     return '<h2>Deliveries</h2><p class="sub">'+fmtDate(DATE)+' &middot; '
       + statusPill(indentOf(DATE, ROLE).status)+'</p>'
@@ -5312,7 +5447,7 @@ function vIndents(){
 }
 function vIndentOne(id){
   const s = shopById(id), ind = indentOf(DATE, id);
-  const codes = Object.keys(ind.lines);
+  const codes = indentCodes(ind);
   const editable = !indentLocked(DATE, id);
   let rows='';
   codes.forEach(c=>{
@@ -5357,9 +5492,7 @@ function adminQty(shopId, code, v){
     alert('This indent has been accepted and is closed. It cannot be changed.');
     render(); return;
   }
-  const ind = indentOf(DATE, shopId);
-  const q = parseFloat(v)||0;
-  if(q<=0) delete ind.lines[code]; else ind.lines[code]=q;
+  indentAdd(indentOf(DATE, shopId), code, parseFloat(v)||0);
   save(); render();
 }
 function acceptIndent(shopId){
@@ -5550,6 +5683,7 @@ function vPack(){
   const codes = [];
   Object.keys(ind.lines).forEach(c=>{ if(ind.lines[c]>0) codes.push(c); });
   Object.keys(packed).forEach(c=>{ if(codes.indexOf(c)<0) codes.push(c); });
+  codes.sort(byDay(DATE));
 
   /* What was asked for against what was packed. What agrees stays where
      it is; what does not sinks, and what has no figure at all sinks
@@ -5762,7 +5896,10 @@ function makeInvoice(shopId){
     lines.push({code:c, name:e.name, tamil:e.tamil, unit:e.unit, qty:q, net:nk,
                 rate:pr, amount:nk*pr, sell:sellingPrice(shopId,c)});
   });
-  lines.sort((a,b)=>(parseInt(a.code)||0)-(parseInt(b.code)||0));
+  /* the bill reads the way the day was written, newest first, and then
+     keeps that order for ever: a bill is a document, not a view */
+  const dayIs = byDay(DATE);
+  lines.sort((a,b)=> dayIs(a.code, b.code));
   if(!lines.length){ alert('Nothing priced to invoice for this shop.'); return; }
   const bad = lines.filter(l=>!(l.net>0));
   if(bad.length){
@@ -6122,7 +6259,7 @@ function groupedRequirement(date){
     const g = groupOf(c);
     (out[g] = out[g] || []).push(c);
   });
-  Object.keys(out).forEach(g=> out[g].sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0)));
+  Object.keys(out).forEach(g=> out[g].sort(byDay(date)));
   return {need:need, groups:out};
 }
 /* What is actually bought from the vendor. It starts as the sum of what
@@ -6541,7 +6678,7 @@ function vMasterShop(id){
   DB.master.selling[id] = DB.master.selling[id] || {};
   const set = DB.master.selling[id];
   let rows='';
-  CODES.forEach(c=>{
+  catalogueCodes().forEach(c=>{
     const e = CAT[c];
     const v = set[c]!==undefined ? set[c] : (e.margin===null?'':e.margin);
     rows += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'

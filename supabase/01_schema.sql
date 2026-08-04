@@ -312,6 +312,17 @@ create table if not exists settings (
 alter table indents  add column if not exists accepted_at      timestamptz;
 alter table indents  add column if not exists accepted_by_name text;
 
+-- the order the shop wrote the line onto the indent. Bigger is newer;
+-- the screens read an indent newest first, because the thing just put
+-- on it is the thing still being thought about. 0 means an indent from
+-- before this was recorded, which reads in code order at the bottom.
+alter table indent_lines add column if not exists seq integer not null default 0;
+
+-- when a product was added to the catalogue, so the newest is listed
+-- first wherever products are shown. 0 is everything that came with the
+-- build, which keeps the order the catalogue file was written in.
+alter table products add column if not exists added_ord integer not null default 0;
+
 -- who the bill is made out to, and what it went out on. The three
 -- bill_to columns are a snapshot taken when the invoice is raised: a
 -- contact whose address changes in October must not silently rewrite

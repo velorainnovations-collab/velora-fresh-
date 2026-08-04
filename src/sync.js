@@ -61,10 +61,13 @@ const VFSync = (function () {
           accepted_by_name: ind.acceptedBy || null,
           late: !!ind.late,
         };
+        const seq = ind.seq || {};
         Object.keys(lines).forEach(code => {
           out.indent_lines[date + '|' + shop + '|' + code] = {
             trade_date: date, shop_id: shop,
             product_code: code, qty: Number(lines[code]) || 0,
+            // the order it was written onto the indent; see 01_schema.sql
+            seq: Number(seq[code]) || 0,
           };
         });
       });
@@ -626,7 +629,8 @@ const VFSync = (function () {
         if (isDelete) continue;
         throw e;
       }
-      out.push({ indent_id: id, product_code: row.product_code, qty: row.qty });
+      out.push({ indent_id: id, product_code: row.product_code, qty: row.qty,
+                 seq: row.seq || 0 });
     }
     return out;
   }
@@ -808,7 +812,7 @@ const VFSync = (function () {
     inds.forEach(i => {
       byId[i.id] = i.shop_id;
       day[i.shop_id] = {
-        status: i.status, lines: {},
+        status: i.status, lines: {}, seq: {},
         submittedAt: i.submitted_at || null,
         acceptedAt: i.accepted_at || null,
         acceptedBy: i.accepted_by_name || null,
@@ -817,7 +821,9 @@ const VFSync = (function () {
     });
     lines.forEach(l => {
       const shop = byId[l.indent_id];
-      if (shop && day[shop]) day[shop].lines[l.product_code] = Number(l.qty);
+      if (!shop || !day[shop]) return;
+      day[shop].lines[l.product_code] = Number(l.qty);
+      (day[shop].seq = day[shop].seq || {})[l.product_code] = Number(l.seq) || 0;
     });
     /* packing and the lorry, so a shop sees "out for delivery" the
        moment the office marks it, and the packing screen picks up a
@@ -884,7 +890,7 @@ const VFSync = (function () {
     inds.forEach(i => {
       indById[i.id] = i;
       const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
-      d[i.shop_id] = { status: i.status, lines: {},
+      d[i.shop_id] = { status: i.status, lines: {}, seq: {},
                        submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
                        acceptedBy: i.accepted_by_name || null, late: !!i.late };
     });
@@ -892,7 +898,9 @@ const VFSync = (function () {
       const hdr = indById[l.indent_id];
       if (!hdr) return;
       const rec = (DB.indents[hdr.trade_date] || {})[hdr.shop_id];
-      if (rec) rec.lines[l.product_code] = Number(l.qty);
+      if (!rec) return;
+      rec.lines[l.product_code] = Number(l.qty);
+      (rec.seq = rec.seq || {})[l.product_code] = Number(l.seq) || 0;
     });
 
     const day = d => (DB.days[d] = DB.days[d] ||
@@ -1296,7 +1304,7 @@ const VFSync = (function () {
       headers: headers({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify([{ code: p.code, name: p.name, tamil: p.tamil || '',
                               unit: p.unit, unit_weight_kg: p.wt || null,
-                              alias: p.alias || '' }]),
+                              alias: p.alias || '', added_ord: p.added || 0 }]),
     });
     if (r.status === 401 && await refresh()) return addProduct(p);
     if (!r.ok) throw await httpError(r, 'products');
@@ -1345,7 +1353,8 @@ const VFSync = (function () {
       method: 'PATCH',
       headers: headers({ 'Prefer': 'return=minimal' }),
       body: JSON.stringify({ name: p.name, tamil: p.tamil || '', unit: p.unit,
-                             unit_weight_kg: p.wt || null, alias: p.alias || '' }),
+                             unit_weight_kg: p.wt || null, alias: p.alias || '',
+                             added_ord: p.added || 0 }),
     });
     if (r.status === 401 && await refresh()) return updateProduct(p);
     if (!r.ok) throw await httpError(r, 'products');
@@ -1472,7 +1481,7 @@ const VFSync = (function () {
   async function fetchCatalogue() {
     if (!enabled() || !signedIn()) return null;
     const [products, groups, mapping] = await Promise.all([
-      get('products', 'code,name,tamil,unit,unit_weight_kg,alias').catch(() => []),
+      get('products', 'code,name,tamil,unit,unit_weight_kg,alias,added_ord').catch(() => []),
       get('vendor_groups', 'name,manual,sort_ord').catch(() => []),
       get('product_groups', 'product_code,group_name').catch(() => []),
     ]);
