@@ -135,10 +135,9 @@ afterwards never re-prices a bill that has already been raised.
   Velora's own working: it sits in a note under the sheet, for the owner, and never
   prints.
 * The invoice letterhead is `COMPANY` in `src/template.html` — name, city, phone,
-  GSTIN, and the bank details printed for payment. The phone and GSTIN are blank
-  for now and are left out rather than printed empty; the bank lines print as
-  `Xxxx` until they are filled in, because a missing line reads as an oversight
-  and a placeholder reads as a job to do.
+  GSTIN. The phone and GSTIN are blank for now and are left out rather than
+  printed empty. There are no bank details on the bill, by request: the footer is
+  the amount in words and the space to sign.
 * The seven characters at the right of the header are the **build id** — a
   fingerprint of everything the page is made of. It changes whenever the app does,
   so "did the change reach me, or am I looking at a cached copy?" is answered by
