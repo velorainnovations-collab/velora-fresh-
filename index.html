@@ -403,15 +403,22 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
 .iedit.big{font-weight:700;font-size:13.5px;margin:0 0 3px}
 #inv.draft{outline:2px dashed var(--line);outline-offset:5px}
 .btaddr{margin-top:1px}
+/* the delivery line being reported on: the editor opens as a row under
+   the line, tinted so it reads as an aside rather than another line */
+tr.vedit>td{background:var(--surface-2);border-bottom:1px solid var(--line)}
+.veditbox{padding:10px 12px}
+.veditbox .vq{font-size:12.5px;font-weight:650;color:var(--ink-2);margin-bottom:8px}
+.vopts{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vopts .vor{font-size:12px;color:var(--ink-4)}
+.vopts .vw{display:flex;align-items:center;gap:7px;font-size:12.5px;flex-wrap:wrap}
+.vopts .row-inp{width:88px}
 .iwords{padding:7px 10px;font-size:12.5px}
-.ifoot{display:flex;align-items:stretch}
-.ifoot>div{flex:1 1 0;min-width:0;padding:9px 10px;font-size:12px;line-height:1.6}
-.ifoot .lft{border-right:1px solid #1a1a1a}
-.ifoot .lft .k{width:112px}
+.ifoot{display:flex;justify-content:flex-end}
+.ifoot>div{min-width:0;padding:9px 10px;font-size:12px;line-height:1.6}
 /* the name at the top, the space to sign in the middle, the words at the
    foot: a signature block is the shape of the gap it leaves */
 .ifoot .rgt{display:flex;flex-direction:column;justify-content:space-between;
-  text-align:right;min-height:92px}
+  text-align:right;min-height:88px;flex:0 0 46%}
 
 /* ---------- sign in ---------- */
 #gate{position:fixed;inset:0;z-index:200;background:linear-gradient(155deg,#12100e,#1c3b2a 60%,#1c6b45);
@@ -500,10 +507,8 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   /* On paper the column widths are the point; on a phone there is not
      enough paper to honour them, so the text wraps instead. */
   table.ibl{table-layout:auto}
-  .iband,.ifoot{display:block}
-  .iband .lft,.ifoot .lft{border-right:none;border-bottom:1px solid #1a1a1a}
-  .ifoot .rgt{min-height:0;text-align:left}
-  .ifoot .rgt div:last-child{margin-top:34px;text-align:right}
+  .iband{display:block}
+  .iband .lft{border-right:none;border-bottom:1px solid #1a1a1a}
 
   /* the search box and whatever sits beside it get a line each */
   .srch{max-width:none;width:100%;flex:1 1 100%}
@@ -537,9 +542,9 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
      under the 720px the phone rules watch for, so printing was getting
      the phone's invoice: the header band stacked into two full width
      rows instead of sitting side by side. Paper is not a phone. */
-  .iband,.ifoot{display:flex;flex-direction:row}
-  .iband .lft,.ifoot .lft{border-right:1px solid #1a1a1a;border-bottom:none}
-  .iband>div,.ifoot>div{flex:1 1 0;width:auto}
+  .iband{display:flex;flex-direction:row}
+  .iband .lft{border-right:1px solid #1a1a1a;border-bottom:none}
+  .iband>div{flex:1 1 0;width:auto}
   table.ibl{table-layout:fixed}
   #inv table td:first-child,#inv table th:first-child{position:static}
   /* a box typed into prints as the words in it, not as a box */
@@ -575,7 +580,7 @@ table.ibl td.netamt{font-weight:700;font-size:15px}
   <!-- which build is on the screen. Changes whenever the app does, so
        "did the change reach me?" is answered by looking rather than by
        guessing at a cache. -->
-  <span id="buildId" class="mono" title="Build">a8290db</span>
+  <span id="buildId" class="mono" title="Build">6f527a4</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
@@ -917,10 +922,6 @@ const COMPANY = {
   city: 'Chennai',
   phone: '',                       /* added later */
   gstin: '',                       /* added later */
-  /* our own bank, printed on the bill so it can be paid. Filled in here
-     until there is a company settings screen to hold it; every empty one
-     prints as Xxxx rather than being left off. */
-  bank: { name:'', acName:'', acNo:'', ifsc:'', branch:'' },
 };
 /* The indent window: shops were meant to send between 6 and 9 pm, with
    anything up to 11:30 recorded as late.
@@ -973,11 +974,41 @@ GROUPS[UNGROUPED].forEach(c=>{ CODE2GROUP[c] = UNGROUPED; });
 const GROUPNAMES = Object.keys(GROUPS);
 function groupOf(code){ return CODE2GROUP[code] || UNGROUPED; }
 
+/* ---------- units ----------
+   How a quantity of this unit becomes kilos on the bill. kg and g are
+   arithmetic; a weighed unit (box, tray, or anything made like them)
+   multiplies by the product's own weight per unit; everything else —
+   piece, bunch, packet, and whatever the desk invents — bills as one
+   unit each. The master lives in DB.units so a unit made on one device
+   is a unit everywhere. */
+const BUILTIN_UNITS = {
+  kg:     { weighed:false, builtin:true },
+  g:      { weighed:false, builtin:true },
+  piece:  { weighed:false, builtin:true },
+  bunch:  { weighed:false, builtin:true },
+  packet: { weighed:false, builtin:true },
+  box:    { weighed:true,  builtin:true },
+  tray:   { weighed:true,  builtin:true },
+};
+function unitIsWeighed(u){
+  const d = (DB && DB.units && DB.units[u]) || BUILTIN_UNITS[u];
+  return !!(d && d.weighed);
+}
+function unitNames(){
+  const out = Object.keys(BUILTIN_UNITS);
+  Object.keys((DB && DB.units) || {}).forEach(u=>{ if(out.indexOf(u) < 0) out.push(u); });
+  return out;
+}
+function unitInUse(u){
+  return CODES.filter(c=> (CAT[c]||{}).unit === u).length;
+}
+
 function unitWeight(c, unit){
   const e = CAT[c]; if(!e) return 1;
   const u = unit || e.unit;
+  if(u === 'kg') return 1;
   if(u === 'g') return 0.001;
-  if(u === 'box' || u === 'tray') return e.wt || 0;
+  if(unitIsWeighed(u)) return e.wt || 0;
   return 1;
 }
 function netKg(code, qty, unit){ return (parseFloat(qty)||0) * unitWeight(code, unit); }
@@ -1003,6 +1034,10 @@ function load(){
                                         bank:{acName:'',acNo:'',ifsc:'',upi:''}};
   });
   DB.contacts = DB.contacts || {};   /* [id] = {company, gstin, addr1..3, state, pincode, bank:{}} */
+  DB.units = DB.units || {};         /* [name] = {weighed} — on top of BUILTIN_UNITS */
+  Object.keys(BUILTIN_UNITS).forEach(u=>{
+    if(!DB.units[u]) DB.units[u] = {weighed:BUILTIN_UNITS[u].weighed, builtin:true};
+  });
   DB.payments = DB.payments || [];   /* [{id,date,amount,mode,ref}] chain-level, oldest-bill-first */
   SHOPS.forEach(s=>{ if(DB.master.comm[s.id]===undefined) DB.master.comm[s.id] = s.comm; });
   DB.shopPhones = DB.shopPhones || {};
@@ -1136,10 +1171,11 @@ const VFSync = (function () {
   function flatten(DB) {
     const out = {
       indents: {}, indent_lines: {}, day_rates: {}, packed: {},
-      shipments: {}, vendor_orders: {}, vendor_order_lines: {},
+      shipments: {}, delivery_issues: {}, vendor_orders: {}, vendor_order_lines: {},
       invoices: {}, invoice_lines: {},
       payments: {}, vendors: {}, vendor_bank: {}, margin_comm: {},
       margin_selling: {}, settings: {}, contacts: {}, contact_bank: {},
+      units: {},
     };
     if (!DB) return out;
 
@@ -1191,6 +1227,24 @@ const VFSync = (function () {
           out.packed[date + '|' + shop + '|' + code] = {
             trade_date: date, shop_id: shop,
             product_code: code, qty: Number(p[code]) || 0,
+          };
+        });
+      });
+
+      /* what the shop found at the crates — only once it has pressed
+         send, so half-checked marks stay on the phone they are being
+         made on */
+      Object.keys(day.verify || {}).forEach(shop => {
+        const v = day.verify[shop];
+        if (!v || !v.sent) return;
+        Object.keys(v.items || {}).forEach(code => {
+          const it = v.items[code] || {};
+          out.delivery_issues[date + '|' + shop + '|' + code] = {
+            trade_date: date, shop_id: shop, product_code: code,
+            issue: it.type === 'missing' ? 'missing' : 'weight',
+            original_qty: Number(it.original) || 0,
+            current_qty: it.type === 'weight' ? (Number(it.current) || 0) : null,
+            verified_by: v.by || '', verified_at: v.at || null,
           };
         });
       });
@@ -1270,6 +1324,12 @@ const VFSync = (function () {
         paid_on: p.date, amount: round2(p.amount),
         mode: p.mode || 'NEFT', ref: p.ref || '',
       };
+    });
+
+    // ---- units ----
+    Object.keys(DB.units || {}).forEach(u => {
+      const d = DB.units[u] || {};
+      out.units[u] = { name: u, weighed: !!d.weighed, builtin: !!d.builtin };
     });
 
     // ---- vendors ----
@@ -1375,6 +1435,7 @@ const VFSync = (function () {
     day_rates:      'trade_date,product_code',
     packed:         'trade_date,shop_id,product_code',
     shipments:      'trade_date,shop_id',
+    delivery_issues: 'trade_date,shop_id,product_code',
     vendor_orders:  'trade_date,group_name',
     vendor_order_lines: 'trade_date,group_name,product_code',
     invoices:       'trade_date,shop_id',
@@ -1387,6 +1448,7 @@ const VFSync = (function () {
     settings:       'client_id',
     contacts:       'id',
     contact_bank:   'contact_id',
+    units:          'name',
   };
 
   function diff(before, after) {
@@ -1423,11 +1485,12 @@ const VFSync = (function () {
 
   /* Parents before children, so a line never arrives before its header.
      Deletes run in reverse for the same reason. */
-  const ORDER = ['settings', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
+  const ORDER = ['settings', 'units', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                  /* before invoices: an invoice names the contact it was
                     made out to, and the row it points at must exist */
                  'contacts', 'contact_bank',
                  'indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
+                 'delivery_issues',
                  'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                  'payments'];
 
@@ -1470,7 +1533,7 @@ const VFSync = (function () {
     owner: null,
     admin: null,
     ho:    ['indents', 'indent_lines'],
-    shop:  ['indents', 'indent_lines', 'shipments'],
+    shop:  ['indents', 'indent_lines', 'shipments', 'delivery_issues'],
     /* vendor_order_lines is Velora's: a shop asks for a quantity, it
        does not decide what is bought */
   };
@@ -1978,11 +2041,12 @@ const VFSync = (function () {
     if (!enabled() || !signedIn()) return DB;
 
     const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st,
-           cons, cbank] =
+           cons, cbank, viss, unis] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
                          'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                          'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
-                         'settings', 'contacts', 'contact_bank'].map(t => get(t).catch(() => [])));
+                         'settings', 'contacts', 'contact_bank',
+                         'delivery_issues', 'units'].map(t => get(t).catch(() => [])));
 
     const indById = {};
     inds.forEach(i => {
@@ -2009,6 +2073,18 @@ const VFSync = (function () {
       (D.packed[p.shop_id] = D.packed[p.shop_id] || {})[p.product_code] = Number(p.qty);
     });
     ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
+    viss.forEach(r => {
+      const D = day(r.trade_date);
+      const v = (D.verify = D.verify || {})[r.shop_id] =
+        (D.verify[r.shop_id] || { sent: true, by: '', at: null, items: {} });
+      v.sent = true;
+      v.by = r.verified_by || v.by;
+      v.at = r.verified_at || v.at;
+      v.items[r.product_code] = r.issue === 'missing'
+        ? { type: 'missing', original: Number(r.original_qty) || 0 }
+        : { type: 'weight', original: Number(r.original_qty) || 0,
+            current: Number(r.current_qty) || 0 };
+    });
     vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
     vol.forEach(l => {
       const D = day(l.trade_date);
@@ -2051,6 +2127,11 @@ const VFSync = (function () {
     vbank.forEach(b => {
       const rec = DB.vendors[b.group_name];
       if (rec) rec.bank = { acName: b.ac_name, acNo: b.ac_no, ifsc: b.ifsc, upi: b.upi };
+    });
+
+    DB.units = DB.units || {};
+    unis.forEach(u => {
+      DB.units[u.name] = { weighed: !!u.weighed, builtin: !!u.builtin };
     });
 
     DB.contacts = DB.contacts || {};
@@ -2179,7 +2260,7 @@ const VFSync = (function () {
      that is already gone is not an error either. Invoice lines and
      indent lines go with their headers, on delete cascade. */
   const DAY_TABLES = ['indent_lines', 'indents', 'day_rates', 'packed', 'shipments',
-                      'vendor_order_lines', 'vendor_orders', 'invoices'];
+                      'delivery_issues', 'vendor_order_lines', 'vendor_orders', 'invoices'];
 
   /* Which of them a login may delete from on its own. Row level security
      decides this in the database whatever is asked here; the point of
@@ -2190,7 +2271,7 @@ const VFSync = (function () {
     owner: null,                          /* null: everything */
     admin: null,
     ho:    ['indents'],
-    shop:  ['indents', 'shipments'],
+    shop:  ['indents', 'shipments', 'delivery_issues'],
   };
 
   /* the whole-day clear, which any signed-in login may call, is a
@@ -3159,7 +3240,30 @@ function dayOf(date){
   DB.days[date] = DB.days[date] || {rates:{}, packed:{}, ship:{}, extra:{}};
   const d = DB.days[date];
   d.rates = d.rates || {}; d.packed = d.packed || {}; d.ship = d.ship || {}; d.extra = d.extra || {};
+  d.verify = d.verify || {};   /* [shop] = {sent, by, at, items:{code:{type,original,current}}} */
   return d;
+}
+
+/* ---------- delivery verification ----------
+   What the shop found when it checked the crates against the note: a
+   product that never arrived, or one that arrived at a different weight.
+   Marks are kept as they are made; pressing send is what stamps them
+   with a name and a time and puts them in front of the office. */
+function verifyOf(date, shopId){
+  const day = dayOf(date);
+  if(!day.verify[shopId]) day.verify[shopId] = { sent:false, by:'', at:null, items:{} };
+  const v = day.verify[shopId];
+  v.items = v.items || {};
+  return v;
+}
+/* one type of problem is a delivery to adjust; both kinds at once is a
+   delivery to worry about */
+function verifySeverity(v){
+  if(!v || !v.sent) return '';
+  const types = {};
+  Object.keys(v.items || {}).forEach(c=>{ types[v.items[c].type] = 1; });
+  const n = Object.keys(types).length;
+  return n >= 2 ? 'both' : (n === 1 ? 'one' : '');
 }
 /* every product any shop has an accepted indent for, plus anything added at packing */
 function uniqueCodes(date){
@@ -3331,7 +3435,8 @@ const MENU = {
                                          {id:'rates',  t:'Market rates'}]},
     {t:'Delivery',   ic:'delivery', kids:[{id:'pack', t:'Packing'},
                                          {id:'ship', t:'Out for delivery'}]},
-    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'},
+                                         {id:'sell', t:'Selling price'}]},
     {t:'Receipt',    ic:'receipt', kids:[{id:'acct', t:'Accounts'}]},
     {t:'Contacts',   ic:'contacts', kids:[{id:'vendors', t:'Vendors'},
                                          {id:'shops',   t:'Shops'}]},
@@ -3347,7 +3452,8 @@ const MENU = {
                                          {id:'rates',  t:'Market rates'}]},
     {t:'Delivery',   ic:'delivery', kids:[{id:'pack', t:'Packing'},
                                          {id:'ship', t:'Out for delivery'}]},
-    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'}]},
+    {t:'Sales',      ic:'sales', kids:[{id:'inv', t:'Invoice'},
+                                         {id:'sell', t:'Selling price'}]},
     {t:'Contacts',   ic:'contacts', kids:[{id:'vendors', t:'Vendors'},
                                          {id:'shops',   t:'Shops'}]},
     {t:'Product',    ic:'product', kids:[{id:'products', t:'Product list'}]},
@@ -3475,7 +3581,7 @@ function vProducts(){
       + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
       + '<td class="c mono" style="width:70px;color:var(--ink-3)">'+esc(e.unit)+'</td>'
       + '<td class="c mono" style="width:90px;color:var(--ink-3)">'
-        + ((e.unit==='box'||e.unit==='tray') ? (e.wt ? num(e.wt,2)+' kg'
+        + (unitIsWeighed(e.unit) ? (e.wt ? num(e.wt,2)+' kg'
              : '<span class="pill p-red">no weight</span>') : '&mdash;') + '</td>'
       + (cost ? '<td style="width:190px"><span class="pill '
            + (g===UNGROUPED?'p-amber':'p-grey')+'">'+esc(g)+'</span></td>'
@@ -3485,7 +3591,7 @@ function vProducts(){
   });
   const missing = CODES.filter(c=>{
     const e = CAT[c];
-    return (e.unit==='box'||e.unit==='tray') && !e.wt;
+    return unitIsWeighed(e.unit) && !e.wt;
   }).length;
   const manual = CODES.filter(c=>groupOf(c)===UNGROUPED).length;
 
@@ -3516,15 +3622,20 @@ function addProductForm(){
   GROUPNAMES.forEach(g=> gopts += '<option value="'+esc(g)+'"'
     + (g===UNGROUPED?' selected':'')+'>'+esc(g)+'</option>');
   let uopts = '';
-  ['kg','g','piece','bunch','box','tray'].forEach(u=> uopts += '<option value="'+u+'">'+u+'</option>');
+  unitNames().forEach(u=> uopts += '<option value="'+esc(u)+'">'+esc(u)+'</option>');
 
   return '<div class="card"><h3>Add a product</h3><div style="padding:15px 16px">'
    + '<div class="addform">'
    + '<div><label>Code</label><input type="text" id="npCode" placeholder="242"></div>'
    + '<div><label>Name (English)</label><input type="text" id="npPName" placeholder="Cauliflower"></div>'
    + '<div><label>Tamil</label><input type="text" id="npTamil" placeholder="\u0b95\u0bbe\u0bb2\u0bbf"></div>'
-   + '<div><label>Unit</label><select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select></div>'
-   + '<div id="npWtWrap" class="hidden"><label>Weight per box (kg)</label>'
+   + '<div><label>Unit</label><select id="npUnit" onchange="npUnitChanged()">'+uopts+'</select>'
+   + '<div class="gtools">'
+   + '<button type="button" class="btn sm" onclick="uPanel(\'new\')">+ New unit</button>'
+   + '<button type="button" class="btn sm" onclick="uPanel(\'manage\')">Manage</button>'
+   + '</div></div>'
+   + uPanels()
+   + '<div id="npWtWrap" class="hidden"><label>Weight per unit (kg)</label>'
    + '<input type="number" id="npWt" step="any" min="0" placeholder="20"></div>'
    + '<div><label>Vendor group</label><select id="npGroup">'+gopts+'</select>'
    + '<div class="gtools">'
@@ -3534,8 +3645,8 @@ function addProductForm(){
    + gNewPanel() + gRenamePanel()
    + '<div class="act">'
    + '<button class="btn pri" onclick="addProduct()">Add product</button>'
-   + '<p class="hintline">A box or tray needs its weight in kg, or the invoice cannot price it. '
-   + 'kg, piece and bunch are billed as one unit each.</p>'
+   + '<p class="hintline">A weighed unit &mdash; box, tray, or one made like them &mdash; needs '
+   + 'its weight in kg, or the invoice cannot price it. Everything else bills as one each.</p>'
    + '</div></div></div></div>';
 }
 
@@ -3721,7 +3832,124 @@ function npUnitChanged(){
   const u = document.getElementById('npUnit');
   const w = document.getElementById('npWtWrap');
   if(!u || !w) return;
-  w.className = (u.value==='box'||u.value==='tray') ? '' : 'hidden';
+  w.className = unitIsWeighed(u.value) ? '' : 'hidden';
+}
+
+/* ---------- units: made and managed where they are chosen ----------
+   The dropdown is the master. A unit the desk needs and does not have is
+   made beside the box that wants it, the same way a vendor group is. */
+function uPanels(){
+  let list = '';
+  unitNames().forEach(u=>{
+    const d = DB.units[u] || BUILTIN_UNITS[u] || {};
+    const n = unitInUse(u);
+    list += '<tr><td class="mono" style="width:90px">'+esc(u)+'</td>'
+      + '<td>'+(d.weighed?'billed by weight per unit':'billed as one each')
+      + (d.builtin?' <span class="pill p-grey">built in</span>':'')+'</td>'
+      + '<td class="c mono" style="width:90px">'+n+'</td>'
+      + '<td class="r" style="width:150px">'
+      + (d.builtin ? '' :
+          '<button class="btn sm" onclick="uRename(\''+esc(u)+'\')">Rename</button> '
+        + '<button class="btn sm danger" onclick="uDelete(\''+esc(u)+'\')">Delete</button>')
+      + '</td></tr>';
+  });
+  return '<div id="uNew" class="gpanel hidden">'
+   + '<h4>New unit</h4>'
+   + '<div class="row">'
+   + '<div><label>Unit name</label><input type="text" id="unName" placeholder="carton"></div>'
+   + '<div><label class="chk" style="margin-top:20px"><input type="checkbox" id="unWeighed"> '
+   + 'Billed by weight &mdash; each one has its own kg</label></div>'
+   + '</div>'
+   + '<div class="go">'
+   + '<button class="btn pri sm" onclick="uSaveNew()">Create unit</button>'
+   + '<button class="btn sm" onclick="uPanel(null)">Cancel</button>'
+   + '<p class="hintline">Unticked, a quantity of it bills as one each, like piece or bunch. '
+   + 'Ticked, it works like box and tray: the product carries a weight per unit and the '
+   + 'bill is made out in kilos.</p>'
+   + '</div></div>'
+   + '<div id="uManage" class="gpanel hidden">'
+   + '<h4>Units</h4>'
+   + '<table><thead><tr><th>Unit</th><th>How it bills</th>'
+   + '<th class="c">Products</th><th></th></tr></thead><tbody>'+list+'</tbody></table>'
+   + '<div class="go"><button class="btn sm" onclick="uPanel(null)">Close</button>'
+   + '<p class="hintline">A unit with products in it cannot be deleted &mdash; move them to '
+   + 'another unit first, from the product list.</p></div>'
+   + '</div>';
+}
+
+function uPanel(which){
+  ['uNew','uManage','gNew','gRen'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.className = 'gpanel hidden';
+  });
+  const el = which==='new' ? document.getElementById('uNew')
+           : which==='manage' ? document.getElementById('uManage') : null;
+  if(el){ el.className = 'gpanel'; }
+  if(which==='new'){
+    const f = document.getElementById('unName');
+    if(f){ f.value=''; f.focus(); }
+    const c = document.getElementById('unWeighed'); if(c) c.checked = false;
+  }
+}
+
+function uSaveNew(){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may add a unit.'); return; }
+  const name = (document.getElementById('unName').value || '').trim().toLowerCase();
+  const weighed = !!document.getElementById('unWeighed').checked;
+  if(!name){ alert('Give the unit a name.'); return; }
+  if(!/^[a-z][a-z0-9 ]{0,19}$/.test(name)){
+    alert('A unit name is a short word — letters and numbers only.'); return;
+  }
+  if(DB.units[name] || BUILTIN_UNITS[name]){
+    alert('There is already a unit called '+name+'.'); return;
+  }
+  DB.units[name] = { weighed: weighed };
+  /* the product being typed keeps what it had, with the new unit chosen */
+  npKeep(); NPDRAFT.unit = name;
+  save();
+  afterRender = npRestore;
+  render();
+}
+
+function uRename(u){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may rename a unit.'); return; }
+  const d = DB.units[u];
+  if(!d || d.builtin){ alert(u+' is built in and keeps its name.'); return; }
+  const now = (prompt('Rename the unit \u201c'+u+'\u201d to:', u) || '').trim().toLowerCase();
+  if(!now || now === u) return;
+  if(DB.units[now] || BUILTIN_UNITS[now]){ alert('There is already a unit called '+now+'.'); return; }
+  if(!/^[a-z][a-z0-9 ]{0,19}$/.test(now)){
+    alert('A unit name is a short word — letters and numbers only.'); return;
+  }
+  DB.units[now] = { weighed: d.weighed };
+  delete DB.units[u];
+  /* every product measured in it moves with it, here and on the server */
+  const carried = CODES.filter(c=> (CAT[c]||{}).unit === u);
+  carried.forEach(c=>{
+    CAT[c].unit = now;
+    if(typeof VFSync !== 'undefined' && VFSync.enabled() && VFSync.signedIn()){
+      const e = CAT[c];
+      VFSync.updateProduct({code:c, name:e.name, tamil:e.tamil, unit:now, wt:e.wt,
+                            alias:e.alias||'', group:groupOf(c), added:e.added||0})
+        .catch(()=>{ /* the pull puts it right on the next open */ });
+    }
+  });
+  save(); render();
+}
+
+function uDelete(u){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may delete a unit.'); return; }
+  const d = DB.units[u];
+  if(!d || d.builtin){ alert(u+' is built in and stays.'); return; }
+  const n = unitInUse(u);
+  if(n){
+    alert('\u201c'+u+'\u201d cannot be deleted \u2014 '+n+' product'+(n===1?' is':'s are')
+      + ' measured in it.\n\nMove them to another unit from the product list first.');
+    return;
+  }
+  if(!confirm('Delete the unit \u201c'+u+'\u201d?')) return;
+  delete DB.units[u];
+  save(); render();
 }
 
 /* ---------- editing one that is already on the list ----------
@@ -3740,9 +3968,9 @@ function editProductForm(code){
   GROUPNAMES.forEach(n=> gopts += '<option value="'+esc(n)+'"'
     + (n===g?' selected':'')+'>'+esc(n)+'</option>');
   let uopts = '';
-  ['kg','g','piece','bunch','box','tray'].forEach(u=> uopts += '<option value="'+u+'"'
-    + (u===e.unit?' selected':'')+'>'+u+'</option>');
-  const box = (e.unit==='box'||e.unit==='tray');
+  unitNames().forEach(u=> uopts += '<option value="'+esc(u)+'"'
+    + (u===e.unit?' selected':'')+'>'+esc(u)+'</option>');
+  const box = unitIsWeighed(e.unit);
   const cj = code.replace(/'/g,"\\'");
 
   return '<div class="card"><h3>Edit '+esc(e.name)+'</h3><div style="padding:15px 16px">'
@@ -3751,7 +3979,7 @@ function editProductForm(code){
    + '<div><label>Name (English)</label><input type="text" id="epPName" value="'+esc(e.name)+'"></div>'
    + '<div><label>Tamil</label><input type="text" id="epTamil" value="'+esc(e.tamil||'')+'"></div>'
    + '<div><label>Unit</label><select id="epUnit" onchange="epUnitChanged()">'+uopts+'</select></div>'
-   + '<div id="epWtWrap"'+(box?'':' class="hidden"')+'><label>Weight per box (kg)</label>'
+   + '<div id="epWtWrap"'+(box?'':' class="hidden"')+'><label>Weight per unit (kg)</label>'
    + '<input type="number" id="epWt" step="any" min="0" value="'+(e.wt||'')+'"></div>'
    + '<div><label>Vendor group</label><select id="epGroup">'+gopts+'</select>'
    + '<div class="gtools">'
@@ -3771,7 +3999,7 @@ function epUnitChanged(){
   const u = document.getElementById('epUnit');
   const w = document.getElementById('epWtWrap');
   if(!u || !w) return;
-  w.className = (u.value==='box'||u.value==='tray') ? '' : 'hidden';
+  w.className = unitIsWeighed(u.value) ? '' : 'hidden';
 }
 
 function saveProduct(code){
@@ -3784,7 +4012,7 @@ function saveProduct(code){
   const wt    = parseFloat(document.getElementById('epWt').value) || 0;
 
   if(!name){ alert('A product needs an English name.'); return; }
-  if((unit==='box'||unit==='tray') && !wt){
+  if(unitIsWeighed(unit) && !wt){
     alert('A '+unit+' needs its weight in kg, otherwise the invoice cannot price it.'); return;
   }
 
@@ -3897,7 +4125,7 @@ function addProduct(){
   if(!code){ alert('Enter a product code.'); return; }
   if(CAT[code]){ alert('Code '+code+' is already used by '+CAT[code].name+'.'); return; }
   if(!name){ alert('Enter the English name.'); return; }
-  if((unit==='box'||unit==='tray') && !wt){
+  if(unitIsWeighed(unit) && !wt){
     alert('A '+unit+' needs its weight in kg, otherwise the invoice cannot price it.'); return;
   }
 
@@ -4645,7 +4873,7 @@ function render(){
     board:vBoard, indents:vIndents, rates:vRates, pack:vPack, ship:vShip, inv:vInvoices,
     orders:vOrders, vendors:vVendors, acct:vAccounts, master:vMaster, myindent:vMyIndent,
     mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops,
-    people:vPeople, contact:vContacts
+    people:vPeople, contact:vContacts, sell:vSellPrice
   }[TAB];
   m.innerHTML = fn ? fn() : '';
   wrapTables(m);
@@ -5273,6 +5501,7 @@ function vMyDeliveries(){
   const DRANK = { done: 0, extra: 0, short: 1, over: 1 };
   codes.sort((a,b)=> DRANK[delState(a)] - DRANK[delState(b)]);
 
+  const ver = verifyOf(DATE, ROLE);
   let rows='', tot=0, unpriced=0, off=0;
   codes.forEach((c,i)=>{
     const e=CAT[c], q=packed[c], nk=netKg(c,q,e.unit);
@@ -5293,13 +5522,26 @@ function vMyDeliveries(){
                    done:  '' }[state];
     if(DRANK[state]) off++;
 
+    /* what this shop has already said about the line */
+    const it = ver.items[c];
+    const said = !it ? ''
+      : it.type === 'missing'
+        ? '<span class="pill p-red">Not delivered</span>'
+        : '<span class="pill p-amber">Came as '+num(it.current)+' '+esc(e.unit)+'</span>';
+
     rows+='<tr><td class="c mono">'+(i+1)+'</td><td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil)+'</span></td>'
       +'<td class="c mono" style="color:var(--ink-3)">'+(want?num(want)+' '+esc(e.unit):'&mdash;')+'</td>'
       +'<td class="c mono">'+num(q)+' '+esc(e.unit)+'</td><td class="r mono">'+num(nk,3)+'</td>'
       +'<td class="r mono">'+(priced?money(pr):'<span style="color:var(--ink-4)">rate not set</span>')+'</td>'
       +'<td class="r mono">'+(priced?money(amt):'&mdash;')+'</td>'
-      +'<td class="c">'+flag+'</td>'
-      +'<td class="r"><button class="btn sm" onclick="delEdit(\''+c+'\')">Edit</button></td></tr>';
+      +'<td class="c">'+(said || flag)+'</td>'
+      +'<td class="r"><button class="btn sm" onclick="delEdit(\''+c+'\')">'
+      +(it?'Change':'Edit')+'</button></td></tr>';
+
+    /* the editor opens as a row under the line it is about, so what it
+       says is read against the line rather than in a box floating
+       somewhere else */
+    if(DELEDIT === c) rows += delEditRow(c, e, q, it);
   });
   return '<h2>Delivery for '+fmtDate(DATE)+'</h2>'
    /* the state of the day in the same words the office uses, so a shop
@@ -5318,15 +5560,87 @@ function vMyDeliveries(){
    +'<div class="bar"><span class="sub" style="margin:0">Total <strong class="mono">&#8377;'+money(tot)+'</strong>'
    +(unpriced ? ' <span style="color:var(--ink-3)">&middot; '+unpriced+' line'+(unpriced===1?'':'s')
                 + ' not priced yet</span>' : '')+'</span><span class="spacer"></span>'
-   +(st==='out'?'<button class="btn pri" onclick="confirmReceipt(\''+ROLE+'\')">Confirm receipt</button>':'')+'</div>';
+   +(st==='out'?'<button class="btn pri" onclick="confirmReceipt(\''+ROLE+'\')">Confirm receipt</button>':'')+'</div>'
+   + verifyFoot(ver);
 }
-/* The button is on every line as asked; what it opens is not decided
-   yet, so it says so rather than doing something half thought out. */
-function delEdit(code){
-  const e = CAT[code] || {};
-  alert('Telling ' + VELORA + ' what to do about ' + (e.name || code)
-        + ' is not built yet.\n\nFor now, call the office \u2014 they can change the packed '
-        + 'quantity and send it again.');
+
+/* ---------- reporting a line ----------
+   Two things can be wrong with a delivered line, and they are different
+   problems: it never arrived, or it arrived at a different weight. The
+   editor asks which, and for a weight, what the scale actually said. */
+let DELEDIT = null;
+function delEdit(code){ DELEDIT = (DELEDIT === code ? null : code); render(); }
+
+function delEditRow(c, e, q, it){
+  const isW = it && it.type === 'weight';
+  return '<tr class="vedit"><td></td><td colspan="8">'
+    + '<div class="veditbox">'
+    + '<div class="vq">What happened to '+esc(e.name)+'?</div>'
+    + '<div class="vopts">'
+    + '<button class="btn sm'+(it && it.type==='missing'?' danger':'')+'" '
+      + 'onclick="verifyMissing(\''+c+'\')">Product not delivered</button>'
+    + '<span class="vor">or</span>'
+    + '<span class="vw">Came at a different weight:'
+    + '<span class="mono" style="color:var(--ink-3)">note says '+num(q)+' '+esc(e.unit)+'</span>'
+    + '<input type="number" min="0" step="any" class="row-inp mono" id="vw_'+esc(c)+'" '
+      + 'value="'+(isW?num(it.current):'')+'" placeholder="'+num(q)+'" '
+      + 'onchange="verifyWeight(\''+c+'\',this.value)">'
+    + '<span style="font-size:12px;color:var(--ink-4)">'+esc(e.unit)+'</span></span>'
+    + (it ? '<button class="btn sm" onclick="verifyClear(\''+c+'\')">No problem after all</button>' : '')
+    + '<span class="spacer"></span>'
+    + '<button class="btn sm" onclick="DELEDIT=null;render()">Close</button>'
+    + '</div></div></td></tr>';
+}
+
+function verifyMissing(code){
+  const v = verifyOf(DATE, ROLE);
+  const q = Number((dayOf(DATE).packed[ROLE]||{})[code]) || 0;
+  v.items[code] = { type:'missing', original:q };
+  v.sent = false;                  /* changed since it last went */
+  DELEDIT = null;
+  save(); render();
+}
+function verifyWeight(code, val){
+  const cur = parseFloat(val);
+  if(!(cur >= 0)) return;
+  const v = verifyOf(DATE, ROLE);
+  const q = Number((dayOf(DATE).packed[ROLE]||{})[code]) || 0;
+  /* the weight on the note is not a problem, it is the note */
+  if(cur === q){ delete v.items[code]; }
+  else v.items[code] = { type:'weight', original:q, current:cur };
+  v.sent = false;
+  DELEDIT = null;
+  save(); render();
+}
+function verifyClear(code){
+  const v = verifyOf(DATE, ROLE);
+  delete v.items[code];
+  v.sent = false;
+  DELEDIT = null;
+  save(); render();
+}
+
+function verifyFoot(v){
+  const n = Object.keys(v.items || {}).length;
+  if(!n && !v.sent) return '';
+  const sentAt = v.at ? fmtDate(String(v.at).slice(0,10)) + ' at ' + String(v.at).slice(11,16) : '';
+  if(v.sent) return '<div class="note" style="background:#e7f0fa;border-color:#c4d8ee;color:#1b4f80">'
+    + 'Sent for re-verification'+(sentAt?' on '+esc(sentAt):'')+'. '+esc(VELORA)
+    + ' will check these '+n+' line'+(n===1?'':'s')+' and send the delivery again.</div>';
+  return '<div class="bar">'
+    + '<span class="sub" style="margin:0">'+n+' product'+(n===1?'':'s')+' reported &mdash; '
+    + 'nothing reaches '+esc(VELORA)+' until it is sent.</span>'
+    + '<span class="spacer"></span>'
+    + '<button class="btn pri" onclick="verifySend()">Send for re-verification</button></div>';
+}
+
+function verifySend(){
+  const v = verifyOf(DATE, ROLE);
+  if(!Object.keys(v.items).length) return;
+  v.sent = true;
+  v.by = (ME && ME.full_name) ? ME.full_name : (shopById(ROLE)||{}).name || ROLE;
+  v.at = new Date().toISOString();
+  save(); render();
 }
 
 function vMyBills(){
@@ -5787,6 +6101,7 @@ function markOut(shopId){
 /* ============================================================
    ADMIN — delivery
    ============================================================ */
+let VERIFYVIEW = null;
 function vShip(){
   const day = dayOf(DATE);
   let rows='';
@@ -5794,14 +6109,74 @@ function vShip(){
     const st = shopStatus(s.id);
     const packed = day.packed[s.id]||{};
     const n = Object.keys(packed).filter(c=>packed[c]>0).length;
-    let act = '&mdash;';
-    if(st==='shipped') act = '<button class="btn sm" onclick="confirmReceipt(\''+s.id+'\')">Mark received</button>';
-    if(st==='received') act = '<button class="btn sm" onclick="reopenReceipt(\''+s.id+'\')">Reopen</button>';
-    rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td><td>'+statusPill(st)+'</td><td class="r">'+act+'</td></tr>';
+    const v = day.verify[s.id];
+    const sev = verifySeverity(v);
+    /* one kind of problem is a delivery to adjust; both kinds at once is
+       a delivery to worry about, so it reads in red */
+    const issue = sev
+      ? '<span class="pill '+(sev==='both'?'p-red':'p-blue')+'">Pending re-verification &middot; '
+        + Object.keys(v.items).length+'</span> '
+      : '';
+    let act = '';
+    if(sev) act += '<button class="btn sm'+(VERIFYVIEW===s.id?' pri':'')+'" '
+                 + 'onclick="VERIFYVIEW=(VERIFYVIEW===\''+s.id+'\'?null:\''+s.id+'\');render()">View</button> ';
+    if(st==='shipped') act += '<button class="btn sm" onclick="confirmReceipt(\''+s.id+'\')">Mark received</button>';
+    if(st==='received') act += '<button class="btn sm" onclick="reopenReceipt(\''+s.id+'\')">Reopen</button>';
+    rows += '<tr><td>'+esc(s.name)+'</td><td class="c mono">'+n+'</td>'
+      + '<td>'+issue+statusPill(st)+'</td><td class="r">'+(act||'&mdash;')+'</td></tr>';
+    if(VERIFYVIEW === s.id && sev) rows += verifyViewRow(s, v);
   });
   return '<h2>Delivery</h2><p class="sub">'+fmtDate(DATE)+' &middot; the invoice can only be raised once the shop has confirmed</p>'
    + '<div class="note">If a shop reports a difference, change the packed quantity on the Packing tab, then mark it received.</div>'
    + '<div class="card"><table><thead><tr><th>Shop</th><th class="c">Products</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+/* What the shop found, line by line, under the shop it is about: who
+   checked, when, and for each product what the note said against what
+   the crates held. Reading it and putting the packing right is the
+   office's half of the loop; Sorted closes it. */
+function verifyViewRow(s, v){
+  const when = v.at ? fmtDate(String(v.at).slice(0,10)) + ' at ' + String(v.at).slice(11,16) : '';
+  let lines = '';
+  Object.keys(v.items).sort(byDay(DATE)).forEach(c=>{
+    const e = CAT[c] || {name:c, unit:''};
+    const it = v.items[c];
+    lines += '<tr><td class="mono" style="width:58px">'+esc(c)+'</td>'
+      + '<td>'+esc(e.name)+'<span class="tam">'+esc(e.tamil||'')+'</span></td>'
+      + '<td>'+(it.type==='missing'
+          ? '<span class="pill p-red">Product not delivered</span>'
+          : '<span class="pill p-amber">Weight mismatch</span>')+'</td>'
+      + '<td class="r mono">'+num(it.original)+' '+esc(e.unit)+'</td>'
+      + '<td class="r mono">'+(it.type==='weight' ? num(it.current)+' '+esc(e.unit) : '&mdash;')+'</td>'
+      + '</tr>';
+  });
+  return '<tr class="vedit"><td colspan="4"><div class="veditbox">'
+    + '<div class="vq">'+esc(s.name)+' &middot; delivery of '+fmtDate(DATE)
+    + (v.by ? ' &middot; checked by '+esc(v.by) : '')
+    + (when ? ' &middot; '+esc(when) : '')+'</div>'
+    + '<table><thead><tr><th>Code</th><th>Product</th><th>Issue</th>'
+    + '<th class="r">On the note</th><th class="r">At the shop</th></tr></thead>'
+    + '<tbody>'+lines+'</tbody></table>'
+    + '<div class="bar" style="margin:10px 0 0">'
+    + '<span class="sub" style="margin:0">Put the packing right on the Packing tab, then mark it sorted '
+    + '&mdash; the shop checks the delivery again.</span>'
+    + '<span class="spacer"></span>'
+    + '<button class="btn sm" onclick="go(\'pack\');setPackShop(\''+s.id+'\')">Open packing</button>'
+    + '<button class="btn sm pri" onclick="verifyResolve(\''+s.id+'\')">Sorted &mdash; send again</button>'
+    + '</div></div></td></tr>';
+}
+
+function verifyResolve(shopId){
+  if(ROLE !== 'owner' && ROLE !== 'admin'){ alert('Only Velora may clear a report.'); return; }
+  const v = dayOf(DATE).verify[shopId];
+  if(!v) return;
+  const n = Object.keys(v.items || {}).length;
+  if(!confirm('Mark ' + (shopById(shopId)||{}).name + '\u2019s report as sorted?\n\n'
+      + 'The ' + n + ' reported line' + (n===1?'':'s') + ' are cleared and the shop checks the '
+      + 'delivery again. Make sure the packing now says what actually went.')) return;
+  delete dayOf(DATE).verify[shopId];
+  VERIFYVIEW = null;
+  save(); render();
 }
 function confirmReceipt(shopId){ dayOf(DATE).ship[shopId] = 'received'; save(); render(); }
 function reopenReceipt(shopId){ dayOf(DATE).ship[shopId] = 'out'; save(); render(); }
@@ -6093,14 +6468,6 @@ function vInvoiceOne(shopId){
         : '<span class="v mono">'+(val ? esc(val) : '&nbsp;')+'</span>')
     + '</div>';
 
-  /* the company's own bank, printed for payment. Blank until it is
-     filled in under COMPANY, and marked as blank rather than left out —
-     a missing line reads as an oversight, a placeholder reads as a to do */
-  const bank = COMPANY.bank || {};
-  const bk = (lbl, val) => '<div class="ipair"><span class="k">'+lbl+'</span>'
-    + '<span class="cln">:</span>'
-    + '<span class="v'+(val?' mono':'')+'">'+(val ? esc(val) : 'Xxxx')+'</span></div>';
-
   const canEdit = (ROLE === 'owner' || ROLE === 'admin');
   let bar = '<div class="bar noprint"><button class="btn sm" onclick="INVSHOP=null;render()">&larr; All invoices</button>'
    + '<span class="spacer"></span>';
@@ -6160,15 +6527,88 @@ function vInvoiceOne(shopId){
    + '<div class="ibox iwords"><span class="cap" style="display:inline;margin:0">'
    + 'Total Amount In Words :</span> Rupees '+esc(words(net))+' Only</div>'
 
-   + '<div class="ibox ifoot"><div class="lft"><div class="cap">Bank Details</div>'
-   + bk('Bank Name', bank.name) + bk('Account Name', bank.acName)
-   + bk('Account Number', bank.acNo) + bk('IFSC Code', bank.ifsc)
-   + bk('Branch', bank.branch)
-   + '</div><div class="rgt"><div>For '+esc(COMPANY.name)+'</div>'
+   /* no bank details on the bill, by request: the footer is the amount
+      in words and the space to sign, nothing else */
+   + '<div class="ibox ifoot"><div class="rgt"><div>For '+esc(COMPANY.name)+'</div>'
    + '<div>Authorised Signatory</div></div></div>'
 
    + '</div>'
    + sellNote(inv, showSell);
+}
+
+/* ============================================================
+   SELLING PRICE — the day's shelf prices, as their own record
+   ============================================================
+   The same figures the note under the invoice shows, kept where they
+   can be looked up by date without opening a bill: what each product
+   was billed at and what it went on the shelf at. Nothing is entered
+   here — a bill already raised answers from its own frozen lines, and
+   a day not yet billed answers live from the rates and margins, so the
+   page follows the day as it is worked on and then stops moving the
+   moment the bill is saved, exactly as the bill itself does. */
+let SELLQ = '';
+function vSellPrice(){
+  if(ROLE !== 'owner' && ROLE !== 'admin')
+    return '<h2>Selling price</h2><div class="empty">Velora only.</div>';
+  const q = SELLQ.trim().toLowerCase();
+  const day = dayOf(DATE);
+  let out = '', shown = 0, shops = 0;
+
+  SHOPS.forEach(sh=>{
+    const inv = DB.invoices[DATE] && DB.invoices[DATE][sh.id];
+    let lines = [];
+    if(inv){
+      lines = (inv.lines || []).map(l=>({code:l.code, name:l.name, tamil:l.tamil||'',
+                                         rate:l.rate, sell:l.sell}));
+    } else {
+      const packed = day.packed[sh.id] || {};
+      Object.keys(packed).filter(c=>packed[c] > 0).sort(byDay(DATE)).forEach(c=>{
+        const e = CAT[c]; if(!e) return;
+        lines.push({code:c, name:e.name, tamil:e.tamil,
+                    rate:purchaseRate(sh.id, c), sell:sellingPrice(sh.id, c)});
+      });
+    }
+    if(q) lines = lines.filter(l=>
+      (l.code+' '+l.name+' '+(l.tamil||'')).toLowerCase().indexOf(q) > -1);
+    if(!lines.length) return;
+    shops++;
+
+    let rows = '';
+    lines.forEach(l=>{
+      shown++;
+      rows += '<tr><td class="mono" style="width:64px">'+esc(l.code)+'</td>'
+        + '<td>'+esc(l.name)+(l.tamil?'<span class="tam">'+esc(l.tamil)+'</span>':'')+'</td>'
+        + '<td class="r mono" style="width:130px">'
+          + (l.rate===null||l.rate===undefined?'&mdash;':'&#8377;'+money(l.rate))+'</td>'
+        + '<td class="r mono" style="width:130px">&#8377;'+money(l.sell||0)+'</td></tr>';
+    });
+    out += '<div class="card"><h3>'+esc(sh.name)
+      + (inv ? ' <span class="pill '+(inv.saved?'p-green':'p-amber')+'">'
+             + (inv.saved?'from bill '+esc(inv.no):'from the draft bill')+'</span>'
+             : ' <span class="pill p-grey">not billed yet</span>')+'</h3>'
+      + '<div class="twrap"><table><thead><tr><th>Code</th><th>Product</th>'
+      + '<th class="r">Billed / kg</th><th class="r">Selling / kg</th></tr></thead>'
+      + '<tbody>'+rows+'</tbody></table></div></div>';
+  });
+
+  return '<h2>Selling price</h2>'
+   + '<p class="sub">'+fmtDate(DATE)+' &middot; what each product was billed at and what it '
+   + 'goes on the shelf at. A saved bill answers from its own lines; before that the day '
+   + 'answers live.</p>'
+   + '<div class="bar">'
+   + '<input type="date" value="'+esc(DATE)+'" onchange="setDate(this.value)" '
+   + 'style="width:auto">'
+   + '<div class="srch"><input type="text" id="sellQ" placeholder="Search product or code" '
+   + 'value="'+esc(SELLQ)+'" oninput="SELLQ=this.value;afterRender=focusSellQ;render()"></div>'
+   + '<span class="spacer"></span>'
+   + '<span class="muted" style="font-size:13px;color:var(--ink-3)">'+shown+' line'
+   + (shown===1?'':'s')+'</span></div>'
+   + (out || '<div class="card"><div class="empty">Nothing on this day yet. The shelf prices '
+      + 'appear as the day is packed and priced, and stay once the bill is saved.</div></div>');
+}
+function focusSellQ(){
+  const i = document.getElementById('sellQ');
+  if(i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
 }
 
 /* The shelf price beside the bill rather than on it. Owner only, never
@@ -6886,7 +7326,8 @@ window.VF = {
    sentence rather than a schema */
 function keptWords(kept){
   const NAMES = { day_rates:'the market rates', packed:'the packing',
-                  shipments:'the delivery', vendor_orders:'the vendor orders',
+                  shipments:'the delivery', delivery_issues:'the delivery reports',
+                  vendor_orders:'the vendor orders',
                   vendor_order_lines:'the vendor orders', invoices:'the bills',
                   indents:'the indents', indent_lines:'the indents' };
   const seen = [];

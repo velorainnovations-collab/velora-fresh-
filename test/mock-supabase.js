@@ -77,6 +77,7 @@ const LOCKED         = ['1'];// products a trading day elsewhere still
 const INDENTS        = [];   // indent headers, so their ids can be looked up
 const ILINES         = [];   // and their lines, so a second device can read them
 const PACKED         = [];   // what was packed, so the other device sees it
+const ISSUES         = [];   // what the shop reported at the crates
 const SHIPS          = [];   // and where the lorry is
 const RATES          = {};   // trade_date|code -> market rate, for purchase_rate()
 let LAST_CODE = '';          // the six digit code the mock last 'emailed'
@@ -232,7 +233,7 @@ const srv = http.createServer((req, res) => {
         const gone = INDENTS.filter(x => x.trade_date === d).map(x => x.id);
         for (let i = ILINES.length - 1; i >= 0; i--)
           if (gone.indexOf(ILINES[i].indent_id) > -1) ILINES.splice(i, 1);
-        drop(INDENTS); drop(PACKED); drop(SHIPS);
+        drop(INDENTS); drop(PACKED); drop(SHIPS); drop(ISSUES);
         Object.keys(RATES).forEach(k => { if (k.indexOf(d + '|') === 0) delete RATES[k]; });
         return send(200, null);
       }
@@ -424,6 +425,28 @@ const srv = http.createServer((req, res) => {
         });
         received.push({ table: name, method: 'POST', rows: body ? JSON.parse(body) : null });
         return send(201, {});
+      }
+
+      if (req.method === 'GET' && name === 'delivery_issues') return send(200, ISSUES);
+      if (req.method === 'POST' && name === 'delivery_issues') {
+        (body ? JSON.parse(body) : []).forEach(r => {
+          const had = ISSUES.find(x => x.trade_date === r.trade_date &&
+            x.shop_id === r.shop_id && x.product_code === r.product_code);
+          if (had) Object.assign(had, r); else ISSUES.push(Object.assign({}, r));
+        });
+        received.push({ table: name, method: 'POST', rows: body ? JSON.parse(body) : null });
+        return send(201, {});
+      }
+      if (req.method === 'DELETE' && name === 'delivery_issues') {
+        const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
+        const sh = (url.searchParams.get('shop_id') || '').replace(/^eq\./, '');
+        const pc = (url.searchParams.get('product_code') || '').replace(/^eq\./, '');
+        for (let i = ISSUES.length - 1; i >= 0; i--) {
+          if ((!d || ISSUES[i].trade_date === d) && (!sh || ISSUES[i].shop_id === sh) &&
+              (!pc || ISSUES[i].product_code === pc)) ISSUES.splice(i, 1);
+        }
+        received.push({ table: name, method: 'DELETE', rows: null });
+        return send(204, null);
       }
 
       if (req.method === 'GET' && table.startsWith('products')) return send(200, EXTRA_PRODUCTS);

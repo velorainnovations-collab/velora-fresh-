@@ -205,6 +205,7 @@ begin
   delete from day_rates     where trade_date = p_date;
   delete from packed        where trade_date = p_date;
   delete from shipments     where trade_date = p_date;
+  delete from delivery_issues where trade_date = p_date;
   delete from vendor_order_lines where trade_date = p_date;
   delete from vendor_orders      where trade_date = p_date;
   -- invoice_lines follow their invoice on delete cascade
@@ -388,6 +389,18 @@ create policy write_vendors on vendors for all using (is_velora()) with check (i
 -- Bank details: owner alone. Admin is explicitly excluded.
 create policy owner_bank on vendor_bank for all
   using (is_owner()) with check (is_owner());
+
+-- ---------- units: read by anyone signed in, kept by Velora ----------
+create policy read_units  on units for select using (auth.uid() is not null);
+create policy write_units on units for all using (is_velora()) with check (is_velora());
+
+-- ---------- delivery verification ----------
+-- The shop reports on its own delivery and nobody else's; the office
+-- reads every report and clears them once the packing is put right.
+create policy read_issues on delivery_issues for select using (may_see_shop(shop_id));
+create policy write_issues on delivery_issues for all
+  using (is_velora() or (current_role_name() = 'shop' and shop_id = current_shop()))
+  with check (is_velora() or (current_role_name() = 'shop' and shop_id = current_shop()));
 
 -- ---------- contacts: who a bill is made out to ----------
 -- Velora keeps them and only the owner edits them, the same as the

@@ -118,7 +118,8 @@ async function signIn(b, email) {
   p.on('dialog', async d => { said = d.message(); await d.accept(); });
   await p.evaluate(() => go('products'));
   await p.waitForTimeout(500);
-  check('both buttons are there', await p.locator('.gtools button').count(), 2);
+  /* two for the vendor group, two for the unit master */
+  check('all four small buttons are there', await p.locator('.gtools button').count(), 4);
   check('panel starts closed', await p.locator('#gNew').isVisible(), false);
 
   // half a product typed, then the detour

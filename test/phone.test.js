@@ -115,24 +115,27 @@ const box = (p, sel) => p.evaluate(s => {
 
   await p.evaluate(() => go('products'));
   await p.waitForTimeout(500);
+  /* the first .twrap can be a hidden panel's; measure the visible one
+     that actually has something to scroll */
   check('a wide table scrolls inside its own card instead',
         await p.evaluate(() => {
-          const w = document.querySelector('#main .twrap');
-          return !!w && w.scrollWidth > w.clientWidth;
+          window.__wide = Array.prototype.slice.call(document.querySelectorAll('#main .twrap'))
+            .find(w => w.offsetParent !== null && w.scrollWidth > w.clientWidth);
+          return !!window.__wide;
         }), true);
   check('and the first column stays put while it does',
         await p.evaluate(() => getComputedStyle(
-          document.querySelector('#main .twrap td:first-child')).position), 'sticky');
+          window.__wide.querySelector('td:first-child')).position), 'sticky');
   check('a soft edge says there is more to the right',
         await p.locator('#main .tscroll.more').count() > 0, true);
   await p.evaluate(() => {
-    const w = document.querySelector('#main .twrap');
+    const w = window.__wide;
     w.scrollLeft = w.scrollWidth;
     w.dispatchEvent(new Event('scroll'));
   });
   await p.waitForTimeout(250);
   check('and it goes at the end of the run',
-        await p.locator('#main .tscroll.more').count(), 0);
+        await p.evaluate(() => window.__wide.parentNode.classList.contains('more')), false);
 
   console.log('\na form on a phone stacks its button and the line under it');
   await p.evaluate(() => go('acct'));

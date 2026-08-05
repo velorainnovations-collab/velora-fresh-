@@ -18,6 +18,7 @@
     "test:vendor": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/vendor.test.js; kill %1",
     "test:contact": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/contact.test.js; kill %1",
     "test:print": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/print.test.js; kill %1",
+    "test:verify": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/verify.test.js; kill %1",
     "test:signup": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/signup.test.js; kill %1",
     "test:whatsapp": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/whatsapp.test.js; kill %1",
     "test:theme": "python3 -m http.server 8092 >/dev/null 2>&1 & sleep 2; node test/theme.test.js; kill %1",

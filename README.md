@@ -156,5 +156,23 @@ afterwards never re-prices a bill that has already been raised.
   vendor order, packing, the delivery note, the bill, the product list and the
   margin master. Never alphabetically and never by product code; code only breaks
   a tie. See docs/DATA_MODEL.md, "Nothing is listed alphabetically".
+* **Delivery verification.** On the shop's Delivery page, Edit on any line asks
+  what happened: Product not delivered, or came at a different weight (the note's
+  weight read-only, the scale's weight typed in). Marks stay on the phone until
+  **Send for re-verification** stamps them with who checked and when. On the
+  office's Delivery screen the shop then reads **Pending re-verification** — blue
+  for one kind of problem, red when the same delivery has both — with a View
+  panel listing every line, and **Sorted — send again** clears it once the
+  packing is put right. Table `delivery_issues`; a shop writes only its own.
+* **Units are a master**, not a hard-coded list: kg, g, piece, bunch, packet, box
+  and tray built in, and **+ New unit** beside the Unit box makes more. A unit is
+  either billed as one each (piece, bunch, packet) or *weighed* — each one carries
+  its own kg, like box and tray. Manage renames or deletes custom units; one with
+  products in it cannot be deleted, and built-ins keep their names. Table `units`.
+* **Sales → Selling price** is the day's shelf prices as their own record: per
+  shop, code, product, billed per kg and selling per kg, with a date picker and
+  search. A day not yet billed answers live from the rates and margins; a saved
+  bill answers from its own frozen lines, so the page stops moving the moment the
+  bill does.
 * WhatsApp and email sending are stubs that show the message that would go out.
 * Bill number format `VF/<SHOP>/<MMYYYY>/<0001>` is provisional.

@@ -17,7 +17,7 @@
 const { chromium } = require('playwright');
 require('./mock-supabase.js');
 
-const OFFICE = ['board','indents','orders','rates','pack','ship','inv','vendors','shops',
+const OFFICE = ['board','indents','orders','rates','pack','ship','inv','sell','vendors','shops',
                 'products','contact','master','people','acct'];
 const SHOP = ['myindent','mydel','mybills','products'];
 

@@ -170,7 +170,7 @@ async function readyToBill(p) {
   check('and it is on the sheet, not in a form beside it',
     await p.locator('#inv #invvehicle').inputValue(), 'TN 01 AB 1234');
   const withVeh = await p.locator('#inv').textContent();
-  check('bank details for payment', /Bank Details/.test(withVeh), true);
+  check('no bank details on the bill', /bank/i.test(withVeh), false);
   check('the amount in words is labelled',
     /Total Amount In Words/i.test(withVeh), true);
 

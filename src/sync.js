@@ -38,10 +38,11 @@ const VFSync = (function () {
   function flatten(DB) {
     const out = {
       indents: {}, indent_lines: {}, day_rates: {}, packed: {},
-      shipments: {}, vendor_orders: {}, vendor_order_lines: {},
+      shipments: {}, delivery_issues: {}, vendor_orders: {}, vendor_order_lines: {},
       invoices: {}, invoice_lines: {},
       payments: {}, vendors: {}, vendor_bank: {}, margin_comm: {},
       margin_selling: {}, settings: {}, contacts: {}, contact_bank: {},
+      units: {},
     };
     if (!DB) return out;
 
@@ -93,6 +94,24 @@ const VFSync = (function () {
           out.packed[date + '|' + shop + '|' + code] = {
             trade_date: date, shop_id: shop,
             product_code: code, qty: Number(p[code]) || 0,
+          };
+        });
+      });
+
+      /* what the shop found at the crates — only once it has pressed
+         send, so half-checked marks stay on the phone they are being
+         made on */
+      Object.keys(day.verify || {}).forEach(shop => {
+        const v = day.verify[shop];
+        if (!v || !v.sent) return;
+        Object.keys(v.items || {}).forEach(code => {
+          const it = v.items[code] || {};
+          out.delivery_issues[date + '|' + shop + '|' + code] = {
+            trade_date: date, shop_id: shop, product_code: code,
+            issue: it.type === 'missing' ? 'missing' : 'weight',
+            original_qty: Number(it.original) || 0,
+            current_qty: it.type === 'weight' ? (Number(it.current) || 0) : null,
+            verified_by: v.by || '', verified_at: v.at || null,
           };
         });
       });
@@ -172,6 +191,12 @@ const VFSync = (function () {
         paid_on: p.date, amount: round2(p.amount),
         mode: p.mode || 'NEFT', ref: p.ref || '',
       };
+    });
+
+    // ---- units ----
+    Object.keys(DB.units || {}).forEach(u => {
+      const d = DB.units[u] || {};
+      out.units[u] = { name: u, weighed: !!d.weighed, builtin: !!d.builtin };
     });
 
     // ---- vendors ----
@@ -277,6 +302,7 @@ const VFSync = (function () {
     day_rates:      'trade_date,product_code',
     packed:         'trade_date,shop_id,product_code',
     shipments:      'trade_date,shop_id',
+    delivery_issues: 'trade_date,shop_id,product_code',
     vendor_orders:  'trade_date,group_name',
     vendor_order_lines: 'trade_date,group_name,product_code',
     invoices:       'trade_date,shop_id',
@@ -289,6 +315,7 @@ const VFSync = (function () {
     settings:       'client_id',
     contacts:       'id',
     contact_bank:   'contact_id',
+    units:          'name',
   };
 
   function diff(before, after) {
@@ -325,11 +352,12 @@ const VFSync = (function () {
 
   /* Parents before children, so a line never arrives before its header.
      Deletes run in reverse for the same reason. */
-  const ORDER = ['settings', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
+  const ORDER = ['settings', 'units', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                  /* before invoices: an invoice names the contact it was
                     made out to, and the row it points at must exist */
                  'contacts', 'contact_bank',
                  'indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
+                 'delivery_issues',
                  'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                  'payments'];
 
@@ -372,7 +400,7 @@ const VFSync = (function () {
     owner: null,
     admin: null,
     ho:    ['indents', 'indent_lines'],
-    shop:  ['indents', 'indent_lines', 'shipments'],
+    shop:  ['indents', 'indent_lines', 'shipments', 'delivery_issues'],
     /* vendor_order_lines is Velora's: a shop asks for a quantity, it
        does not decide what is bought */
   };
@@ -880,11 +908,12 @@ const VFSync = (function () {
     if (!enabled() || !signedIn()) return DB;
 
     const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st,
-           cons, cbank] =
+           cons, cbank, viss, unis] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
                          'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                          'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
-                         'settings', 'contacts', 'contact_bank'].map(t => get(t).catch(() => [])));
+                         'settings', 'contacts', 'contact_bank',
+                         'delivery_issues', 'units'].map(t => get(t).catch(() => [])));
 
     const indById = {};
     inds.forEach(i => {
@@ -911,6 +940,18 @@ const VFSync = (function () {
       (D.packed[p.shop_id] = D.packed[p.shop_id] || {})[p.product_code] = Number(p.qty);
     });
     ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
+    viss.forEach(r => {
+      const D = day(r.trade_date);
+      const v = (D.verify = D.verify || {})[r.shop_id] =
+        (D.verify[r.shop_id] || { sent: true, by: '', at: null, items: {} });
+      v.sent = true;
+      v.by = r.verified_by || v.by;
+      v.at = r.verified_at || v.at;
+      v.items[r.product_code] = r.issue === 'missing'
+        ? { type: 'missing', original: Number(r.original_qty) || 0 }
+        : { type: 'weight', original: Number(r.original_qty) || 0,
+            current: Number(r.current_qty) || 0 };
+    });
     vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
     vol.forEach(l => {
       const D = day(l.trade_date);
@@ -953,6 +994,11 @@ const VFSync = (function () {
     vbank.forEach(b => {
       const rec = DB.vendors[b.group_name];
       if (rec) rec.bank = { acName: b.ac_name, acNo: b.ac_no, ifsc: b.ifsc, upi: b.upi };
+    });
+
+    DB.units = DB.units || {};
+    unis.forEach(u => {
+      DB.units[u.name] = { weighed: !!u.weighed, builtin: !!u.builtin };
     });
 
     DB.contacts = DB.contacts || {};
@@ -1081,7 +1127,7 @@ const VFSync = (function () {
      that is already gone is not an error either. Invoice lines and
      indent lines go with their headers, on delete cascade. */
   const DAY_TABLES = ['indent_lines', 'indents', 'day_rates', 'packed', 'shipments',
-                      'vendor_order_lines', 'vendor_orders', 'invoices'];
+                      'delivery_issues', 'vendor_order_lines', 'vendor_orders', 'invoices'];
 
   /* Which of them a login may delete from on its own. Row level security
      decides this in the database whatever is asked here; the point of
@@ -1092,7 +1138,7 @@ const VFSync = (function () {
     owner: null,                          /* null: everything */
     admin: null,
     ho:    ['indents'],
-    shop:  ['indents', 'shipments'],
+    shop:  ['indents', 'shipments', 'delivery_issues'],
   };
 
   /* the whole-day clear, which any signed-in login may call, is a

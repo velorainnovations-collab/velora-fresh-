@@ -60,6 +60,11 @@ const DB = {
       rates:  { '1': 80, '2': '' },                              // '' = not entered
       packed: { KLP: { '1': 12, '280': 0 } },                    // 0 = vendor skipped
       ship:   { KLP: 'received' },
+      verify: { KLP: { sent: true, by: 'Kilpauk Mgr', at: '2026-07-30T09:00:00Z',
+                       items: { '1': { type: 'weight', original: 12, current: 10 },
+                                '280': { type: 'missing', original: 0 } } },
+                /* half-checked marks stay on the phone making them */
+                NGB: { sent: false, items: { '2': { type: 'missing', original: 3 } } } },
       sent:   { 'Nellai Traders': true, 'Ooty': false },
       order:  { '1': 15 },        // bought 15 though the shops asked for 12
     },
@@ -95,6 +100,7 @@ const DB = {
     'SUK(Tomoto)':    { name: 'SUK', phone: '', bank: { acName: 'SUK', acNo: '91', ifsc: 'H1', upi: '' } },
   },
   master: { comm: { KLP: 4 }, selling: { KLP: { '1': 30 } } },
+  units: { kg: { weighed: false, builtin: true }, crate: { weighed: true } },
   settings: { anytime: true },
 };
 
@@ -120,6 +126,17 @@ check('packed qty',           F.packed['2026-07-30|KLP|1'].qty, 12);
 check('vendor-skipped 0 kept', F.packed['2026-07-30|KLP|280'].qty, 0);
 
 check('shipment state',       F.shipments['2026-07-30|KLP'].state, 'received');
+check('a sent report goes up',
+      F.delivery_issues['2026-07-30|KLP|1'].issue + ' ' +
+      F.delivery_issues['2026-07-30|KLP|1'].original_qty + '>' +
+      F.delivery_issues['2026-07-30|KLP|1'].current_qty, 'weight 12>10');
+check('a missing product carries no current weight',
+      F.delivery_issues['2026-07-30|KLP|280'].current_qty, null);
+check('who checked travels with it',
+      F.delivery_issues['2026-07-30|KLP|1'].verified_by, 'Kilpauk Mgr');
+check('an unsent report stays on the phone',
+      F.delivery_issues['2026-07-30|NGB|2'], undefined);
+check('a unit goes up by name', F.units['crate'].weighed, true);
 check('order sent',           Object.keys(F.vendor_orders), ['2026-07-30|Nellai Traders']);
 
 check('invoice header',       F.invoices['2026-07-30|KLP'].bill_no, 'VF/KLP/072026/0001');
@@ -250,6 +267,8 @@ const CONFLICT_COLS = {
   settings: ['client_id'],
   contacts: ['id'],
   contact_bank: ['contact_id'],
+  delivery_issues: ['trade_date', 'shop_id', 'product_code'],
+  units: ['name'],
 };
 
 function dupKeys(table, rows) {

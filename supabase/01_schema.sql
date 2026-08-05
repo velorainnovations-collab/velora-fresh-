@@ -180,6 +180,38 @@ create table if not exists vendor_order_lines (
   primary key (trade_date, group_name, product_code)
 );
 
+-- ---------- units ----------
+
+-- What a product is measured in. The built-in seven are seeded by the
+-- app; the desk adds its own. weighed means each one carries its own kg
+-- (like box and tray) and the bill is made out in kilos; otherwise a
+-- quantity bills as one each (like piece and bunch).
+create table if not exists units (
+  name    text primary key,
+  weighed boolean not null default false,
+  builtin boolean not null default false
+);
+
+-- ---------- delivery verification ----------
+
+-- What the shop found when it checked the crates: a product that never
+-- arrived, or one that arrived at a different weight than the note
+-- says. One row per product with a problem — a product with no row is a
+-- product with no issue, which is the same rule packed uses for
+-- additions. The shop writes these; the office reads them, adjusts the
+-- packing, and clears them.
+create table if not exists delivery_issues (
+  trade_date   date not null,
+  shop_id      text not null references shops(id) on delete cascade,
+  product_code text not null references products(code) on delete restrict,
+  issue        text not null check (issue in ('missing','weight')),
+  original_qty numeric(12,3) not null default 0,   -- what the note says
+  current_qty  numeric(12,3),                      -- what actually arrived (weight only)
+  verified_by  text not null default '',
+  verified_at  timestamptz not null default now(),
+  primary key (trade_date, shop_id, product_code)
+);
+
 -- ---------- contacts: who a bill is made out to ----------
 
 -- One row per customer whose details go on an invoice: the company as
