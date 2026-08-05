@@ -151,6 +151,11 @@ afterwards never re-prices a bill that has already been raised.
   the paper's width, and fails if anything runs past the edge, if a column heading
   no longer fits, if the totals stop lining up under Amount, or if it spills onto a
   second page.
+* The layout audit (`npm run test:layout`) walks every screen at desk (1440px),
+  tablet (834px) and phone (390px) width, in light and dark — 162 screens — and
+  fails on sideways scroll, mismatched row/header counts, unreadable text, content
+  past the edge, squeezed tables, uneven form boxes, and buttons under 30px on a
+  phone. The audit is the UI review; anything it cannot measure gets a screenshot.
 * Products are listed newest first, everywhere — the indent, the market rates, the
   vendor order, packing, the delivery note, the bill, the product list and the
   margin master. Never alphabetically and never by product code; code only breaks

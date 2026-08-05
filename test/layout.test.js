@@ -128,6 +128,34 @@ const audit = tab => ({
     return out.slice(0, 2);
   })(),
 
+  /* inside one form, every box is the same height: a dropdown taller
+     than the text field beside it reads as a mistake */
+  ragged: (() => {
+    const out = [];
+    document.querySelectorAll('#main .addform').forEach((f, fi) => {
+      const hs = Array.prototype.slice.call(f.querySelectorAll('input, select'))
+        .filter(el => el.type !== 'checkbox' && el.offsetParent !== null)
+        .map(el => Math.round(el.getBoundingClientRect().height));
+      if (!hs.length) return;
+      const min = Math.min.apply(null, hs), max = Math.max.apply(null, hs);
+      if (max - min > 2) out.push('form' + fi + ': ' + min + '-' + max + 'px');
+    });
+    return out.slice(0, 2);
+  })(),
+
+  /* on a phone a button is pressed with a thumb, not a cursor */
+  smallTap: (() => {
+    if (document.documentElement.clientWidth > 720) return [];
+    const out = [];
+    document.querySelectorAll('#main button, header button').forEach(el => {
+      if (el.offsetParent === null) return;
+      const r = el.getBoundingClientRect();
+      if (r.height && r.height < 30) out.push((el.textContent.trim() || el.className).slice(0, 18)
+        + ' ' + Math.round(r.height) + 'px');
+    });
+    return out.slice(0, 3);
+  })(),
+
   offscreen: (() => {
     const vw = document.documentElement.clientWidth, out = [];
     document.querySelectorAll('#main > *, header > *').forEach(el => {
@@ -154,13 +182,15 @@ function problemsIn(r) {
   if (r.offscreen.length) problems.push('past the edge: ' + r.offscreen.join('; '));
   if (r.plural.length) problems.push('plural: "' + r.plural.join('", "') + '"');
   if (r.narrow.length) problems.push('table squeezed: ' + r.narrow.join('; '));
+  if (r.ragged.length) problems.push('uneven boxes: ' + r.ragged.join('; '));
+  if (r.smallTap.length) problems.push('too small to tap: ' + r.smallTap.join('; '));
   return problems;
 }
 
 (async () => {
   const b = await chromium.launch();
   for (const [who, tabs] of [['owner', OFFICE], ['shop', SHOP]]) {
-    for (const width of [1440, 390]) {
+    for (const width of [1440, 834, 390]) {
       for (const scheme of ['light', 'dark']) {
         const { ctx, p } = await open(b, who, width, scheme);
         console.log('\n' + who + ' at ' + width + 'px, ' + scheme);

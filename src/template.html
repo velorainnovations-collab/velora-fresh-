@@ -179,7 +179,7 @@ h2{font-size:21px;font-weight:650;margin:0 0 2px;letter-spacing:-.3px}
 
 /* ---------- controls ---------- */
 button,select,input{font-family:inherit;font-size:14px}
-.btn{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 15px;
+.btn{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 15px;white-space:nowrap;
   cursor:pointer;font-weight:500;color:var(--ink-2);box-shadow:var(--sh);
   transition:background .13s,border-color .13s,color .13s}
 .btn:hover{background:var(--surface-2);border-color:#d5cfc6;color:var(--ink)}
@@ -452,6 +452,14 @@ tr.vedit>td{background:var(--surface-2);border-bottom:1px solid var(--line)}
   main{padding-top:20px;padding-bottom:64px}
   .grp>button{padding:10px 13px;font-size:13.5px}
   .kids button{padding-left:40px;font-size:13px}
+  /* On a tablet the bar runs out of room before it runs out of
+     controls, and the first thing to fall off the line was the build id
+     — wrapping to a second row and dragging the whole header taller.
+     The registered name under the logo is the thing to give up: it is
+     on the invoice, the gate and the drawer, and the bar only needs the
+     trading name. */
+  .brand small{display:none}
+  header{flex-wrap:nowrap}
 }
 
 /* ---------- mobile ---------- */
@@ -524,6 +532,16 @@ tr.vedit>td{background:var(--surface-2);border-bottom:1px solid var(--line)}
   .gtools .btn{flex:1 1 0}
 
   #inv{padding:16px 14px}
+
+  /* A phone is pressed with a thumb, not a cursor. Every button grows to
+     a tappable height in one place — including the small ones in table
+     rows, which were 26px and a gamble to hit. */
+  .btn,.btn.sm{min-height:38px}
+  /* a card heading holding buttons lets them take a second line rather
+     than push the page sideways */
+  .card h3{flex-wrap:wrap;row-gap:7px}
+  td .btn,td .btn.sm{min-height:34px}
+  .rm{min-height:34px;min-width:34px}
 }
 
 /* ---------- print ---------- */
