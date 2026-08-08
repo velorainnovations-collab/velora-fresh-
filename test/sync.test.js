@@ -167,6 +167,15 @@ check('and it carries the vendor whose bill it is on',
 /* ---------------- determinism ---------------- */
 console.log('\ndeterminism');
 check('flatten is stable', JSON.stringify(S._flatten(DB)), JSON.stringify(F));
+/* rows recorded by different builds of the app share one batch: every
+   row gets every key, an unknown value is null — or PostgREST answers
+   "All object keys must match" and the queue jams for ever */
+check('a mixed-shape batch is levelled before it is sent',
+  JSON.stringify(S._unionFill([{ a: 1, b: 2 }, { a: 3 }])),
+  JSON.stringify([{ a: 1, b: 2 }, { a: 3, b: null }]));
+check('uniform rows pass through untouched',
+  JSON.stringify(S._unionFill([{ a: 1 }, { a: 2 }])),
+  JSON.stringify([{ a: 1 }, { a: 2 }]));
 check('uuid is stable', S._uuidFor('2026-07-30|KLP'), S._uuidFor('2026-07-30|KLP'));
 check('uuid differs per key',
   S._uuidFor('2026-07-30|KLP') === S._uuidFor('2026-07-30|NGB'), false);

@@ -598,7 +598,7 @@ tr.vedit>td{background:var(--surface-2);border-bottom:1px solid var(--line)}
   <!-- which build is on the screen. Changes whenever the app does, so
        "did the change reach me?" is answered by looking rather than by
        guessing at a cache. -->
-  <span id="buildId" class="mono" title="Build">9447e0a</span>
+  <span id="buildId" class="mono" title="Build">1e46a29</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
@@ -1839,7 +1839,26 @@ const VFSync = (function () {
     // decide the conflict. Later rows win, matching last-write-wins.
     const byKey = new Map();
     rows.forEach(row => byKey.set(keyCols.map(c => String(row[c])).join('\u0000'), row));
-    return postRows(table, Array.from(byKey.values()), keyCols, 0);
+    /* copies, not the queue's own rows: the strip below deletes columns,
+       and a queued row mutilated by one attempt would stay mutilated in
+       the saved queue — mixed shapes for ever after */
+    const unique = Array.from(byKey.values()).map(r => Object.assign({}, r));
+    return postRows(table, unionFill(unique), keyCols, 0);
+  }
+
+  /* PostgREST refuses a bulk insert whose rows do not all carry the same
+     keys — "All object keys must match". A phone's saved queue can hold
+     rows recorded by different builds of this app, older ones without
+     the columns newer ones carry, and one submit then failed for ever.
+     Every key any row has, every row gets; a column a row never knew is
+     null, which is what it meant. */
+  function unionFill(rows) {
+    const keys = {};
+    rows.forEach(r => { Object.keys(r).forEach(k => { keys[k] = 1; }); });
+    rows.forEach(r => {
+      Object.keys(keys).forEach(k => { if (!(k in r)) r[k] = null; });
+    });
+    return rows;
   }
 
   /* The POST half on its own, so the missing-column retry loops here and
@@ -2754,6 +2773,7 @@ const VFSync = (function () {
     addVendorGroup, renameGroup, fetchCatalogue,
     // exported for the tests
     _flatten: flatten, _diff: diff, _collapse: collapse, _sortOps: sortOps,
+    _unionFill: unionFill,
     _uuidFor: uuidFor, _mayWrite: mayWrite,
     _conflictFor: t => (t === 'indent_lines' ? 'indent_id,product_code' : CONFLICT[t]),
     _reset: function () { queue = []; synced = null; WHO = { role: '', shop: '' }; },

@@ -379,6 +379,15 @@ const srv = http.createServer((req, res) => {
       const COLS = schemaColumns();
       if (req.method === 'POST' && body && (COLS[name] || (opts.behindColumns && opts.behindColumns[name]))) {
         const rows0 = JSON.parse(body);
+        /* PostgREST refuses a bulk insert whose rows carry different
+           keys — the exact 400 a phone hit live when its queue mixed
+           rows from two builds of the app */
+        if (Array.isArray(rows0) && rows0.length > 1) {
+          const shape = Object.keys(rows0[0]).sort().join(',');
+          if (rows0.some(r => Object.keys(r).sort().join(',') !== shape)) {
+            return send(400, { code: 'PGRST102', message: 'All object keys must match' });
+          }
+        }
         for (const row of (Array.isArray(rows0) ? rows0 : [rows0])) {
           const behind = opts.behindColumns && opts.behindColumns[name]
             ? Object.keys(row).find(c => opts.behindColumns[name].indexOf(c) > -1) : null;
