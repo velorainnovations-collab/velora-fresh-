@@ -274,6 +274,45 @@ function check(label, got, want) {
   opts.oldCreateUser = false;
   p.removeAllListeners('dialog');
 
+  /* The address and number come free with the person. Deleting Kilpauk
+     Mgr above must release p9000000004@shop.velorafresh.in and the
+     phone behind it, or the replacement cannot be hired. */
+  console.log('\na deleted login frees its email and phone');
+  received.length = 0;
+  p.on('dialog', async d => { await d.accept(); });
+  await p.selectOption('#npRole', 'shop');
+  await p.waitForTimeout(200);
+  await p.selectOption('#npShop', 'KLP');
+  await p.fill('#npName', 'Replacement Mgr');
+  await p.fill('#npPhone', '9000000004');
+  await p.fill('#npPass', 'newshoppass1');
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(1200);
+  const remade = received.find(r => r.table === 'fn:create-user' && r.rows.action !== 'delete');
+  check('the same phone is accepted', !!remade, true);
+  check('no already-exists in the answer',
+        /already/i.test(await p.locator('#main').textContent()), false);
+  check('the new login is on the list',
+        await p.locator('#main tbody tr', { hasText: 'Replacement Mgr' }).count() > 0, true);
+
+  /* Day Manager went through the older function above: the access row
+     went, the sign-in stayed — an orphan holding the address. Creating
+     with that address must heal it, not refuse it. */
+  console.log('\nand an address orphaned by the old delete is healed');
+  received.length = 0;
+  await p.selectOption('#npRole', 'admin');
+  await p.waitForTimeout(200);
+  await p.fill('#npName', 'Second Manager');
+  await p.fill('#npEmail', 'admin@velora.example');
+  await p.fill('#npPass', 'anotherpass1');
+  await p.click('button:has-text("Add")');
+  await p.waitForTimeout(1200);
+  check('the orphaned address is reusable',
+        /Login created for/.test(await p.locator('#main').textContent()), true);
+  check('under the new name',
+        await p.locator('#main tbody tr', { hasText: 'Second Manager' }).count() > 0, true);
+  p.removeAllListeners('dialog');
+
   console.log('\nnot your own, though');
   check('no delete button on your own row',
         await p.locator('#main tbody tr', { hasText: 'you' })

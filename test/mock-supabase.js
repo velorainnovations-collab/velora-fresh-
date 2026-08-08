@@ -141,6 +141,24 @@ const srv = http.createServer((req, res) => {
       if (!byInvite && a.password.length < 8)
         return send(400, { error: 'Use a password of at least 8 characters' });
       if (a.role === 'shop' && !a.shop_id) return send(400, { error: 'A shop login needs a shop' });
+      /* the address is taken. A real person keeps it; an orphan — an
+         auth account whose app_users row is gone, the leftover of an
+         old delete that could only do half the job — is healed: removed
+         and the create goes through, exactly as the edge function now
+         does. */
+      if (USERS[a.email]) {
+        const holder = USERS[a.email];
+        const hasRow = PEOPLE.some(x => x.id === holder.uid);
+        if (hasRow) {
+          return send(400, { error: 'A user with this email address has already been registered' });
+        }
+        delete USERS[a.email];
+      }
+      /* an active person already holds this phone */
+      if (a.phone && PEOPLE.some(x => x.kind === 'user' && x.active && x.phone === a.phone)) {
+        return send(400, { error: 'Account rolled back: duplicate key value violates unique '
+          + 'constraint "app_users_phone_active_key"' });
+      }
       const uid = 'made' + PEOPLE.length + '000-0000-0000-0000-00000000000c';
       PEOPLE.push({ kind: 'user', id: uid, phone: a.phone, full_name: a.full_name,
                     role: a.role, client_id: a.client_id, shop_id: a.shop_id, active: true });
@@ -297,6 +315,10 @@ const srv = http.createServer((req, res) => {
         received.push({ table: 'app_users?id=eq.' + id, method: 'DELETE', rows: null });
         const i = PEOPLE.findIndex(r => r.id === id);
         if (i > -1) PEOPLE.splice(i, 1);
+        /* only the access row goes: the auth account keeps the email,
+           which is exactly the orphan the old delete path left behind */
+        const em = Object.keys(USERS).find(e => USERS[e].uid === id);
+        if (em) USERS[em].row = null;
         return send(204, null);
       }
       /* RLS as the database has it: an owner may read everyone in the

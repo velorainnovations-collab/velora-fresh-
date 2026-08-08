@@ -209,10 +209,68 @@ Deno.serve(async (req) => {
         : JSON.stringify({ email, password, email_confirm: true }),
     },
   )
-  const created = await createRes.json()
+  let created = await createRes.json()
   if (!createRes.ok) {
-    return json({ error: created.msg ?? created.message ?? 'Could not create the account' },
-                 createRes.status)
+    const why = String(created.msg ?? created.message ?? '')
+    // ---------- healing an orphan ----------
+    // "already been registered" can mean two things. A real person with
+    // this address, who must not be touched. Or a leftover: an account
+    // whose app_users row was deleted by an older build that could not
+    // delete the sign-in half — access gone, email still taken. An
+    // account with no app_users row grants nothing and belongs to
+    // nobody, so it is removed and the create is tried once more. That
+    // frees every address this bug ever swallowed, at the moment the
+    // address is wanted again.
+    if (/already.*regist|exists/i.test(why)) {
+      const svc = {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      }
+      const lookup = await fetch(
+        `${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
+        { headers: svc },
+      )
+      const found = lookup.ok ? await lookup.json() : {}
+      const users: Array<{ id: string; email?: string }> =
+        found.users ?? (Array.isArray(found) ? found : [])
+      const match = users.find((u) => (u.email ?? '').toLowerCase() === email)
+      if (match) {
+        const row = await fetch(
+          `${SUPABASE_URL}/rest/v1/app_users?id=eq.${match.id}&select=id`,
+          { headers: svc },
+        )
+        const rows = row.ok ? await row.json() : [{}]
+        if (Array.isArray(rows) && rows.length === 0) {
+          await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${match.id}`, {
+            method: 'DELETE', headers: svc,
+          })
+          const retry = await fetch(
+            byInvite
+              ? `${SUPABASE_URL}/auth/v1/invite` +
+                (redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '')
+              : `${SUPABASE_URL}/auth/v1/admin/users`,
+            {
+              method: 'POST', headers: svc,
+              body: byInvite
+                ? JSON.stringify({ email })
+                : JSON.stringify({ email, password, email_confirm: true }),
+            },
+          )
+          created = await retry.json()
+          if (!retry.ok) {
+            return json({ error: created.msg ?? created.message ?? 'Could not create the account' },
+                         retry.status)
+          }
+        } else {
+          return json({ error: why }, createRes.status)
+        }
+      } else {
+        return json({ error: why }, createRes.status)
+      }
+    } else {
+      return json({ error: why || 'Could not create the account' }, createRes.status)
+    }
   }
 
   // ---------- give it its role ----------

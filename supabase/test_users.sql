@@ -150,6 +150,33 @@ select t2('owner can cancel an unused invite',
   try($$select cancel_invite((select id from user_invites where used_at is null limit 1))$$), 'ok');
 
 -- ============================================================
+-- a deactivated login frees its phone number
+--
+-- The number belongs to whoever holds it now. Deactivating is the
+-- app's normal way of removing somebody, and before the partial index
+-- their number stayed locked to a row everyone thought was gone —
+-- "phone already exists" with nobody visible holding it.
+-- ============================================================
+reset role;
+insert into app_users (id, phone, full_name, role, client_id, shop_id, active) values
+  ('00000000-0000-0000-0000-0000000000c1','9876543210','Old Manager','shop','KPN','KLP',true);
+update app_users set active = false where id = '00000000-0000-0000-0000-0000000000c1';
+
+select t2('the number can be given to their replacement',
+  try($$insert into app_users (id, phone, full_name, role, client_id, shop_id, active) values
+        ('00000000-0000-0000-0000-0000000000c2','9876543210','New Manager','shop','KPN','KLP',true)$$),
+  'ok');
+select t2('two active logins may not share it',
+  try($$insert into app_users (id, phone, full_name, role, client_id, shop_id, active) values
+        ('00000000-0000-0000-0000-0000000000c3','9876543210','Third','shop','KPN','KLP',true)$$),
+  'error:23505');
+select t2('and waking the old login is refused while the number is taken',
+  try($$update app_users set active = true
+        where id = '00000000-0000-0000-0000-0000000000c1'$$),
+  'error:23505');
+set role authenticated;
+
+-- ============================================================
 -- results
 -- ============================================================
 reset role;

@@ -59,9 +59,8 @@ create table if not exists app_users (
   id         uuid primary key,                       -- auth.users.id on Supabase
   -- Nullable: shop staff sign in by phone, but owner and admin sign in
   -- with email and password, so a phone would be noise on those rows.
-  -- Unique still holds for the rows that have one — Postgres allows
-  -- many nulls in a unique index.
-  phone      text unique,
+  -- Unique among ACTIVE rows only — the partial index below the table.
+  phone      text,
   full_name  text not null default '',
   role       app_role not null,
   client_id  text references clients(id) on delete restrict,
@@ -80,6 +79,17 @@ create table if not exists app_users (
   constraint shop_role_has_phone check (role <> 'shop' or phone is not null)
 );
 create index if not exists app_users_client_id_idx on app_users (client_id);
+
+-- A phone belongs to whoever holds it NOW. The old column-level unique
+-- counted the deactivated too, so a login switched off last month still
+-- blocked its own number from being given to the person who replaced
+-- them — "phone already exists" for a record everyone thought was gone.
+-- Unique among active rows only: deactivating frees the number, and
+-- reactivating somebody whose number has since been reused is refused
+-- at that moment, which is the right place to hear about it.
+alter table app_users drop constraint if exists app_users_phone_key;
+create unique index if not exists app_users_phone_active_key
+  on app_users (phone) where active;
 
 -- Helpers. STABLE so the planner caches them per statement; each reads
 -- only the caller's own row, so they are safe as SECURITY DEFINER.
