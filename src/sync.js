@@ -847,9 +847,18 @@ const VFSync = (function () {
      VFSync.log() in the console, or tap the sync dot. */
   const SLOG = [];
   let lastError = null;
+  /* what this database is missing, gathered as the push works around it:
+     the app keeps saving either way, and the owner is told once, calmly,
+     that an update is waiting — instead of finding out through errors */
+  const BEHIND = { tables: {}, columns: {} };
   function slog(kind, msg) {
     SLOG.push({ at: new Date().toISOString().slice(11, 19), kind: kind, msg: msg });
     if (SLOG.length > 50) SLOG.shift();
+    if (kind === 'held') BEHIND.tables[msg.split(' ')[0]] = 1;
+    if (kind === 'stripped') BEHIND.columns[msg.split(' ')[0]] = 1;
+  }
+  function behind() {
+    return { tables: Object.keys(BEHIND.tables), columns: Object.keys(BEHIND.columns) };
   }
 
   /* ============================================================
@@ -1615,7 +1624,7 @@ const VFSync = (function () {
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
-    log: () => SLOG.slice(), lastError: () => lastError,
+    log: () => SLOG.slice(), lastError: () => lastError, behind: behind,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
     addShop, addProduct, updateProduct, deleteProduct,

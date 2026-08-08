@@ -598,7 +598,7 @@ tr.vedit>td{background:var(--surface-2);border-bottom:1px solid var(--line)}
   <!-- which build is on the screen. Changes whenever the app does, so
        "did the change reach me?" is answered by looking rather than by
        guessing at a cache. -->
-  <span id="buildId" class="mono" title="Build">1e46a29</span>
+  <span id="buildId" class="mono" title="Build">87b1c9f</span>
 </header>
 
 <!-- sideTop holds whatever the header hands over on a phone; the menu
@@ -1998,9 +1998,18 @@ const VFSync = (function () {
      VFSync.log() in the console, or tap the sync dot. */
   const SLOG = [];
   let lastError = null;
+  /* what this database is missing, gathered as the push works around it:
+     the app keeps saving either way, and the owner is told once, calmly,
+     that an update is waiting — instead of finding out through errors */
+  const BEHIND = { tables: {}, columns: {} };
   function slog(kind, msg) {
     SLOG.push({ at: new Date().toISOString().slice(11, 19), kind: kind, msg: msg });
     if (SLOG.length > 50) SLOG.shift();
+    if (kind === 'held') BEHIND.tables[msg.split(' ')[0]] = 1;
+    if (kind === 'stripped') BEHIND.columns[msg.split(' ')[0]] = 1;
+  }
+  function behind() {
+    return { tables: Object.keys(BEHIND.tables), columns: Object.keys(BEHIND.columns) };
   }
 
   /* ============================================================
@@ -2766,7 +2775,7 @@ const VFSync = (function () {
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
-    log: () => SLOG.slice(), lastError: () => lastError,
+    log: () => SLOG.slice(), lastError: () => lastError, behind: behind,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
     addShop, addProduct, updateProduct, deleteProduct,
@@ -3106,6 +3115,32 @@ function showSyncErr(){
                   : '\n\nIt is still on this device and will be tried again. '
                   + 'Read this out to whoever set the app up.')
         + tail);
+}
+
+/* ---------- "an update is waiting" ----------
+   When the push has to work around the database — a column stripped, a
+   table held — everything still saves, and the person who can fix it is
+   told once, calmly, at the top of the screen instead of through
+   errors. Owner and admin only: a shop can do nothing with it. Goes by
+   itself the moment the database catches up, because the workarounds
+   stop happening and the list comes back empty on the next sign-in. */
+let UPDNOTE_HIDDEN = false;
+function updateNote(){
+  if(UPDNOTE_HIDDEN) return '';
+  if(ROLE !== 'owner' && ROLE !== 'admin') return '';
+  try{
+    if(typeof VFSync === 'undefined' || !VFSync.behind) return '';
+    const b = VFSync.behind();
+    const n = b.tables.length + b.columns.length;
+    if(!n) return '';
+    return '<div class="note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      + '<span style="flex:1 1 260px">Everything is saving, and a <strong>database update is '
+      + 'waiting</strong>: this build is ahead of the database in '+n+' place'+(n===1?'':'s')+'. '
+      + 'Copy <span class="mono">supabase/UPDATE.sql</span> into the Supabase SQL editor and '
+      + 'Run \u2014 the app catches up by itself.</span>'
+      + '<button class="btn sm" onclick="UPDNOTE_HIDDEN=true;render()">Not now</button>'
+      + '</div>';
+  }catch(e){ return ''; }
 }
 
 function syncBadge(state, detail){
@@ -4968,7 +5003,7 @@ function render(){
     mydel:vMyDeliveries, mybills:vMyBills, products:vProducts, shops:vShops,
     people:vPeople, contact:vContacts, sell:vSellPrice
   }[TAB];
-  m.innerHTML = fn ? fn() : '';
+  m.innerHTML = updateNote() + (fn ? fn() : '');
   wrapTables(m);
   /* the add-person form paints itself for whatever role is selected */
   if(TAB === 'people' && document.getElementById('npRole')) npRoleChanged();

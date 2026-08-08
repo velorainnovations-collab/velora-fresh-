@@ -329,6 +329,18 @@ const seedDay = () => {
           document.querySelector('#syncState span:last-child').textContent), 'Saved');
   check('the sync log tells the story',
         await beh.p.evaluate(() => VFSync.log().some(l => /sent/.test(l.kind))), true);
+
+  /* the person who can fix it is told once, calmly, on the screen */
+  await beh.p.evaluate(() => render());
+  await beh.p.waitForTimeout(300);
+  const note = await beh.p.locator('#main .note').first().textContent();
+  check('the owner is told an update is waiting',
+        /database update is waiting/.test(note), true);
+  check('and pointed at the one file to run', /UPDATE\.sql/.test(note), true);
+  await beh.p.locator('button:has-text("Not now")').click();
+  await beh.p.waitForTimeout(300);
+  check('and can put it aside for the day',
+        /database update is waiting/.test(await beh.p.locator('#main').textContent()), false);
   opts.behindColumns = null;
   await beh.ctx.close();
 
