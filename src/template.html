@@ -1175,10 +1175,26 @@ let ME = null;
 let SYNC_ERR = '';
 
 function showSyncErr(){
-  if(!SYNC_ERR){ alert('Everything has been saved to the server.'); return; }
+  /* the last few things the sync layer did, so the answer to "what is
+     wrong" is on the screen and not in a developer console */
+  let tail = '';
+  try{
+    const log = (typeof VFSync !== 'undefined' && VFSync.log) ? VFSync.log().slice(-8) : [];
+    if(log.length) tail = '\n\nWhat the sync just did:\n'
+      + log.map(l=>'  ' + l.at + '  ' + l.kind + '  ' + l.msg).join('\n');
+  }catch(e){}
+  if(!SYNC_ERR){ alert('Everything has been saved to the server.' + tail); return; }
+  /* a message naming a column or table the server does not know is the
+     database running behind the app, and the cure is one SQL run */
+  const behind = /column|schema cache|does not exist/i.test(SYNC_ERR);
   alert('The last thing that could not be saved:\n\n' + SYNC_ERR
-        + '\n\nIt is still on this device and will be tried again. '
-        + 'Read this out to whoever set the app up.');
+        + (behind ? '\n\nThis usually means the database is a version behind the app. '
+                  + 'Open Supabase \u2192 SQL editor and run supabase/01_schema.sql and '
+                  + 'then supabase/02_security.sql \u2014 nothing is lost, and the sync '
+                  + 'catches up by itself.'
+                  : '\n\nIt is still on this device and will be tried again. '
+                  + 'Read this out to whoever set the app up.')
+        + tail);
 }
 
 function syncBadge(state, detail){
@@ -1195,7 +1211,8 @@ function syncBadge(state, detail){
   else if(state === 'synced'){ label.textContent = 'Saved'; }
   else if(state === 'offline'){ el.classList.add('off'); label.textContent = 'Offline ' + detail + ' waiting'; }
   else if(state === 'signed-out'){ el.classList.add('bad'); label.textContent = 'Not signed in'; }
-  else if(state === 'error'){ el.classList.add('bad'); label.textContent = 'Sync problem'; }
+  else if(state === 'error'){ el.classList.add('bad');
+    label.textContent = 'Sync problem \u2014 retrying \u00b7 tap for why'; }
 }
 
 /* True from the moment the page opens with a session already stored,

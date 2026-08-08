@@ -9,7 +9,7 @@
  * page is the day's shelf prices as their own record.
  */
 const { chromium } = require('playwright');
-const { received } = require('./mock-supabase.js');
+const { received, opts } = require('./mock-supabase.js');
 
 let pass = 0, fail = 0;
 function check(label, got, want) {
@@ -276,6 +276,61 @@ const seedDay = () => {
         /from bill VF\/KLP/.test(await own.p.locator('#main').textContent())
         && !/124\.80/.test(await own.p.locator('#main').textContent()), true);
   await own.ctx.close();
+
+  /* ---------- a database that has never been migrated ----------
+     The live failure of 2026-08: the app several columns ahead of the
+     database, and one unsendable invoice damming the queue so the
+     indent behind it read as a sync problem for ever. The push must
+     strip what the server does not know, send the rest, and say Saved. */
+  console.log('\na database running behind the app');
+  opts.behindColumns = {
+    indents: ['accepted_at', 'accepted_by_name'],
+    indent_lines: ['seq'],
+    invoices: ['contact_id', 'vehicle_no', 'driver_name', 'bill_to_name',
+               'bill_to_gstin', 'bill_to_address', 'supply_date', 'place_of_supply'],
+  };
+  const beh = await device(b);
+  /* no contact on file, so Save invoice asks — say yes */
+  beh.p.on('dialog', d => d.accept());
+  await beh.p.evaluate(() => setGateWho('admin'));
+  await beh.p.fill('#gateEmail', 'owner@velora.example');
+  await beh.p.fill('#gatePass', 'right');
+  await beh.p.click('#gateBtn');
+  await beh.p.waitForTimeout(1500);
+  received.length = 0;
+  await beh.p.evaluate(() => {
+    setAnytime(true);
+    const d = DATE;
+    DB.indents[d] = { KLP: { status: 'accepted', lines: { '1': 2 }, seq: { '1': 1 },
+                             acceptedAt: new Date().toISOString(), acceptedBy: 'Velora Owner' } };
+    DB.days[d] = { rates: { '1': 80 }, packed: { KLP: { '1': 2 } },
+                   ship: { KLP: 'received' }, sent: {} };
+    save(); go('inv'); makeInvoice('KLP'); saveInvoice('KLP');
+  });
+  await beh.p.waitForTimeout(2500);
+
+  const gotLines = received.filter(r => r.table.startsWith('indent_lines') && r.method === 'POST'
+                                        && !r.refused);
+  const gotInv = received.filter(r => r.table.startsWith('invoices') && r.method === 'POST'
+                                      && !r.refused);
+  check('the indent lines still land, without the new column',
+        gotLines.length > 0 && gotLines.every(r => !('seq' in r.rows[0])), true);
+  const lastInv = gotInv.length ? gotInv[gotInv.length - 1].rows[0] : null;
+  check('the invoice landed at all', gotInv.length > 0, true);
+  check('with all eight unknown columns stripped',
+        lastInv ? Object.keys(lastInv).filter(k =>
+          ['contact_id','vehicle_no','driver_name','bill_to_name','bill_to_gstin',
+           'bill_to_address','supply_date','place_of_supply'].indexOf(k) > -1).join(',') : 'none', '');
+  check('and its number intact', lastInv ? lastInv.bill_no !== undefined : false, true);
+  check('nothing is left stuck in the queue',
+        await beh.p.evaluate(() => VFSync.queueLength()), 0);
+  check('and the badge says Saved, not Sync problem',
+        await beh.p.evaluate(() =>
+          document.querySelector('#syncState span:last-child').textContent), 'Saved');
+  check('the sync log tells the story',
+        await beh.p.evaluate(() => VFSync.log().some(l => /sent/.test(l.kind))), true);
+  opts.behindColumns = null;
+  await beh.ctx.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   await b.close();

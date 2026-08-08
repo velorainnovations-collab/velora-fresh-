@@ -54,7 +54,11 @@ function schemaColumns() {
 const received = [];         // every write the app sent
 /* what the deployed project can do, so the tests can pretend it is
    older than the code in this repository */
-const opts = { oldCreateUser: false, noWipeFn: false, noRenameFn: false };
+const opts = { oldCreateUser: false, noWipeFn: false, noRenameFn: false,
+               /* pretend the deployed database has never been migrated:
+                  every column in this list answers PGRST204, the way
+                  PostgREST does for a column it has never heard of */
+               behindColumns: null };
 
 /* Tokens are shaped like a real JWT — header.claims.signature — because
    the app reads its own user id out of the claims rather than asking. */
@@ -348,6 +352,27 @@ const srv = http.createServer((req, res) => {
         const d = (url.searchParams.get('trade_date') || '').replace(/^eq\./, '');
         return send(200, store.filter(r => !d || r.trade_date === d));
       }
+      /* A write the database would refuse must be refused before any
+         handler stores it, or the mock keeps rows the server never had. */
+      const COLS = schemaColumns();
+      if (req.method === 'POST' && body && (COLS[name] || (opts.behindColumns && opts.behindColumns[name]))) {
+        const rows0 = JSON.parse(body);
+        for (const row of (Array.isArray(rows0) ? rows0 : [rows0])) {
+          const behind = opts.behindColumns && opts.behindColumns[name]
+            ? Object.keys(row).find(c => opts.behindColumns[name].indexOf(c) > -1) : null;
+          if (behind) return send(400, { code: 'PGRST204',
+            message: "Could not find the '" + behind + "' column of '" + name +
+                     "' in the schema cache" });
+          const bad = COLS[name] ? Object.keys(row).filter(c => COLS[name].indexOf(c) < 0) : [];
+          if (bad.length) {
+            received.push({ table: name, method: 'POST', rows: rows0, refused: bad });
+            return send(400, { code: 'PGRST204',
+              message: "Could not find the '" + bad[0] + "' column of '" + name +
+                       "' in the schema cache" });
+          }
+        }
+      }
+
       if (req.method === 'POST' && name === 'day_rates') {
         (body ? JSON.parse(body) : []).forEach(r => {
           RATES[r.trade_date + '|' + r.product_code] = Number(r.rate);
@@ -396,21 +421,6 @@ const srv = http.createServer((req, res) => {
          indent_lines was sent trade_date and shop_id for months and
          PostgREST rejected every push carrying a line, and later the
          invoice grew six columns this list did not have. */
-      const COLUMNS = schemaColumns();
-      if (req.method === 'POST' && COLUMNS[name] && body) {
-        const rows = JSON.parse(body);
-        for (const row of (Array.isArray(rows) ? rows : [rows])) {
-          const bad = Object.keys(row).filter(c => COLUMNS[name].indexOf(c) < 0);
-          if (bad.length) {
-            received.push({ table: name, method: 'POST', rows: rows, refused: bad });
-            return send(400, {
-              code: 'PGRST204',
-              message: "Could not find the '" + bad[0] + "' column of '" + name +
-                       "' in the schema cache",
-            });
-          }
-        }
-      }
 
       /* the contact master: kept, so a contact survives a reload the
          way it does on a real project */

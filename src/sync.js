@@ -663,8 +663,7 @@ const VFSync = (function () {
     return out;
   }
 
-  async function send(table, rows, isDelete, keyCols, depth) {
-    depth = depth || 0;
+  async function send(table, rows, isDelete, keyCols) {
     if (table === 'indent_lines') {
       rows = await asLineRows(rows, isDelete);
       keyCols = ['indent_id', 'product_code'];
@@ -689,8 +688,13 @@ const VFSync = (function () {
     // decide the conflict. Later rows win, matching last-write-wins.
     const byKey = new Map();
     rows.forEach(row => byKey.set(keyCols.map(c => String(row[c])).join('\u0000'), row));
-    const unique = Array.from(byKey.values());
+    return postRows(table, Array.from(byKey.values()), keyCols, 0);
+  }
 
+  /* The POST half on its own, so the missing-column retry loops here and
+     never back through the indent-line conversion above — rows already
+     keyed by their header must not be converted twice. */
+  async function postRows(table, unique, keyCols, depth) {
     const r = await fetch(
       CFG.url + '/rest/v1/' + table + '?on_conflict=' + encodeURIComponent(keyCols.join(',')),
       {
@@ -703,16 +707,19 @@ const VFSync = (function () {
       /* A project a version behind this build does not have every column
          yet. PostgREST names the one it could not find, so it is dropped
          and the rest of the row is sent — the day's work goes up, and
-         only the new field waits for the migration. Bounded, so a
-         genuine fault cannot spin here. */
+         only the new field waits for the migration. Bounded so a genuine
+         fault cannot spin, but wide enough to clear the biggest real
+         gap: an invoice alone is eight columns ahead of a database that
+         has never been migrated. */
       const miss = missingColumn(e);
-      if (miss && depth < 4 && unique.some(row => miss in row)) {
+      if (miss && depth < 16 && unique.some(row => miss in row)) {
         unique.forEach(row => { delete row[miss]; });
+        slog('stripped', table + '.' + miss + ' — the database does not have it yet');
         if (typeof console !== 'undefined') {
           console.warn('[VFSync] ' + table + '.' + miss + ' is not in this project yet — '
                        + 'sent without it');
         }
-        return send(table, unique, false, keyCols, depth + 1);
+        return postRows(table, unique, keyCols, depth + 1);
       }
       throw e;
     }
@@ -763,37 +770,67 @@ const VFSync = (function () {
     emit('pushing', queue.length);
     const batch = sortOps(queue);
 
-    const held = [];        // ops for a table this project does not have yet
-    try {
-      // group consecutive ops of the same table and direction
-      let i = 0;
-      while (i < batch.length) {
-        const t = batch[i].table, isDel = batch[i].op === 'delete';
-        const rows = [], ops = [];
-        while (i < batch.length && batch[i].table === t && (batch[i].op === 'delete') === isDel) {
-          rows.push(batch[i].row); ops.push(batch[i]); i++;
-        }
-        try {
-          await send(t, rows, isDel, CONFLICT[t].split(','));
-        } catch (e) {
-          if (!isMissingTable(e)) throw e;
+    /* One bad batch must not dam the river. Everything that can go up,
+       goes up; what cannot is kept — held for a table the project does
+       not have yet, failed for anything else — and only then is a
+       problem reported, with the queue intact for the retry. Before
+       this, one unsendable invoice aborted the whole push, and the
+       indent behind it in the queue read as a sync problem for ever. */
+    const held = [], failed = [];
+    let firstErr = null, auth = false;
+    // group consecutive ops of the same table and direction
+    let i = 0;
+    while (i < batch.length) {
+      const t = batch[i].table, isDel = batch[i].op === 'delete';
+      const rows = [], ops = [];
+      while (i < batch.length && batch[i].table === t && (batch[i].op === 'delete') === isDel) {
+        rows.push(batch[i].row); ops.push(batch[i]); i++;
+      }
+      try {
+        await send(t, rows, isDel, CONFLICT[t].split(','));
+        slog('sent', t + (isDel ? ' delete' : '') + ' \u00d7' + ops.length);
+      } catch (e) {
+        if (e && e.status === 401) { auth = true; failed.push.apply(failed, ops); break; }
+        if (isMissingTable(e)) {
+          slog('held', t + ' is not in this project yet \u00d7' + ops.length);
           if (typeof console !== 'undefined') {
             console.warn('[VFSync] ' + t + ' is not in this project yet — '
                          + ops.length + ' row(s) held back until it is');
           }
           held.push.apply(held, ops);
+        } else {
+          if (!firstErr) firstErr = e;
+          slog('failed', t + ': ' + (e && e.message));
+          failed.push.apply(failed, ops);
         }
       }
-      queue = held; writeJSON(QKEY, queue);
-      emit('synced', held.length);
-    } catch (err) {
-      if (err.status === 401 && await refresh()) { pushing = false; return push(); }
-      // keep the queue; the next attempt retries it
-      emit('error', err.message);
-      schedule(15000);
-    } finally {
-      pushing = false;
     }
+    // everything not sent — held, failed, or after an auth break — stays
+    while (i < batch.length) failed.push(batch[i++]);
+    queue = held.concat(failed.filter(o => held.indexOf(o) < 0));
+    writeJSON(QKEY, queue);
+    pushing = false;
+
+    if (auth) { if (await refresh()) return push(); }
+    if (firstErr) {
+      lastError = { at: new Date().toISOString(), message: firstErr.message,
+                    body: firstErr.body || null };
+      emit('error', firstErr.message);
+      schedule(15000);
+    } else {
+      emit('synced', held.length);
+    }
+  }
+
+  /* ---------- the sync log ----------
+     The last fifty things the sync layer did, kept so a problem on a
+     phone in a shop can be read off the screen instead of guessed at.
+     VFSync.log() in the console, or tap the sync dot. */
+  const SLOG = [];
+  let lastError = null;
+  function slog(kind, msg) {
+    SLOG.push({ at: new Date().toISOString().slice(11, 19), kind: kind, msg: msg });
+    if (SLOG.length > 50) SLOG.shift();
   }
 
   /* ============================================================
@@ -1559,6 +1596,7 @@ const VFSync = (function () {
     sendLoginCode, verifyLoginCode, sendRecovery, adoptRecoverySession, setOwnPassword,
     signInShop, _shopLoginIds: shopLoginIds,
     whoami, nextBillNo, on, queueLength: () => queue.length,
+    log: () => SLOG.slice(), lastError: () => lastError,
     listPeople, invitePerson, createUser, resetPassword, setPersonRole, setPersonActive, cancelInvite,
     removePerson, removeAccess,
     addShop, addProduct, updateProduct, deleteProduct,
