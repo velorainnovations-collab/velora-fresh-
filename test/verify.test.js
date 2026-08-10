@@ -246,16 +246,50 @@ const seedDay = () => {
   const page = await own.p.locator('#main').textContent();
   check('it is under Sales in the menu', await own.p.evaluate(() =>
     tabsFor().some(t => t.id === 'sell')), true);
+  check('every shop is listed', /Kilpauk/.test(page) && /Hiranandani/.test(page), true);
+  check('all shops start folded shut', /Billed \/ kg/.test(page), false);
   check('the day answers live before a bill exists', /not billed yet/.test(page), true);
-  check('billed and selling side by side',
-        /Billed \/ kg/.test(page) && /Selling \/ kg/.test(page), true);
-  check('the billed price is the purchase price',
-        /83\.20/.test(page), true);   /* 80 x 1.04 */
 
-  // search narrows it
+  // searching with nothing open finds nothing — the search looks inside the open shop
   await own.p.fill('#sellQ', 'lemon');
   await own.p.waitForTimeout(400);
-  const searched = await own.p.locator('#main').textContent();
+  check('search with no shop open shows no prices',
+        /Open a shop first/.test(await own.p.locator('#main').textContent()), true);
+  await own.p.fill('#sellQ', '');
+  await own.p.waitForTimeout(300);
+
+  // open Kilpauk — its prices and only its prices
+  await own.p.locator('h3.acc', { hasText: 'Kilpauk' }).click();
+  await own.p.waitForTimeout(400);
+  const opened = await own.p.locator('#main').textContent();
+  check('billed and selling side by side',
+        /Billed \/ kg/.test(opened) && /Selling \/ kg/.test(opened), true);
+  check('the billed price is the purchase price',
+        /83\.20/.test(opened), true);   /* 80 x 1.04 */
+  check('one table only — the open shop\'s',
+        await own.p.locator('#main table').count(), 1);
+
+  // open Hiranandani — Kilpauk folds itself shut
+  await own.p.locator('h3.acc', { hasText: 'Hiranandani' }).click();
+  await own.p.waitForTimeout(400);
+  check('only one shop stays open at a time',
+        await own.p.evaluate(() => SELLSHOP), 'HRN');
+  check('and the newly opened shop has no prices of its own',
+        /Nothing for this shop/.test(await own.p.locator('#main').textContent()), true);
+  check('still one open card', await own.p.locator('#main .drop').count(), 1);
+
+  // clicking the open shop closes it
+  await own.p.locator('h3.acc', { hasText: 'Hiranandani' }).click();
+  await own.p.waitForTimeout(400);
+  check('clicking the open shop folds it shut',
+        await own.p.evaluate(() => SELLSHOP), null);
+
+  // search narrows within the open shop
+  await own.p.locator('h3.acc', { hasText: 'Kilpauk' }).click();
+  await own.p.waitForTimeout(300);
+  await own.p.fill('#sellQ', 'lemon');
+  await own.p.waitForTimeout(400);
+  const searched = await own.p.locator('#main table').textContent();
   check('search by name', /Lemon/.test(searched) && !/Potato/.test(searched), true);
   await own.p.fill('#sellQ', '2');
   await own.p.waitForTimeout(400);

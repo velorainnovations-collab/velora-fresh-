@@ -225,6 +225,7 @@ function problemsIn(r) {
           });
           await state('inv / the bill saved', () => { saveInvoice('KLP'); });
           await state('inv / the saved list', () => { INVSHOP = null; render(); });
+          await state('sell / a shop open', () => { SELLSHOP = 'KLP'; go('sell'); });
           await state('products / new group panel',
                       () => { PRODOPEN = null; INVSHOP = null; go('products'); gPanel('new'); });
           await state('products / rename group panel', () => gPanel('rename'));
