@@ -116,6 +116,39 @@ function check(label, got, want) {
   check('and reads it in Tamil as well', /லெமன்/.test(changed), true);
   check('and the shop split is still theirs', /Kilpauk 12/.test(changed), true);
 
+  console.log('\nshops across the top, one row per product');
+  /* a second shop asks for the same product: it becomes a column by
+     itself, and the product still has exactly one row */
+  await p.evaluate(() => {
+    const ind2 = indentOf(VF.DATE, 'NGB');
+    ind2.lines = { '1': 8, '11': 6 };   /* Cauliflower shares Lemon's vendor */
+    ind2.status = 'accepted';
+    save(); go('orders');
+  });
+  await p.waitForTimeout(400);
+  const mhead = await p.locator('#main .omx thead').first().textContent();
+  check('the shops are the columns', /Kilpauk/.test(mhead) && /Nungambakkam/.test(mhead), true);
+  check('with Total on the far right', /Total/.test(mhead), true);
+  check('one row per product, not one per shop',
+        await p.locator('#main .omx tbody tr', { hasText: 'Lemon' }).count(), 1);
+  const lemonRow = await p.locator('#main .omx tbody tr', { hasText: 'Lemon' }).textContent();
+  check('each shop under its own column, added up',
+        /12/.test(lemonRow) && /8/.test(lemonRow) && /20/.test(lemonRow), true);
+  const cauliRow = await p.locator('#main .omx tbody tr', { hasText: 'Cauliflower' }).textContent();
+  check('a shop that did not ask shows a dash, not a hidden row',
+        /—/.test(cauliRow) && /6/.test(cauliRow), true);
+  check('a vendor only one shop buys from has just that column',
+        await p.evaluate(() => {
+          /* the Nellai Traders card: only Kilpauk asked it for anything,
+             so Nungambakkam must not be one of its columns */
+          const cards = Array.from(document.querySelectorAll('#main .card'));
+          const nel = cards.find(c => /Nellai/.test(c.textContent));
+          return !!nel && !/Nungambakkam/.test(nel.querySelector('thead').textContent);
+        }), true);
+  check('the product column stays put while the shops scroll',
+        await p.evaluate(() => getComputedStyle(
+          document.querySelector('.omx tbody td')).position), 'sticky');
+
   console.log('\nand the rates screen shows what is being bought');
   await p.evaluate(() => go('rates'));
   await p.waitForTimeout(400);
