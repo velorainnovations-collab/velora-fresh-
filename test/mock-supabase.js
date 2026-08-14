@@ -104,6 +104,30 @@ const srv = http.createServer((req, res) => {
   req.on('end', () => {
     const url = new URL(req.url, 'http://x');
     const send = (code, obj) => {
+      /* Supabase answers at most 1000 rows per GET and truncates
+         silently — 1000 rows and HTTP 200 look exactly like "that is
+         all of them". The mock does the same, or a read that forgets
+         to page passes every test here and loses rows on the real
+         project. That is not theoretical: after a week of trading the
+         indent lines passed 1000 and every device rebuilt the newest
+         days as if their indents were empty. */
+      if (req.method === 'GET' && Array.isArray(obj)) {
+        const ord = url.searchParams.get('order');
+        if (ord) {
+          const cols = ord.split(',').map(c => c.split('.')[0]);
+          obj = obj.slice().sort((a, b) => {
+            for (const c of cols) {
+              if (a[c] < b[c]) return -1;
+              if (a[c] > b[c]) return 1;
+            }
+            return 0;
+          });
+        }
+        const off = parseInt(url.searchParams.get('offset') || '0', 10) || 0;
+        let lim = parseInt(url.searchParams.get('limit') || '', 10);
+        if (isNaN(lim) || lim > 1000) lim = 1000;
+        obj = obj.slice(off, off + lim);
+      }
       res.writeHead(code, { 'Content-Type': 'application/json',
                             'Access-Control-Allow-Origin': '*',
                             'Access-Control-Allow-Headers': '*',
@@ -418,6 +442,9 @@ const srv = http.createServer((req, res) => {
         });
       }
       if (req.method === 'GET' && name === 'indent_lines') {
+        /* one flaky moment, then fine — the shape of a real network:
+           the headers read answered and this one did not */
+        if (opts.failLines) { opts.failLines = false; return send(500, { message: 'boom' }); }
         const inp = (url.searchParams.get('indent_id') || '');
         const ids = (inp.match(/in\.\((.*)\)/) || [])[1];
         const want = ids ? ids.split(',') : null;

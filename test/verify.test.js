@@ -378,6 +378,90 @@ const seedDay = () => {
   opts.behindColumns = null;
   await beh.ctx.close();
 
+  /* ---------- a long history does not swallow the newest day ----------
+     The live failure of 2026-08-14: Supabase answers at most 1000 rows
+     per request and truncates silently. After a week of trading the
+     indent lines passed that mark, the pull came back short, and the
+     owner watched the day's indents "disappear" right after updating
+     the market rates — the redraw was the moment the short read showed.
+     Thirty old days of forty lines each is seeded straight into the
+     server here, well past the cap, and the newest day must still come
+     through whole. */
+  console.log('\na month of history on the server');
+  const rest = (path2, bodyRows) => fetch('http://127.0.0.1:8123/rest/v1/' + path2, {
+    method: bodyRows ? 'POST' : 'GET',
+    headers: { 'content-type': 'application/json' },
+    body: bodyRows ? JSON.stringify(bodyRows) : undefined,
+  }).then(r => r.json().catch(() => null));
+  for (let d = 1; d <= 30; d++) {
+    const date = '2026-06-' + String(d).padStart(2, '0');
+    await rest('indents', [{ trade_date: date, shop_id: 'KLP', status: 'accepted' }]);
+    const hdr = await rest('indents?trade_date=eq.' + date + '&shop_id=eq.KLP&select=id');
+    const id = hdr && hdr[0] && hdr[0].id;
+    const lines = [];
+    for (let i = 1; i <= 40; i++) {
+      lines.push({ indent_id: id, product_code: 'P' + String(i).padStart(2, '0'),
+                   qty: i, seq: i });
+    }
+    await rest('indent_lines', lines);
+  }
+
+  const far = await device(b);
+  await far.p.evaluate(() => setGateWho('admin'));
+  await far.p.fill('#gateEmail', 'owner@velora.example');
+  await far.p.fill('#gatePass', 'right');
+  await far.p.click('#gateBtn');
+  await far.p.waitForTimeout(2500);
+  check('well past the 1000-row mark, every line arrives',
+        await far.p.evaluate(() =>
+          Object.keys(DB.indents).filter(d => d.indexOf('2026-06') === 0)
+            .reduce((n, d) => n + Object.keys((DB.indents[d].KLP || {}).lines || {}).length, 0)),
+        1200);
+  check('the newest seeded day is whole',
+        await far.p.evaluate(() =>
+          Object.keys(DB.indents['2026-06-30'].KLP.lines).length), 40);
+
+  /* the reported flow, exactly: indent in, rates entered, Update rates
+     pressed — and the indent must still be standing afterwards */
+  console.log('\nupdating the market rate leaves the indents alone');
+  await far.p.evaluate(async () => {
+    setAnytime(true);
+    DB.indents[DATE] = { KLP: { status: 'accepted', lines: { '1': 20, '2': 10, '3': 5 },
+                                seq: { '1': 1, '2': 2, '3': 3 } } };
+    DB.days[DATE] = { rates: {}, packed: {}, ship: {}, sent: {} };
+    save(); go('rates');
+    rateDraft('1', '50'); rateDraft('2', '40'); rateDraft('3', '100');
+    await applyRates();
+  });
+  await far.p.waitForTimeout(1200);
+  check('the rates took',
+        await far.p.evaluate(() => JSON.stringify(dayOf(DATE).rates)),
+        '{"1":50,"2":40,"3":100}');
+  check('the indent is untouched',
+        await far.p.evaluate(() => JSON.stringify(DB.indents[DATE].KLP.lines)),
+        '{"1":20,"2":10,"3":5}');
+  check('and still accepted',
+        await far.p.evaluate(() => DB.indents[DATE].KLP.status), 'accepted');
+  check('nothing stuck in the queue',
+        await far.p.evaluate(() => VFSync.queueLength()), 0);
+
+  /* the background read that redraws the day: it must bring the same
+     indent back, and a flaky moment must leave the screen alone rather
+     than redraw it empty */
+  await far.p.evaluate(async () => { await VFSync.refreshIndents(DB, DATE); });
+  check('a background refresh brings the same lines back',
+        await far.p.evaluate(() => JSON.stringify(DB.indents[DATE].KLP.lines)),
+        '{"1":20,"2":10,"3":5}');
+  opts.failLines = true;
+  const held = await far.p.evaluate(async () => {
+    const changed = await VFSync.refreshIndents(DB, DATE);
+    return JSON.stringify([changed, DB.indents[DATE].KLP.lines]);
+  });
+  check('a failed lines read leaves the day exactly as it was',
+        held, JSON.stringify([false, { 1: 20, 2: 10, 3: 5 }]));
+  opts.failLines = false;
+  await far.ctx.close();
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   await b.close();
   process.exit(fail ? 1 : 0);

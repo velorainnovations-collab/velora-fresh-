@@ -868,11 +868,41 @@ const VFSync = (function () {
      when a device has been away. Anything still queued locally is
      pushed afterwards, so unsent local work is never lost. */
 
+  /* Supabase answers at most 1000 rows per request (PostgREST's
+     db-max-rows), and it truncates silently: 1000 rows and HTTP 200
+     look exactly like "that is all of them". After a week of trading
+     the indent lines passed that mark, the pull came back short, and
+     every device rebuilt the newest days as if their indents had no
+     lines. So: pages, in a stable order, until a page comes back
+     short — the only shape of read that cannot be truncated. */
+  const PAGE = 1000;
+  const PAGEORDER = {
+    indents: 'id', indent_lines: 'indent_id,product_code',
+    day_rates: 'trade_date,product_code',
+    packed: 'trade_date,shop_id,product_code',
+    shipments: 'trade_date,shop_id',
+    delivery_issues: 'trade_date,shop_id,product_code',
+    vendor_orders: 'trade_date,group_name',
+    vendor_order_lines: 'trade_date,group_name,product_code',
+    invoices: 'id', invoice_lines: 'invoice_id,line_no',
+    payments: 'id', vendors: 'group_name', vendor_bank: 'group_name',
+    margin_comm: 'shop_id', margin_selling: 'shop_id,product_code',
+    settings: 'client_id', contacts: 'id', contact_bank: 'contact_id',
+    units: 'name',
+  };
   async function get(table, select, filter) {
-    const r = await fetch(CFG.url + '/rest/v1/' + table + '?select=' + (select || '*')
-                          + (filter ? '&' + filter : ''), { headers: headers() });
-    if (!r.ok) throw await httpError(r, table);
-    return r.json();
+    const base = CFG.url + '/rest/v1/' + table + '?select=' + (select || '*')
+               + (filter ? '&' + filter : '')
+               + (PAGEORDER[table] ? '&order=' + PAGEORDER[table] : '');
+    const out = [];
+    for (let off = 0; ; off += PAGE) {
+      const r = await fetch(base + '&limit=' + PAGE + '&offset=' + off,
+                            { headers: headers() });
+      if (!r.ok) throw await httpError(r, table);
+      const rows = await r.json();
+      out.push.apply(out, rows);
+      if (rows.length < PAGE) return out;
+    }
   }
 
   /* ---------- one day, on demand ----------
@@ -896,7 +926,14 @@ const VFSync = (function () {
     if (ids.length) {
       try {
         lines = await get('indent_lines', '*', 'indent_id=in.(' + ids.join(',') + ')');
-      } catch (e) { lines = []; }
+      } catch (e) {
+        /* Half an answer is worse than none. The headers arrived but
+           the lines did not, and writing that in would redraw every
+           indent on this screen as empty — quantities gone, packing
+           with nothing to pack. Keep what is on the device; the next
+           tick tries again. */
+        return false;
+      }
     }
     const byId = {};
     const day = DB.indents[date] = DB.indents[date] || {};
@@ -972,40 +1009,48 @@ const VFSync = (function () {
   async function pull(DB) {
     if (!enabled() || !signedIn()) return DB;
 
+    /* A table that could not be read answers null, never []: an empty
+       list means "the server says there are none", and writing that
+       over local data because one request failed is how a morning's
+       indents vanish from a screen. Each merge below runs only when
+       its read really answered; headers and their lines go together
+       or not at all. */
     const [inds, ilines, rates, pk, ship, vo, vol, invs, ivl, pays, vend, vbank, mc, ms, st,
            cons, cbank, viss, unis] =
       await Promise.all(['indents', 'indent_lines', 'day_rates', 'packed', 'shipments',
                          'vendor_orders', 'vendor_order_lines', 'invoices', 'invoice_lines',
                          'payments', 'vendors', 'vendor_bank', 'margin_comm', 'margin_selling',
                          'settings', 'contacts', 'contact_bank',
-                         'delivery_issues', 'units'].map(t => get(t).catch(() => [])));
+                         'delivery_issues', 'units'].map(t => get(t).catch(() => null)));
 
     const indById = {};
-    inds.forEach(i => {
-      indById[i.id] = i;
-      const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
-      d[i.shop_id] = { status: i.status, lines: {}, seq: {},
-                       submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
-                       acceptedBy: i.accepted_by_name || null, late: !!i.late };
-    });
-    ilines.forEach(l => {
-      const hdr = indById[l.indent_id];
-      if (!hdr) return;
-      const rec = (DB.indents[hdr.trade_date] || {})[hdr.shop_id];
-      if (!rec) return;
-      rec.lines[l.product_code] = Number(l.qty);
-      (rec.seq = rec.seq || {})[l.product_code] = Number(l.seq) || 0;
-    });
+    if (inds && ilines) {
+      inds.forEach(i => {
+        indById[i.id] = i;
+        const d = DB.indents[i.trade_date] = DB.indents[i.trade_date] || {};
+        d[i.shop_id] = { status: i.status, lines: {}, seq: {},
+                         submittedAt: i.submitted_at, acceptedAt: i.accepted_at || null,
+                         acceptedBy: i.accepted_by_name || null, late: !!i.late };
+      });
+      ilines.forEach(l => {
+        const hdr = indById[l.indent_id];
+        if (!hdr) return;
+        const rec = (DB.indents[hdr.trade_date] || {})[hdr.shop_id];
+        if (!rec) return;
+        rec.lines[l.product_code] = Number(l.qty);
+        (rec.seq = rec.seq || {})[l.product_code] = Number(l.seq) || 0;
+      });
+    }
 
     const day = d => (DB.days[d] = DB.days[d] ||
                       { rates: {}, packed: {}, ship: {}, sent: {} });
-    rates.forEach(r => { day(r.trade_date).rates[r.product_code] = Number(r.rate); });
-    pk.forEach(p => {
+    if (rates) rates.forEach(r => { day(r.trade_date).rates[r.product_code] = Number(r.rate); });
+    if (pk) pk.forEach(p => {
       const D = day(p.trade_date);
       (D.packed[p.shop_id] = D.packed[p.shop_id] || {})[p.product_code] = Number(p.qty);
     });
-    ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
-    viss.forEach(r => {
+    if (ship) ship.forEach(s => { day(s.trade_date).ship[s.shop_id] = s.state; });
+    if (viss) viss.forEach(r => {
       const D = day(r.trade_date);
       const v = (D.verify = D.verify || {})[r.shop_id] =
         (D.verify[r.shop_id] || { sent: true, by: '', at: null, items: {} });
@@ -1017,14 +1062,14 @@ const VFSync = (function () {
         : { type: 'weight', original: Number(r.original_qty) || 0,
             current: Number(r.current_qty) || 0 };
     });
-    vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
-    vol.forEach(l => {
+    if (vo) vo.forEach(o => { day(o.trade_date).sent[o.group_name] = true; });
+    if (vol) vol.forEach(l => {
       const D = day(l.trade_date);
       (D.order = D.order || {})[l.product_code] = Number(l.qty);
     });
 
     const invById = {};
-    invs.forEach(v => {
+    if (invs && ivl) invs.forEach(v => {
       invById[v.id] = v;
       const d = DB.invoices[v.trade_date] = DB.invoices[v.trade_date] || {};
       d[v.shop_id] = { id: v.id, no: v.bill_no, date: v.trade_date, shopId: v.shop_id,
@@ -1036,7 +1081,7 @@ const VFSync = (function () {
                        billTo: { name: v.bill_to_name || '', gstin: v.bill_to_gstin || '',
                                  address: v.bill_to_address || '' } };
     });
-    ivl.sort((a, b) => a.line_no - b.line_no).forEach(l => {
+    if (invs && ivl) ivl.slice().sort((a, b) => a.line_no - b.line_no).forEach(l => {
       const h = invById[l.invoice_id];
       if (!h) return;
       const rec = (DB.invoices[h.trade_date] || {})[h.shop_id];
@@ -1046,28 +1091,28 @@ const VFSync = (function () {
                        amount: Number(l.amount), sell: Number(l.sell) });
     });
 
-    DB.payments = pays.map(p => ({ id: p.id, date: p.paid_on, amount: Number(p.amount),
-                                   mode: p.mode, ref: p.ref }));
+    if (pays) DB.payments = pays.map(p => ({ id: p.id, date: p.paid_on, amount: Number(p.amount),
+                                             mode: p.mode, ref: p.ref }));
 
-    vend.forEach(v => {
+    if (vend) vend.forEach(v => {
       const rec = DB.vendors[v.group_name] = DB.vendors[v.group_name] ||
         { bank: { acName: '', acNo: '', ifsc: '', upi: '' } };
       rec.name = v.name; rec.phone = v.phone; rec.contact = v.contact;
       rec.address = v.address; rec.notes = v.notes;
     });
     // empty for every role but owner — RLS returns no rows rather than an error
-    vbank.forEach(b => {
+    if (vbank) vbank.forEach(b => {
       const rec = DB.vendors[b.group_name];
       if (rec) rec.bank = { acName: b.ac_name, acNo: b.ac_no, ifsc: b.ifsc, upi: b.upi };
     });
 
     DB.units = DB.units || {};
-    unis.forEach(u => {
+    if (unis) unis.forEach(u => {
       DB.units[u.name] = { weighed: !!u.weighed, builtin: !!u.builtin };
     });
 
     DB.contacts = DB.contacts || {};
-    cons.forEach(c => {
+    if (cons) cons.forEach(c => {
       const rec = DB.contacts[c.id] = DB.contacts[c.id] ||
         { bank: { bankName: '', acName: '', acNo: '', ifsc: '', branch: '' } };
       rec.id = c.id; rec.shopId = c.shop_id || '';
@@ -1077,18 +1122,18 @@ const VFSync = (function () {
       rec.state = c.state; rec.pincode = c.pincode; rec.active = c.active !== false;
     });
     // empty for every role but owner — RLS returns no rows, not an error
-    cbank.forEach(b => {
+    if (cbank) cbank.forEach(b => {
       const rec = DB.contacts[b.contact_id];
       if (rec) rec.bank = { bankName: b.bank_name, acName: b.ac_name, acNo: b.ac_no,
                             ifsc: b.ifsc, branch: b.branch };
     });
 
-    mc.forEach(m => { DB.master.comm[m.shop_id] = Number(m.pct); });
-    ms.forEach(m => {
+    if (mc) mc.forEach(m => { DB.master.comm[m.shop_id] = Number(m.pct); });
+    if (ms) ms.forEach(m => {
       (DB.master.selling[m.shop_id] = DB.master.selling[m.shop_id] || {})[m.product_code] =
         Number(m.pct);
     });
-    if (st.length) DB.settings.anytime = !!st[0].anytime;
+    if (st && st.length) DB.settings.anytime = !!st[0].anytime;
 
     // the server is now the baseline; anything still queued is local work
     synced = flatten(DB);
